@@ -21,7 +21,7 @@ export function isTrustedRendererUrl(url: string, options: TrustedUrlOptions): b
     return false
   }
 
-  if (options.devServerUrl && parsed.origin === new URL(options.devServerUrl).origin) {
+  if (options.devServerUrl && isSameOrigin(parsed, options.devServerUrl)) {
     return true
   }
 
@@ -29,7 +29,27 @@ export function isTrustedRendererUrl(url: string, options: TrustedUrlOptions): b
     return false
   }
 
+  let filePath: string
+  try {
+    filePath = fileURLToPath(parsed)
+  } catch {
+    return false
+  }
+
   const root = path.resolve(options.rendererRoot)
-  const relative = path.relative(root, path.resolve(fileURLToPath(parsed)))
-  return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative)
+  const relative = path.relative(root, path.resolve(filePath))
+  return (
+    relative !== '' &&
+    relative !== '..' &&
+    !relative.startsWith('..' + path.sep) &&
+    !path.isAbsolute(relative)
+  )
+}
+
+function isSameOrigin(parsed: URL, otherUrl: string): boolean {
+  try {
+    return parsed.origin === new URL(otherUrl).origin
+  } catch {
+    return false
+  }
 }

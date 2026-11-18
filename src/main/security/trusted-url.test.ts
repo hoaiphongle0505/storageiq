@@ -40,4 +40,20 @@ describe('isTrustedRendererUrl', () => {
     expect(isTrustedRendererUrl('', { rendererRoot })).toBe(false)
     expect(isTrustedRendererUrl('not a url', { rendererRoot })).toBe(false)
   })
+
+  it('does not throw on a malformed dev server URL', () => {
+    const options = { rendererRoot, devServerUrl: 'not a url' }
+    expect(isTrustedRendererUrl('http://localhost:5173/', options)).toBe(false)
+    expect(isTrustedRendererUrl(indexUrl, options)).toBe(true)
+  })
+
+  it('rejects file URLs that cannot be converted to a path', () => {
+    const encodedSlash = `${pathToFileURL(rendererRoot).href}/a%2Fb.js`
+    expect(isTrustedRendererUrl(encodedSlash, { rendererRoot })).toBe(false)
+  })
+
+  it('trusts files whose name starts with two dots inside the renderer folder', () => {
+    const url = pathToFileURL(path.join(rendererRoot, '..assets', 'app.js')).href
+    expect(isTrustedRendererUrl(url, { rendererRoot })).toBe(true)
+  })
 })
