@@ -27,6 +27,11 @@ function reportStartupError(error: unknown): void {
   app.quit()
 }
 
+// Dev and E2E runs get their own userData folder (and so their own single-instance lock).
+if (!app.isPackaged) {
+  app.setPath('userData', path.join(app.getPath('appData'), 'StorageIQ-dev'))
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
