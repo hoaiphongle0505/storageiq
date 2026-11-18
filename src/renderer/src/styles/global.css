@@ -1,0 +1,80 @@
+@import 'tailwindcss';
+
+:root {
+  color-scheme: light dark;
+  --surface-app: #f6f7f7;
+  --surface-panel: #ffffff;
+  --surface-sunken: #eef0f0;
+  --border: #dde1e1;
+  --text: #1b2122;
+  --text-muted: #5b6667;
+  --accent: #0f7a73;
+  --accent-hover: #0c655f;
+  --accent-contrast: #ffffff;
+  --danger: #b3261e;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface-app: #161a1b;
+    --surface-panel: #1e2324;
+    --surface-sunken: #121516;
+    --border: #2e3536;
+    --text: #e6eaea;
+    --text-muted: #9aa5a6;
+    --accent: #4fc1b6;
+    --accent-hover: #6fd0c6;
+    --accent-contrast: #062421;
+    --danger: #f2b8b5;
+  }
+}
+
+@theme inline {
+  --color-app: var(--surface-app);
+  --color-panel: var(--surface-panel);
+  --color-sunken: var(--surface-sunken);
+  --color-line: var(--border);
+  --color-ink: var(--text);
+  --color-ink-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-on-accent: var(--accent-contrast);
+  --color-danger: var(--danger);
+  --font-sans: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'Cascadia Mono', Consolas, ui-monospace, monospace;
+  --radius-control: 4px;
+  --radius-panel: 8px;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--surface-app);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.43;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
