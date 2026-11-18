@@ -25,49 +25,51 @@
 
 ## File Map
 
-| File | Responsibility | Task |
-|---|---|---|
-| `package.json`, `package-lock.json` | Scripts, metadata, dependencies | 1 |
-| `tsconfig.json`, `tsconfig.node.json`, `tsconfig.web.json` | Strict TS for node-side and web-side code | 1 |
-| `electron.vite.config.ts` | Build config for main/preload/renderer + aliases | 1 |
-| `vitest.config.ts` | Unit test runner config | 1 |
-| `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`, `.editorconfig`, `.gitignore` | Quality gates | 1 |
-| `LICENSE` | MIT | 1 |
-| `src/shared/ipc-contract.ts` | Channel → args/result types, `AppInfo`, `SelectFolderResult`, `StorageIQApi` | 1 |
-| `src/main/security/trusted-url.ts` (+ test) | Is a URL our own renderer? | 1 |
-| `src/renderer/src/test/setup.ts` | jest-dom matchers + RTL cleanup | 1 |
-| `src/main/ipc/register.ts` (+ test) | Register typed handlers with sender validation | 2 |
-| `src/main/ipc/app-handlers.ts` (+ test) | `app:get-info`, `dialog:select-folder` | 2 |
-| `src/main/window-options.ts` (+ test) | Pure, security-critical BrowserWindow options | 2 |
-| `src/main/window.ts` | Create window, lock navigation, load renderer | 2 |
-| `src/main/index.ts` | App lifecycle, single-instance lock, wiring | 2 |
-| `src/preload/index.ts` | `contextBridge` → `window.storageiq` | 2 |
-| `src/renderer/src/test/fake-api.ts` | Fake `StorageIQApi` for renderer tests | 3 |
-| `src/renderer/src/stores/app-store.ts` (+ test) | Zustand vanilla store factory | 3 |
-| `src/renderer/src/stores/app-store-context.tsx` | Provider + `useAppStore(selector)` hook | 3 |
-| `DESIGN.md` | Recorded design tokens and rules | 4 |
-| `src/renderer/index.html` | HTML entry with CSP | 4 |
-| `src/renderer/src/env.d.ts` | Vite client types + `window.storageiq` typing | 4 |
-| `src/renderer/src/styles/global.css` | Tailwind entry + light/dark tokens | 4 |
-| `src/renderer/src/main.tsx` | React root | 4 |
-| `src/renderer/src/App.tsx` (+ test) | Shell layout | 4 |
-| `src/renderer/src/components/WelcomePanel.tsx` | Folder selection panel | 4 |
-| `src/renderer/src/components/StatusBar.tsx` | Target + version | 4 |
-| `playwright.config.ts`, `e2e/app.spec.ts` | Electron E2E smoke tests | 5 |
-| `electron-builder.yml` | NSIS x64 per-user installer | 6 |
-| `.github/workflows/ci.yml`, `README.md` | CI and contributor docs | 7 |
-| `docs/ROADMAP.md` | Mark Phase 1 complete | 7 |
+| File                                                                                      | Responsibility                                                               | Task |
+| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ---- |
+| `package.json`, `package-lock.json`                                                       | Scripts, metadata, dependencies                                              | 1    |
+| `tsconfig.json`, `tsconfig.node.json`, `tsconfig.web.json`                                | Strict TS for node-side and web-side code                                    | 1    |
+| `electron.vite.config.ts`                                                                 | Build config for main/preload/renderer + aliases                             | 1    |
+| `vitest.config.ts`                                                                        | Unit test runner config                                                      | 1    |
+| `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`, `.editorconfig`, `.gitignore` | Quality gates                                                                | 1    |
+| `LICENSE`                                                                                 | MIT                                                                          | 1    |
+| `src/shared/ipc-contract.ts`                                                              | Channel → args/result types, `AppInfo`, `SelectFolderResult`, `StorageIQApi` | 1    |
+| `src/main/security/trusted-url.ts` (+ test)                                               | Is a URL our own renderer?                                                   | 1    |
+| `src/renderer/src/test/setup.ts`                                                          | jest-dom matchers + RTL cleanup                                              | 1    |
+| `src/main/ipc/register.ts` (+ test)                                                       | Register typed handlers with sender validation                               | 2    |
+| `src/main/ipc/app-handlers.ts` (+ test)                                                   | `app:get-info`, `dialog:select-folder`                                       | 2    |
+| `src/main/window-options.ts` (+ test)                                                     | Pure, security-critical BrowserWindow options                                | 2    |
+| `src/main/window.ts`                                                                      | Create window, lock navigation, load renderer                                | 2    |
+| `src/main/index.ts`                                                                       | App lifecycle, single-instance lock, wiring                                  | 2    |
+| `src/preload/index.ts`                                                                    | `contextBridge` → `window.storageiq`                                         | 2    |
+| `src/renderer/src/test/fake-api.ts`                                                       | Fake `StorageIQApi` for renderer tests                                       | 3    |
+| `src/renderer/src/stores/app-store.ts` (+ test)                                           | Zustand vanilla store factory                                                | 3    |
+| `src/renderer/src/stores/app-store-context.tsx`                                           | Provider + `useAppStore(selector)` hook                                      | 3    |
+| `DESIGN.md`                                                                               | Recorded design tokens and rules                                             | 4    |
+| `src/renderer/index.html`                                                                 | HTML entry with CSP                                                          | 4    |
+| `src/renderer/src/env.d.ts`                                                               | Vite client types + `window.storageiq` typing                                | 4    |
+| `src/renderer/src/styles/global.css`                                                      | Tailwind entry + light/dark tokens                                           | 4    |
+| `src/renderer/src/main.tsx`                                                               | React root                                                                   | 4    |
+| `src/renderer/src/App.tsx` (+ test)                                                       | Shell layout                                                                 | 4    |
+| `src/renderer/src/components/WelcomePanel.tsx`                                            | Folder selection panel                                                       | 4    |
+| `src/renderer/src/components/StatusBar.tsx`                                               | Target + version                                                             | 4    |
+| `playwright.config.ts`, `e2e/app.spec.ts`                                                 | Electron E2E smoke tests                                                     | 5    |
+| `electron-builder.yml`                                                                    | NSIS x64 per-user installer                                                  | 6    |
+| `.github/workflows/ci.yml`, `README.md`                                                   | CI and contributor docs                                                      | 7    |
+| `docs/ROADMAP.md`                                                                         | Mark Phase 1 complete                                                        | 7    |
 
 ---
 
 ### Task 1: Repository, toolchain & shared IPC contract
 
 **Files:**
+
 - Create: `package.json`, `tsconfig.json`, `tsconfig.node.json`, `tsconfig.web.json`, `electron.vite.config.ts`, `vitest.config.ts`, `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`, `.editorconfig`, `.gitignore`, `LICENSE`
 - Create: `src/shared/ipc-contract.ts`, `src/main/security/trusted-url.ts`, `src/renderer/src/test/setup.ts`
 - Test: `src/main/security/trusted-url.test.ts`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces:
   - `AppInfo { name; version; platform; arch; electronVersion }` (all `string`)
@@ -508,10 +510,12 @@ git commit -m "chore: scaffold toolchain and shared IPC contract"
 ### Task 2: Main process & preload bridge
 
 **Files:**
+
 - Create: `src/main/ipc/register.ts`, `src/main/ipc/app-handlers.ts`, `src/main/window-options.ts`, `src/main/window.ts`, `src/main/index.ts`, `src/preload/index.ts`
 - Test: `src/main/ipc/register.test.ts`, `src/main/ipc/app-handlers.test.ts`, `src/main/window-options.test.ts`
 
 **Interfaces:**
+
 - Consumes: `IpcChannel`, `IpcArgs`, `IpcResult`, `AppInfo`, `StorageIQApi` and `isTrustedRendererUrl` from Task 1.
 - Produces:
   - `IpcHandlerMap` (one handler per contract channel), `IpcRegistrar`, `UntrustedSenderError`
@@ -529,7 +533,12 @@ git commit -m "chore: scaffold toolchain and shared IPC contract"
 import type { IpcMainInvokeEvent } from 'electron'
 import { describe, expect, it } from 'vitest'
 import type { AppInfo } from '@shared/ipc-contract'
-import { type IpcHandlerMap, type IpcRegistrar, registerIpcHandlers, UntrustedSenderError } from './register'
+import {
+  type IpcHandlerMap,
+  type IpcRegistrar,
+  registerIpcHandlers,
+  UntrustedSenderError,
+} from './register'
 
 type Listener = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
 
@@ -573,7 +582,9 @@ describe('registerIpcHandlers', () => {
     const ipc = createFakeIpc()
     registerIpcHandlers(ipc, handlers, isTrusted)
     const listener = ipc.listeners.get('app:get-info')
-    await expect(Promise.resolve(listener?.(eventFrom('app://trusted/index.html')))).resolves.toEqual(appInfo)
+    await expect(
+      Promise.resolve(listener?.(eventFrom('app://trusted/index.html'))),
+    ).resolves.toEqual(appInfo)
   })
 
   it('rejects calls from untrusted senders without running the handler', () => {
@@ -713,7 +724,10 @@ export type IpcHandlerMap = { [C in IpcChannel]: IpcHandler<C> }
 
 /** The part of `ipcMain` this module needs; lets tests pass a fake. */
 export interface IpcRegistrar {
-  handle(channel: string, listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown): void
+  handle(
+    channel: string,
+    listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown,
+  ): void
 }
 
 export class UntrustedSenderError extends Error {
@@ -752,7 +766,10 @@ import type { IpcHandlerMap } from './register'
 export interface AppHandlerDeps {
   app: { getName(): string; getVersion(): string }
   dialog: {
-    showOpenDialog(window: BrowserWindow, options: OpenDialogOptions): Promise<OpenDialogReturnValue>
+    showOpenDialog(
+      window: BrowserWindow,
+      options: OpenDialogOptions,
+    ): Promise<OpenDialogReturnValue>
   }
   getMainWindow(): BrowserWindow | null
   runtime: { platform: string; arch: string; electronVersion: string }
@@ -850,7 +867,10 @@ export function createMainWindow(config: MainWindowConfig): BrowserWindow {
   )
 
   const isTrusted = (url: string) =>
-    isTrustedRendererUrl(url, { rendererRoot: config.rendererRoot, devServerUrl: config.devServerUrl })
+    isTrustedRendererUrl(url, {
+      rendererRoot: config.rendererRoot,
+      devServerUrl: config.devServerUrl,
+    })
 
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', (event) => {
@@ -979,10 +999,12 @@ git commit -m "feat(main): secure window, typed IPC registration and preload bri
 ### Task 3: Renderer state (Zustand)
 
 **Files:**
+
 - Create: `src/renderer/src/test/fake-api.ts`, `src/renderer/src/stores/app-store.ts`, `src/renderer/src/stores/app-store-context.tsx`
 - Test: `src/renderer/src/stores/app-store.test.ts`
 
 **Interfaces:**
+
 - Consumes: `AppInfo`, `SelectFolderResult`, `StorageIQApi` (Task 1).
 - Produces:
   - `TEST_APP_INFO: AppInfo`, `createFakeApi(overrides?: Partial<StorageIQApi>): StorageIQApi`
@@ -1251,10 +1273,12 @@ git commit -m "feat(renderer): app store with app info and folder selection"
 ### Task 4: Design tokens & app shell UI
 
 **Files:**
+
 - Create: `DESIGN.md`, `src/renderer/index.html`, `src/renderer/src/env.d.ts`, `src/renderer/src/styles/global.css`, `src/renderer/src/main.tsx`, `src/renderer/src/App.tsx`, `src/renderer/src/components/WelcomePanel.tsx`, `src/renderer/src/components/StatusBar.tsx`
 - Test: `src/renderer/src/App.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `createAppStore`, `AppStoreProvider`, `useAppStore` (Task 3); `createFakeApi`, `TEST_APP_INFO` (Task 3); `WINDOW_BACKGROUND` values (Task 2).
 - Produces: Tailwind token utilities used by every later phase: `bg-app`, `bg-panel`, `bg-sunken`, `border-line`, `text-ink`, `text-ink-muted`, `bg-accent`, `hover:bg-accent-hover`, `text-on-accent`, `text-danger`, `border-danger`, `font-display`, `font-mono`, `rounded-control`, `rounded-panel`.
 
@@ -1279,18 +1303,18 @@ Mode: **Operate.** StorageIQ is a tool. Clarity, scannability and Windows-native
 
 ## Tokens (source: `src/renderer/src/styles/global.css`)
 
-| Token | Light | Dark | Utility |
-|---|---|---|---|
-| `--surface-app` | `#f6f7f7` | `#161a1b` | `bg-app` (must equal `WINDOW_BACKGROUND` in `src/main/window-options.ts`) |
-| `--surface-panel` | `#ffffff` | `#1e2324` | `bg-panel` |
-| `--surface-sunken` | `#eef0f0` | `#121516` | `bg-sunken` |
-| `--border` | `#dde1e1` | `#2e3536` | `border-line` |
-| `--text` | `#1b2122` | `#e6eaea` | `text-ink` |
-| `--text-muted` | `#5b6667` | `#9aa5a6` | `text-ink-muted` |
-| `--accent` | `#0f7a73` | `#4fc1b6` | `bg-accent` |
-| `--accent-hover` | `#0c655f` | `#6fd0c6` | `hover:bg-accent-hover` |
-| `--accent-contrast` | `#ffffff` | `#062421` | `text-on-accent` |
-| `--danger` | `#b3261e` | `#f2b8b5` | `text-danger`, `border-danger` |
+| Token               | Light     | Dark      | Utility                                                                   |
+| ------------------- | --------- | --------- | ------------------------------------------------------------------------- |
+| `--surface-app`     | `#f6f7f7` | `#161a1b` | `bg-app` (must equal `WINDOW_BACKGROUND` in `src/main/window-options.ts`) |
+| `--surface-panel`   | `#ffffff` | `#1e2324` | `bg-panel`                                                                |
+| `--surface-sunken`  | `#eef0f0` | `#121516` | `bg-sunken`                                                               |
+| `--border`          | `#dde1e1` | `#2e3536` | `border-line`                                                             |
+| `--text`            | `#1b2122` | `#e6eaea` | `text-ink`                                                                |
+| `--text-muted`      | `#5b6667` | `#9aa5a6` | `text-ink-muted`                                                          |
+| `--accent`          | `#0f7a73` | `#4fc1b6` | `bg-accent`                                                               |
+| `--accent-hover`    | `#0c655f` | `#6fd0c6` | `hover:bg-accent-hover`                                                   |
+| `--accent-contrast` | `#ffffff` | `#062421` | `text-on-accent`                                                          |
+| `--danger`          | `#b3261e` | `#f2b8b5` | `text-danger`, `border-danger`                                            |
 
 Typography: body 14 px / 1.43 `Segoe UI Variable Text`; headings `Segoe UI Variable Display`; status text 12 px; paths `Cascadia Mono` 13 px.
 
@@ -1642,6 +1666,7 @@ Expected: 28 tests pass (25 + 3) and every command exits 0.
 
 Run: `npm run dev`
 Check each of the following:
+
 1. The window opens without a white flash and is titled "StorageIQ".
 2. The heading, body copy and teal "Choose folder" button render in Segoe UI Variable.
 3. The status bar shows "No folder selected" and "StorageIQ 0.1.0".
@@ -1665,9 +1690,11 @@ git commit -m "feat(renderer): design tokens and app shell with folder selection
 ### Task 5: End-to-end smoke test
 
 **Files:**
+
 - Create: `playwright.config.ts`, `e2e/app.spec.ts`
 
 **Interfaces:**
+
 - Consumes: the built app (`out/`), the UI strings from Global Constraints, and the `dialog.showOpenDialog` lookup made at call time in `createAppHandlers` (Task 2). That lookup is what lets the test replace the dialog.
 - Produces: `npm run test:e2e` as a CI gate.
 
@@ -1771,9 +1798,11 @@ git commit -m "test(e2e): Playwright smoke tests for launch, security and folder
 ### Task 6: Packaging (NSIS, x64, per-user)
 
 **Files:**
+
 - Create: `electron-builder.yml`
 
 **Interfaces:**
+
 - Consumes: `npm run build` output in `out/`; `package.json` `version`, `productName`, `author`, `description`.
 - Produces: `release/0.1.0/StorageIQ-Setup-0.1.0-x64.exe` via `npm run dist`.
 
@@ -1846,10 +1875,12 @@ git commit -m "build: NSIS per-user x64 installer via electron-builder"
 ### Task 7: CI workflow, README & roadmap update
 
 **Files:**
+
 - Create: `.github/workflows/ci.yml`, `README.md`
 - Modify: `docs/ROADMAP.md` (status table + Phase 1 checklist)
 
 **Interfaces:**
+
 - Consumes: npm scripts from Task 1, `test:e2e` from Task 5, `electron-builder.yml` from Task 6.
 - Produces: a required CI check on `main` and pull requests, plus an uploaded installer artifact.
 
@@ -1952,6 +1983,7 @@ Security baseline: context isolation, sandboxed renderer, no Node integration, s
 - [ ] **Step 3: Update the roadmap**
 
 In `docs/ROADMAP.md`:
+
 - Set **Current phase** to `Phase 2 — Filesystem Scanner (next)` and **Last updated** to the completion date.
 - Change the Phase 1 status cell to `**Done**` and Phase 2 to `**Next**`.
 - Tick every Phase 1 task checkbox.
