@@ -18,12 +18,15 @@ npm test             # unit tests (Vitest)
 npm run test:e2e     # build, then run Electron end-to-end tests (Playwright)
 npm run typecheck
 npm run lint
+npm run format:check
+npm run build        # production build into out/
 npm run dist         # build the Windows installer into release/<version>/
 ```
 
 Notes:
 
 - If `npm run dev` or the app crashes immediately as plain Node, your shell has `ELECTRON_RUN_AS_NODE` set. Remove it (PowerShell: `Remove-Item Env:ELECTRON_RUN_AS_NODE`).
+- `npm run test:e2e` opens a real window, so it needs an interactive desktop session (it is not headless).
 - Run the unit tests from PowerShell or cmd, not Git Bash.
 
 Installers are currently unsigned, so Windows SmartScreen will warn on first run.
