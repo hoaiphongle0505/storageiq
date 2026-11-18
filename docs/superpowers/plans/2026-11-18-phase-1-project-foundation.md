@@ -11,6 +11,8 @@
 ## Global Constraints
 
 - Node.js 22 LTS or newer (`engines.node >= 22`); npm is the package manager and `package-lock.json` is committed.
+- `@types/node` stays on the major that matches the Node runtime inside the installed Electron (Electron 45 → Node 24 → `@types/node@^24`), not the latest major.
+- Amendment (Task 1 review, 2026-11-18): `isTrustedRendererUrl` must never throw. A malformed `devServerUrl` or an unconvertible `file:` URL returns `false`. "Outside the root" means `relative === '..'` or `relative.startsWith('..' + path.sep)`, so a folder named `..assets` inside the renderer root is still trusted. Tests cover all three cases.
 - Install each dependency's current stable release. If npm reports a peer-dependency conflict, install the highest version that satisfies the peer range (`npm view <pkg> peerDependencies`). Never use `--force` or `--legacy-peer-deps`.
 - Target Windows 10 1809+ / Windows 11, x64 only. License: MIT. appId `io.github.storageiq.app`. productName `StorageIQ`. Version `0.1.0`.
 - Renderer security: `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`, strict CSP, no `window.open`, no foreign navigation, no `<webview>`. Every IPC handler checks the sender URL.
@@ -30,7 +32,7 @@
 | `package.json`, `package-lock.json`                                                       | Scripts, metadata, dependencies                                              | 1    |
 | `tsconfig.json`, `tsconfig.node.json`, `tsconfig.web.json`                                | Strict TS for node-side and web-side code                                    | 1    |
 | `electron.vite.config.ts`                                                                 | Build config for main/preload/renderer + aliases                             | 1    |
-| `vitest.config.ts`                                                                        | Unit test runner config                                                      | 1    |
+| `vitest.config.mts`                                                                        | Unit test runner config                                                      | 1    |
 | `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`, `.editorconfig`, `.gitignore` | Quality gates                                                                | 1    |
 | `LICENSE`                                                                                 | MIT                                                                          | 1    |
 | `src/shared/ipc-contract.ts`                                                              | Channel → args/result types, `AppInfo`, `SelectFolderResult`, `StorageIQApi` | 1    |
@@ -64,7 +66,7 @@
 
 **Files:**
 
-- Create: `package.json`, `tsconfig.json`, `tsconfig.node.json`, `tsconfig.web.json`, `electron.vite.config.ts`, `vitest.config.ts`, `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`, `.editorconfig`, `.gitignore`, `LICENSE`
+- Create: `package.json`, `tsconfig.json`, `tsconfig.node.json`, `tsconfig.web.json`, `electron.vite.config.ts`, `vitest.config.mts`, `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`, `.editorconfig`, `.gitignore`, `LICENSE`
 - Create: `src/shared/ipc-contract.ts`, `src/main/security/trusted-url.ts`, `src/renderer/src/test/setup.ts`
 - Test: `src/main/security/trusted-url.test.ts`
 
@@ -169,7 +171,7 @@ Expected: install completes with no `ERESOLVE` errors. If one appears, follow th
     "src/shared/**/*",
     "e2e/**/*",
     "electron.vite.config.ts",
-    "vitest.config.ts",
+    "vitest.config.mts",
     "playwright.config.ts"
   ]
 }
@@ -232,7 +234,7 @@ export default defineConfig({
 })
 ```
 
-`vitest.config.ts`:
+`vitest.config.mts`:
 
 ```ts
 import { resolve } from 'node:path'
