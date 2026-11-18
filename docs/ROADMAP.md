@@ -24,9 +24,9 @@ In scope:
 | Capability                                                                                  | Phase |
 | ------------------------------------------------------------------------------------------- | ----- |
 | Secure Electron shell, typed IPC, design tokens, tests, installer, CI                       | 1     |
-| Pick a drive or a folder to scan                                                            | 2     |
-| Recursive traversal without following junctions/symlinks                                    | 2     |
-| Folder size (logical bytes), file count and folder count per folder                         | 2     |
+| Pick a drive or a folder to scan                                                            | 2a    |
+| Recursive traversal without following junctions/symlinks                                    | 2a    |
+| Folder size (logical bytes), file count and folder count per folder                         | 2a    |
 | Live progress (files, folders, bytes, current path, elapsed time)                           | 2a    |
 | Largest folders shown while the scan is still running                                       | 2a, 3 |
 | Cancel a running scan                                                                       | 2a    |
@@ -71,7 +71,7 @@ Key decisions (ADR-style; change only with a recorded reason):
 3. **One typed IPC contract** (`src/shared/ipc-contract.ts`) defines every channel's argument and result types. The main process registers handlers against it, and the preload exposes an API typed from it, so a channel mismatch fails at compile time.
 4. **Main-process code depends on interfaces, not on Electron directly** (factories receive `dialog`, `app`, `ipcMain`), so it can be unit-tested in Node without Electron.
 5. **Scanner runs in an Electron `utilityProcess`** (Phase 2), not in main and not in the renderer. A heavy scan can never freeze the window, and a scanner crash cannot take down the app. It traverses with `fs.promises.opendir` + `lstat` (streamed directory reads, metadata only, so it never downloads OneDrive placeholders) and does not follow reparse points. About every 250 ms it sends progress plus a snapshot of the largest folders found so far, so the tree can draw during the scan. From Phase 2b, koffi (a prebuilt FFI library) reads Windows file attributes to detect online-only cloud files.
-6. **Zustand vanilla stores built by a factory with an injected API**, so store logic can be tested without Electron. Components use `useStore(store, selector)`.
+6. **Zustand vanilla stores built by a factory with an injected API**, so store logic can be tested without Electron. Components use `useAppStore(selector)`, a typed hook built on Zustand's `useStore`.
 7. **SQLite is delayed until Phase 7.** The MVP keeps scan results in memory. The planned engine is better-sqlite3 (synchronous, fast, and rebuilt for Electron by electron-builder's `install-app-deps`).
 8. **Packaging:** electron-builder with an NSIS per-user installer for x64. It needs no admin rights, which matches the consumer audience.
 
@@ -109,8 +109,6 @@ StorageIQ/
 
 | #   | Phase                        | Status                                                                                                                                               | Exit criterion                                                                                                                                                                                          |
 | --- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| #   | Phase                        | Status                                                                                                                                               | Exit criterion                                                                                                                                                                                          |
-| --- | ---                          | ---                                                                                                                                                  | ---                                                                                                                                                                                                     |
 | 1   | Project Foundation           | **Done** (automated gates green; owner's manual UI and installer check pending) — [plan](superpowers/plans/2026-11-18-phase-1-project-foundation.md) | Secure app shell launches, picks a folder through typed IPC, all checks green in CI, NSIS installer builds                                                                                              |
 | 2a  | Core Scanner                 | **Next**                                                                                                                                             | Scans a real drive in a utilityProcess; progress plus a largest-folders snapshot about every 250 ms; cancel; unreadable folders listed; removable drives listed; CI reports installer size and idle RAM |
 | 2b  | Honest Totals                | Not started                                                                                                                                          | Online-only (cloud) files excluded from on-disk size and never downloaded; hardlinks counted once; reconciliation line vs. Windows' used space; FindFirstFileExW speed measured                         |
@@ -150,6 +148,8 @@ Deviations from the plan (made after reviews, approved by the owner):
 - Main-process hardening: fail fast on load errors, navigation lock on every webContents, IPC accepted only from the main window's top frame, permissions denied, explicit `webviewTag` and `nodeIntegrationInSubFrames` false.
 - E2E removes `ELECTRON_RUN_AS_NODE` from the launch environment.
 - The Dismiss button grew to a 24×24 px target (WCAG 2.5.8).
+- CI runs Node 24 (the Node inside Electron 45) so tests match the runtime; `engines.node` stays `>= 22`.
+- Electron fuses are set in `electron-builder.yml` (no `runAsNode`, no Node CLI/inspect flags, ASAR integrity, load only from ASAR, cookie encryption).
 
 ### Release checklist (before first public release, not tied to a phase)
 
@@ -158,3 +158,5 @@ Decided before the first public build, at the end of Phase 4:
 - [ ] Custom app icon (`build/icon.ico`)
 - [ ] Code signing: apply to the SignPath Foundation (free signing for open-source projects); if declined, use Azure Trusted Signing
 - [ ] Official winget package under the StorageIQ name
+- [ ] Decide whether uninstall removes `%APPDATA%\StorageIQ` (kept by default today)
+- [ ] Decide whether the installer keeps `allowToChangeInstallationDirectory` (enabled today)

@@ -2022,6 +2022,6 @@ git commit -m "ci: Windows CI pipeline, README and Phase 1 completion"
 4. The user can choose a folder through the native dialog. The path appears in the panel and the status bar. Cancel keeps the previous choice, and a failed picker shows a dismissible, plain-language error.
 5. The status bar shows `StorageIQ <version>`, using the version the main process reports.
 6. The UI follows the Windows light/dark setting live, is fully keyboard-operable with a visible focus ring, and meets WCAG 2.2 AA text contrast.
-7. `format:check`, `lint`, `typecheck`, 28 unit tests and 3 E2E tests pass locally and in GitHub Actions on `windows-latest`.
+7. `format:check`, `lint`, `typecheck`, 40+ unit tests and 3 E2E tests pass locally and in GitHub Actions on `windows-latest`.
 8. `npm run dist` produces `StorageIQ-Setup-0.1.0-x64.exe`. It installs per-user without a UAC prompt, enforces a single instance, packages only `out/` and `package.json`, and uninstalls cleanly.
 9. `docs/ROADMAP.md` marks Phase 1 done and names Phase 2 as next.
