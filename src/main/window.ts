@@ -1,12 +1,24 @@
 import path from 'node:path'
-import { BrowserWindow, nativeTheme } from 'electron'
-import { isTrustedRendererUrl } from './security/trusted-url'
+import { app, BrowserWindow, dialog, nativeTheme } from 'electron'
+import { shouldTreatAsFatalLoadFailure } from './load-failure'
 import { createMainWindowOptions } from './window-options'
 
 export interface MainWindowConfig {
   preloadPath: string
   rendererRoot: string
   devServerUrl?: string
+}
+
+let failing = false
+
+function failStartup(detail: string): void {
+  if (failing) return // did-fail-load and the load promise both report the same failure
+  failing = true
+  dialog.showErrorBox(
+    'StorageIQ could not start',
+    `StorageIQ could not load its window and will close.\n\n${detail}`,
+  )
+  app.quit()
 }
 
 export function createMainWindow(config: MainWindowConfig): BrowserWindow {
@@ -17,17 +29,16 @@ export function createMainWindow(config: MainWindowConfig): BrowserWindow {
     }),
   )
 
-  const isTrusted = (url: string) =>
-    isTrustedRendererUrl(url, {
-      rendererRoot: config.rendererRoot,
-      devServerUrl: config.devServerUrl,
-    })
-
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  window.webContents.on('will-navigate', (event) => {
-    if (!isTrusted(event.url)) {
-      event.preventDefault()
-    }
+  window.webContents.on(
+    'did-fail-load',
+    (_event, errorCode, errorDescription, _url, isMainFrame) => {
+      if (shouldTreatAsFatalLoadFailure(errorCode, isMainFrame)) {
+        failStartup(errorDescription)
+      }
+    },
+  )
+  window.webContents.on('render-process-gone', (_event, details) => {
+    failStartup(`The window process stopped unexpectedly (${details.reason}).`)
   })
   window.once('ready-to-show', () => window.show())
 
@@ -35,7 +46,7 @@ export function createMainWindow(config: MainWindowConfig): BrowserWindow {
     ? window.loadURL(config.devServerUrl)
     : window.loadFile(path.join(config.rendererRoot, 'index.html'))
   load.catch((error: unknown) => {
-    console.error('StorageIQ: failed to load the renderer', error)
+    failStartup(error instanceof Error ? error.message : String(error))
   })
 
   return window

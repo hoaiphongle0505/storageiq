@@ -27,15 +27,15 @@ export class UntrustedSenderError extends Error {
 export function registerIpcHandlers(
   ipc: IpcRegistrar,
   handlers: IpcHandlerMap,
-  isTrustedSender: (url: string) => boolean,
+  isTrustedSender: (event: IpcMainInvokeEvent) => boolean,
 ): void {
   for (const channel of Object.keys(handlers) as IpcChannel[]) {
     const handler = handlers[channel] as (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
     ipc.handle(channel, (event, ...args) => {
-      const url = event.senderFrame?.url ?? ''
-      if (!isTrustedSender(url)) {
-        throw new UntrustedSenderError(channel, url)
+      if (!isTrustedSender(event)) {
+        throw new UntrustedSenderError(channel, event.senderFrame?.url ?? '')
       }
+      // Renderer arguments are untrusted: validate them per channel once a channel takes arguments.
       return handler(event, ...args)
     })
   }

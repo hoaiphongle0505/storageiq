@@ -22,6 +22,8 @@ export function createMainWindowOptions(input: {
       sandbox: true,
       nodeIntegration: false,
       webSecurity: true,
+      webviewTag: false,
+      nodeIntegrationInSubFrames: false,
       spellcheck: false,
     },
   }

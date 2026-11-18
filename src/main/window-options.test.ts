@@ -10,6 +10,8 @@ describe('createMainWindowOptions', () => {
       sandbox: true,
       nodeIntegration: false,
       webSecurity: true,
+      webviewTag: false,
+      nodeIntegrationInSubFrames: false,
     })
   })
 

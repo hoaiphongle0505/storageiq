@@ -1,5 +1,5 @@
 import type { IpcMainInvokeEvent } from 'electron'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { AppInfo } from '@shared/ipc-contract'
 import {
   type IpcHandlerMap,
@@ -37,7 +37,8 @@ function eventFrom(url: string): IpcMainInvokeEvent {
   return { senderFrame: { url } } as unknown as IpcMainInvokeEvent
 }
 
-const isTrusted = (url: string) => url === 'app://trusted/index.html'
+const isTrusted = (event: IpcMainInvokeEvent) =>
+  event.senderFrame?.url === 'app://trusted/index.html'
 
 describe('registerIpcHandlers', () => {
   it('registers exactly one listener per contract channel', () => {
@@ -57,8 +58,10 @@ describe('registerIpcHandlers', () => {
 
   it('rejects calls from untrusted senders without running the handler', () => {
     const ipc = createFakeIpc()
-    registerIpcHandlers(ipc, handlers, isTrusted)
+    const getInfo = vi.fn(() => appInfo)
+    registerIpcHandlers(ipc, { ...handlers, 'app:get-info': getInfo }, isTrusted)
     const listener = ipc.listeners.get('app:get-info')
     expect(() => listener?.(eventFrom('https://evil.example/'))).toThrow(UntrustedSenderError)
+    expect(getInfo).not.toHaveBeenCalled()
   })
 })
