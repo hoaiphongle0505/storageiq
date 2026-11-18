@@ -22,7 +22,13 @@ StorageIQ scans a drive or folder and shows, clearly and quickly, where the spac
 
 ## Positioning
 
-A free, MIT-licensed, open-source alternative to paid disk analyzers. It offers the features those tools sell in paid tiers (largest files, treemap, export, history, duplicates) in a modern interface written for non-experts.
+"Shows where your disk space went, and explains it in plain words." This was confirmed on 2026-11-18 after research into user reviews; see internal research notes.
+
+- **Explains:** plain-language labels say what well-known space hogs are and whether they are safe to clean up.
+- **Honest totals:** online-only cloud files never count as space on disk, hardlinks are counted once, and the app shows how its total compares with the used space Windows reports.
+- **Free and open source:** MIT licensed, no nags, no account. It includes features that paid disk analyzers keep in paid tiers.
+
+No claims about scan speed (the fastest approach needs admin rights, which we rule out), and marketing never names a competitor.
 
 ## Operating Context
 

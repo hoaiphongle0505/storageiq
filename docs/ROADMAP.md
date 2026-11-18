@@ -2,14 +2,18 @@
 
 Living document owned by the technical lead. Update it whenever a phase completes: tick tasks, record decisions, and name the next phase.
 
-**Current phase:** Phase 1 — Project Foundation (planned, not started)
+**Current phase:** Phase 1 — Project Foundation (in progress: T1–T3 done)
 **Last updated:** 2026-11-18
 
 ---
 
 ## Product Vision
 
-StorageIQ is a free, open-source Windows disk-space analyzer for everyday users. Point it at a drive or folder and it shows, in plain language, which folders and files are using the space, with a fast, modern interface that stays responsive during a scan. It aims to cover what paid disk analyzers sell (tree view, largest files, treemap, export, history, duplicates) at no cost and under the MIT license.
+**"Shows where your disk space went, and explains it in plain words."**
+
+StorageIQ is a free, open-source Windows disk-space analyzer for everyday users. Point it at a drive or folder and it shows which folders and files are using the space and explains the well-known ones in plain language. Its totals are honest: they match what Windows reports, or the app explains the difference. It covers what paid disk analyzers sell (tree view, largest files, treemap, duplicates, history, export) at no cost and under the MIT license. It has no nags and needs no account. We make no speed claims and never name competitors in marketing.
+
+Scope and ordering follow the research-driven [Roadmap v2 spec](superpowers/specs/2026-11-18-roadmap-v2-research-driven-design.md), approved 2026-11-18.
 
 Target user: general consumers on Windows 10 1809+ / Windows 11 (x64) who have run out of disk space. Full product record: [PRODUCT.md](../PRODUCT.md).
 
@@ -17,19 +21,25 @@ Target user: general consumers on Windows 10 1809+ / Windows 11 (x64) who have r
 
 In scope:
 
-| Capability                                                            | Phase |
-| --------------------------------------------------------------------- | ----- |
-| Secure Electron shell, typed IPC, design tokens, tests, installer, CI | 1     |
-| Pick a drive or a folder to scan                                      | 2     |
-| Recursive traversal without following junctions/symlinks              | 2     |
-| Folder size (logical bytes), file count and folder count per folder   | 2     |
-| Live progress (files, folders, bytes, current path, elapsed time)     | 2     |
-| Cancel a running scan                                                 | 2     |
-| Report folders that could not be read (access denied, etc.)           | 2     |
-| Tree view sorted by size, with lazy expansion, % of parent, counts    | 3     |
-| Largest files view (top N, path, size, modified date)                 | 4     |
+| Capability                                                                                  | Phase |
+| ------------------------------------------------------------------------------------------- | ----- |
+| Secure Electron shell, typed IPC, design tokens, tests, installer, CI                       | 1     |
+| Pick a drive or a folder to scan                                                            | 2     |
+| Recursive traversal without following junctions/symlinks                                    | 2     |
+| Folder size (logical bytes), file count and folder count per folder                         | 2     |
+| Live progress (files, folders, bytes, current path, elapsed time)                           | 2a    |
+| Largest folders shown while the scan is still running                                       | 2a, 3 |
+| Cancel a running scan                                                                       | 2a    |
+| Report folders that could not be read (access denied, etc.)                                 | 2a    |
+| Online-only (OneDrive) files kept out of on-disk totals, never downloaded                   | 2b    |
+| Hardlinks counted once                                                                      | 2b    |
+| "Windows reports X used; StorageIQ found Y" reconciliation                                  | 2b    |
+| Tree view sorted by size, with lazy expansion, % of parent, counts, "Open in Explorer"      | 3     |
+| Largest files view (top N, path, size, modified date)                                       | 4     |
+| Plain-language "what is this / is it safe to clean up" labels for about 30 known space hogs | 4     |
+| "Copy as CSV" for the visible list                                                          | 4     |
 
-Out of scope for the MVP: treemap, export, history/SQLite, duplicate finder, AI, deleting files, network shares/UNC paths, elevation, MFT/NTFS-journal fast scanning, ARM64, macOS/Linux.
+Out of scope for the MVP: treemap, full export, history/SQLite, duplicate finder, AI, deleting files, network shares/UNC paths, elevation, MFT/NTFS-journal fast scanning, ARM64, macOS/Linux.
 
 ## Architecture
 
@@ -60,7 +70,7 @@ Key decisions (ADR-style; change only with a recorded reason):
 2. **Security baseline:** `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`, strict CSP, navigation and `window.open` blocked, and every IPC call checks its sender origin. The renderer never gets raw `ipcRenderer`.
 3. **One typed IPC contract** (`src/shared/ipc-contract.ts`) defines every channel's argument and result types. The main process registers handlers against it, and the preload exposes an API typed from it, so a channel mismatch fails at compile time.
 4. **Main-process code depends on interfaces, not on Electron directly** (factories receive `dialog`, `app`, `ipcMain`), so it can be unit-tested in Node without Electron.
-5. **Scanner runs in an Electron `utilityProcess`** (Phase 2), not in main and not in the renderer. A heavy scan can never freeze the window, and a scanner crash cannot take down the app. It traverses with `fs.promises.opendir` (streamed directory reads, low memory), does not follow reparse points, and batches progress messages about every 100 ms.
+5. **Scanner runs in an Electron `utilityProcess`** (Phase 2), not in main and not in the renderer. A heavy scan can never freeze the window, and a scanner crash cannot take down the app. It traverses with `fs.promises.opendir` + `lstat` (streamed directory reads, metadata only, so it never downloads OneDrive placeholders) and does not follow reparse points. About every 250 ms it sends progress plus a snapshot of the largest folders found so far, so the tree can draw during the scan. From Phase 2b, koffi (a prebuilt FFI library) reads Windows file attributes to detect online-only cloud files.
 6. **Zustand vanilla stores built by a factory with an injected API**, so store logic can be tested without Electron. Components use `useStore(store, selector)`.
 7. **SQLite is delayed until Phase 7.** The MVP keeps scan results in memory. The planned engine is better-sqlite3 (synchronous, fast, and rebuilt for Electron by electron-builder's `install-app-deps`).
 8. **Packaging:** electron-builder with an NSIS per-user installer for x64. It needs no admin rights, which matches the consumer audience.
@@ -97,23 +107,26 @@ StorageIQ/
 
 ## Roadmap
 
-| #   | Phase              | Status                                                                           | Exit criterion                                                                                               |
-| --- | ------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| 1   | Project Foundation | **Planned** — [plan](superpowers/plans/2026-11-18-phase-1-project-foundation.md) | Secure app shell launches, picks a folder through typed IPC, all checks green in CI, NSIS installer builds   |
-| 2   | Filesystem Scanner | Not started                                                                      | Scans a real drive in a utilityProcess with live progress and cancel; totals match `dir /s` within tolerance |
-| 3   | Tree View          | Not started                                                                      | Virtualized, keyboard-navigable size-sorted tree over a 1M-entry scan at 60 fps                              |
-| 4   | Largest Files      | Not started                                                                      | Top-N largest files list with sort and "show in Explorer" — **MVP complete**                                 |
-| 5   | Treemap            | Not started                                                                      | Squarified treemap with drill-down synced to the tree                                                        |
-| 6   | Export             | Not started                                                                      | CSV and XLSX export of tree and largest files                                                                |
-| 7   | History            | Not started                                                                      | SQLite-persisted scans; compare two scans                                                                    |
-| 8   | Duplicate Finder   | Not started                                                                      | Size → partial hash → full hash pipeline, cancelable                                                         |
-| 9   | AI Features        | Not started                                                                      | Cleanup suggestions; local vs cloud decision recorded first                                                  |
+| #   | Phase                        | Status                                                                                            | Exit criterion                                                                                                                                                                                          |
+| --- | ---------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #   | Phase                        | Status                                                                                            | Exit criterion                                                                                                                                                                                          |
+| --- | ---                          | ---                                                                                               | ---                                                                                                                                                                                                     |
+| 1   | Project Foundation           | **In progress** (T1–T3 done) — [plan](superpowers/plans/2026-11-18-phase-1-project-foundation.md) | Secure app shell launches, picks a folder through typed IPC, all checks green in CI, NSIS installer builds                                                                                              |
+| 2a  | Core Scanner                 | Not started                                                                                       | Scans a real drive in a utilityProcess; progress plus a largest-folders snapshot about every 250 ms; cancel; unreadable folders listed; removable drives listed; CI reports installer size and idle RAM |
+| 2b  | Honest Totals                | Not started                                                                                       | Online-only (cloud) files excluded from on-disk size and never downloaded; hardlinks counted once; reconciliation line vs. Windows' used space; FindFirstFileExW speed measured                         |
+| 3   | Tree View                    | Not started                                                                                       | Virtualized, keyboard-navigable, size-sorted tree that grows during the scan; "Open in Explorer"; 1M entries at 60 fps                                                                                  |
+| 4   | Largest Files & Explanations | Not started                                                                                       | Largest-files list; plain-language labels for about 30 well-known space hogs in the tree and the list; "Copy as CSV" — **MVP complete**                                                                 |
+| 5   | Treemap                      | Not started                                                                                       | Squarified treemap as a secondary view, with drill-down synced to the tree                                                                                                                              |
+| 6   | Duplicate Finder             | Not started                                                                                       | Size → partial hash → full hash; cancelable; never deduplicates hardlinks                                                                                                                               |
+| 7   | History (light)              | Not started                                                                                       | SQLite remembers the last scan of each drive; shows "+X GB since last time"                                                                                                                             |
+| 8   | Export                       | Not started                                                                                       | CSV and XLSX export of the tree and the largest files                                                                                                                                                   |
+| 9   | AI Features                  | Not started                                                                                       | Explanations beyond the fixed dictionary; local-vs-cloud decision recorded first                                                                                                                        |
 
 ### Phase 1 — Project Foundation (task checklist)
 
-- [ ] T1 Repository, toolchain & shared IPC contract (trusted-URL policy)
-- [ ] T2 Main process & preload bridge (secure window, typed IPC, sender validation)
-- [ ] T3 Renderer state (Zustand store + React binding)
+- [x] T1 Repository, toolchain & shared IPC contract (trusted-URL policy)
+- [x] T2 Main process & preload bridge (secure window, typed IPC, sender validation; hardened after review)
+- [x] T3 Renderer state (Zustand store + React binding)
 - [ ] T4 Design tokens, DESIGN.md & app shell UI
 - [ ] T5 End-to-end smoke test (Playwright + Electron)
 - [ ] T6 Packaging (electron-builder NSIS x64, per-user)
@@ -121,5 +134,8 @@ StorageIQ/
 
 ### Release checklist (before first public release, not tied to a phase)
 
+Decided before the first public build, at the end of Phase 4:
+
 - [ ] Custom app icon (`build/icon.ico`)
-- [ ] Code-signing decision (unsigned installers trigger SmartScreen)
+- [ ] Code signing: apply to the SignPath Foundation (free signing for open-source projects); if declined, use Azure Trusted Signing
+- [ ] Official winget package under the StorageIQ name
