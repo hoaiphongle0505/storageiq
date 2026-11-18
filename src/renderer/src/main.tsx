@@ -10,6 +10,10 @@ if (!container) {
   throw new Error('StorageIQ: #root element is missing from index.html')
 }
 
+if (window.storageiq === undefined) {
+  throw new Error('StorageIQ: the preload bridge is missing')
+}
+
 const store = createAppStore(window.storageiq)
 
 createRoot(container).render(

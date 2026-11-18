@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { app, BrowserWindow, dialog, nativeTheme } from 'electron'
 import { shouldTreatAsFatalLoadFailure } from './load-failure'
-import { createMainWindowOptions } from './window-options'
+import { createMainWindowOptions, WINDOW_BACKGROUND } from './window-options'
 
 export interface MainWindowConfig {
   preloadPath: string
@@ -40,6 +40,12 @@ export function createMainWindow(config: MainWindowConfig): BrowserWindow {
   window.webContents.on('render-process-gone', (_event, details) => {
     failStartup(`The window process stopped unexpectedly (${details.reason}).`)
   })
+  const syncBackground = () =>
+    window.setBackgroundColor(
+      nativeTheme.shouldUseDarkColors ? WINDOW_BACKGROUND.dark : WINDOW_BACKGROUND.light,
+    )
+  nativeTheme.on('updated', syncBackground)
+  window.once('closed', () => nativeTheme.off('updated', syncBackground))
   window.once('ready-to-show', () => window.show())
 
   const load = config.devServerUrl
