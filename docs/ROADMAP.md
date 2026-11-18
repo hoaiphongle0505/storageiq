@@ -2,7 +2,7 @@
 
 Living document owned by the technical lead. Update it whenever a phase completes: tick tasks, record decisions, and name the next phase.
 
-**Current phase:** Phase 1 — Project Foundation (in progress: T1–T3 done)
+**Current phase:** Phase 2a — Core Scanner (next)
 **Last updated:** 2026-11-18
 
 ---
@@ -101,36 +101,55 @@ StorageIQ/
 │        └─ styles/                # Tailwind entry + tokens
 ├─ electron.vite.config.ts
 ├─ electron-builder.yml
-├─ vitest.config.ts · playwright.config.ts · eslint.config.mjs
+├─ vitest.config.mts · playwright.config.ts · eslint.config.mjs
 ├─ PRODUCT.md · DESIGN.md · README.md · LICENSE
 ```
 
 ## Roadmap
 
-| #   | Phase                        | Status                                                                                            | Exit criterion                                                                                                                                                                                          |
-| --- | ---------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| #   | Phase                        | Status                                                                                            | Exit criterion                                                                                                                                                                                          |
-| --- | ---                          | ---                                                                                               | ---                                                                                                                                                                                                     |
-| 1   | Project Foundation           | **In progress** (T1–T3 done) — [plan](superpowers/plans/2026-11-18-phase-1-project-foundation.md) | Secure app shell launches, picks a folder through typed IPC, all checks green in CI, NSIS installer builds                                                                                              |
-| 2a  | Core Scanner                 | Not started                                                                                       | Scans a real drive in a utilityProcess; progress plus a largest-folders snapshot about every 250 ms; cancel; unreadable folders listed; removable drives listed; CI reports installer size and idle RAM |
-| 2b  | Honest Totals                | Not started                                                                                       | Online-only (cloud) files excluded from on-disk size and never downloaded; hardlinks counted once; reconciliation line vs. Windows' used space; FindFirstFileExW speed measured                         |
-| 3   | Tree View                    | Not started                                                                                       | Virtualized, keyboard-navigable, size-sorted tree that grows during the scan; "Open in Explorer"; 1M entries at 60 fps                                                                                  |
-| 4   | Largest Files & Explanations | Not started                                                                                       | Largest-files list; plain-language labels for about 30 well-known space hogs in the tree and the list; "Copy as CSV" — **MVP complete**                                                                 |
-| 5   | Treemap                      | Not started                                                                                       | Squarified treemap as a secondary view, with drill-down synced to the tree                                                                                                                              |
-| 6   | Duplicate Finder             | Not started                                                                                       | Size → partial hash → full hash; cancelable; never deduplicates hardlinks                                                                                                                               |
-| 7   | History (light)              | Not started                                                                                       | SQLite remembers the last scan of each drive; shows "+X GB since last time"                                                                                                                             |
-| 8   | Export                       | Not started                                                                                       | CSV and XLSX export of the tree and the largest files                                                                                                                                                   |
-| 9   | AI Features                  | Not started                                                                                       | Explanations beyond the fixed dictionary; local-vs-cloud decision recorded first                                                                                                                        |
+| #   | Phase                        | Status                                                                                                                                               | Exit criterion                                                                                                                                                                                          |
+| --- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #   | Phase                        | Status                                                                                                                                               | Exit criterion                                                                                                                                                                                          |
+| --- | ---                          | ---                                                                                                                                                  | ---                                                                                                                                                                                                     |
+| 1   | Project Foundation           | **Done** (automated gates green; owner's manual UI and installer check pending) — [plan](superpowers/plans/2026-11-18-phase-1-project-foundation.md) | Secure app shell launches, picks a folder through typed IPC, all checks green in CI, NSIS installer builds                                                                                              |
+| 2a  | Core Scanner                 | **Next**                                                                                                                                             | Scans a real drive in a utilityProcess; progress plus a largest-folders snapshot about every 250 ms; cancel; unreadable folders listed; removable drives listed; CI reports installer size and idle RAM |
+| 2b  | Honest Totals                | Not started                                                                                                                                          | Online-only (cloud) files excluded from on-disk size and never downloaded; hardlinks counted once; reconciliation line vs. Windows' used space; FindFirstFileExW speed measured                         |
+| 3   | Tree View                    | Not started                                                                                                                                          | Virtualized, keyboard-navigable, size-sorted tree that grows during the scan; "Open in Explorer"; 1M entries at 60 fps                                                                                  |
+| 4   | Largest Files & Explanations | Not started                                                                                                                                          | Largest-files list; plain-language labels for about 30 well-known space hogs in the tree and the list; "Copy as CSV" — **MVP complete**                                                                 |
+| 5   | Treemap                      | Not started                                                                                                                                          | Squarified treemap as a secondary view, with drill-down synced to the tree                                                                                                                              |
+| 6   | Duplicate Finder             | Not started                                                                                                                                          | Size → partial hash → full hash; cancelable; never deduplicates hardlinks                                                                                                                               |
+| 7   | History (light)              | Not started                                                                                                                                          | SQLite remembers the last scan of each drive; shows "+X GB since last time"                                                                                                                             |
+| 8   | Export                       | Not started                                                                                                                                          | CSV and XLSX export of the tree and the largest files                                                                                                                                                   |
+| 9   | AI Features                  | Not started                                                                                                                                          | Explanations beyond the fixed dictionary; local-vs-cloud decision recorded first                                                                                                                        |
 
 ### Phase 1 — Project Foundation (task checklist)
 
 - [x] T1 Repository, toolchain & shared IPC contract (trusted-URL policy)
 - [x] T2 Main process & preload bridge (secure window, typed IPC, sender validation; hardened after review)
 - [x] T3 Renderer state (Zustand store + React binding)
-- [ ] T4 Design tokens, DESIGN.md & app shell UI
-- [ ] T5 End-to-end smoke test (Playwright + Electron)
-- [ ] T6 Packaging (electron-builder NSIS x64, per-user)
-- [ ] T7 CI workflow, README & roadmap update
+- [x] T4 Design tokens, DESIGN.md & app shell UI
+- [x] T5 End-to-end smoke test (Playwright + Electron)
+- [x] T6 Packaging (electron-builder NSIS x64, per-user)
+- [x] T7 CI workflow, README & roadmap update
+
+### Phase 1 — Outcome
+
+Installed versions: Electron 45.3.4 (Node 24.22.3), electron-vite 6.0.0, Vite 8.3.8, TypeScript 6.0.3, React 19.3.1, Tailwind 4.3.5, Zustand 5.1.0, Vitest 5.1.1, Playwright 1.65.1, electron-builder 26.18.0.
+
+Tests: 40 unit tests and 3 E2E tests.
+
+Installer: 115.7 MB, unsigned, default icon.
+
+CI: `.github/workflows/ci.yml` is written and parses, but is not yet verified on GitHub (no remote configured).
+
+Deviations from the plan (made after reviews, approved by the owner):
+
+- `vitest.config.mts` instead of `.ts` (Vite 8 ESM warning).
+- `isTrustedRendererUrl` hardened to never throw.
+- `@types/node` pinned to ^24 to match Electron's Node.
+- Main-process hardening: fail fast on load errors, navigation lock on every webContents, IPC accepted only from the main window's top frame, permissions denied, explicit `webviewTag` and `nodeIntegrationInSubFrames` false.
+- E2E removes `ELECTRON_RUN_AS_NODE` from the launch environment.
+- The Dismiss button grew to a 24×24 px target (WCAG 2.5.8).
 
 ### Release checklist (before first public release, not tied to a phase)
 
