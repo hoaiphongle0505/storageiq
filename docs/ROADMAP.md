@@ -17,17 +17,17 @@ Target user: general consumers on Windows 10 1809+ / Windows 11 (x64) who have r
 
 In scope:
 
-| Capability | Phase |
-|---|---|
-| Secure Electron shell, typed IPC, design tokens, tests, installer, CI | 1 |
-| Pick a drive or a folder to scan | 2 |
-| Recursive traversal without following junctions/symlinks | 2 |
-| Folder size (logical bytes), file count and folder count per folder | 2 |
-| Live progress (files, folders, bytes, current path, elapsed time) | 2 |
-| Cancel a running scan | 2 |
-| Report folders that could not be read (access denied, etc.) | 2 |
-| Tree view sorted by size, with lazy expansion, % of parent, counts | 3 |
-| Largest files view (top N, path, size, modified date) | 4 |
+| Capability                                                            | Phase |
+| --------------------------------------------------------------------- | ----- |
+| Secure Electron shell, typed IPC, design tokens, tests, installer, CI | 1     |
+| Pick a drive or a folder to scan                                      | 2     |
+| Recursive traversal without following junctions/symlinks              | 2     |
+| Folder size (logical bytes), file count and folder count per folder   | 2     |
+| Live progress (files, folders, bytes, current path, elapsed time)     | 2     |
+| Cancel a running scan                                                 | 2     |
+| Report folders that could not be read (access denied, etc.)           | 2     |
+| Tree view sorted by size, with lazy expansion, % of parent, counts    | 3     |
+| Largest files view (top N, path, size, modified date)                 | 4     |
 
 Out of scope for the MVP: treemap, export, history/SQLite, duplicate finder, AI, deleting files, network shares/UNC paths, elevation, MFT/NTFS-journal fast scanning, ARM64, macOS/Linux.
 
@@ -97,17 +97,17 @@ StorageIQ/
 
 ## Roadmap
 
-| # | Phase | Status | Exit criterion |
-|---|---|---|---|
-| 1 | Project Foundation | **Planned** — [plan](superpowers/plans/2026-11-18-phase-1-project-foundation.md) | Secure app shell launches, picks a folder through typed IPC, all checks green in CI, NSIS installer builds |
-| 2 | Filesystem Scanner | Not started | Scans a real drive in a utilityProcess with live progress and cancel; totals match `dir /s` within tolerance |
-| 3 | Tree View | Not started | Virtualized, keyboard-navigable size-sorted tree over a 1M-entry scan at 60 fps |
-| 4 | Largest Files | Not started | Top-N largest files list with sort and "show in Explorer" — **MVP complete** |
-| 5 | Treemap | Not started | Squarified treemap with drill-down synced to the tree |
-| 6 | Export | Not started | CSV and XLSX export of tree and largest files |
-| 7 | History | Not started | SQLite-persisted scans; compare two scans |
-| 8 | Duplicate Finder | Not started | Size → partial hash → full hash pipeline, cancelable |
-| 9 | AI Features | Not started | Cleanup suggestions; local vs cloud decision recorded first |
+| #   | Phase              | Status                                                                           | Exit criterion                                                                                               |
+| --- | ------------------ | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| 1   | Project Foundation | **Planned** — [plan](superpowers/plans/2026-11-18-phase-1-project-foundation.md) | Secure app shell launches, picks a folder through typed IPC, all checks green in CI, NSIS installer builds   |
+| 2   | Filesystem Scanner | Not started                                                                      | Scans a real drive in a utilityProcess with live progress and cancel; totals match `dir /s` within tolerance |
+| 3   | Tree View          | Not started                                                                      | Virtualized, keyboard-navigable size-sorted tree over a 1M-entry scan at 60 fps                              |
+| 4   | Largest Files      | Not started                                                                      | Top-N largest files list with sort and "show in Explorer" — **MVP complete**                                 |
+| 5   | Treemap            | Not started                                                                      | Squarified treemap with drill-down synced to the tree                                                        |
+| 6   | Export             | Not started                                                                      | CSV and XLSX export of tree and largest files                                                                |
+| 7   | History            | Not started                                                                      | SQLite-persisted scans; compare two scans                                                                    |
+| 8   | Duplicate Finder   | Not started                                                                      | Size → partial hash → full hash pipeline, cancelable                                                         |
+| 9   | AI Features        | Not started                                                                      | Cleanup suggestions; local vs cloud decision recorded first                                                  |
 
 ### Phase 1 — Project Foundation (task checklist)
 
