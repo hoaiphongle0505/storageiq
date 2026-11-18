@@ -134,7 +134,28 @@ StorageIQ/
 
 Installed versions: Electron 45.3.4 (Node 24.22.3), electron-vite 6.0.0, Vite 8.3.8, TypeScript 6.0.3, React 19.3.1, Tailwind 4.3.5, Zustand 5.1.0, Vitest 5.1.1, Playwright 1.65.1, electron-builder 26.18.0.
 
-Tests: 40 unit tests and 3 E2E tests.
+Tests: 49 unit tests and 4 E2E tests (after the final-review fix wave).
+
+Process: each of the 7 tasks was implemented with Sonnet and reviewed for spec compliance and quality. The whole branch then got a final review on Opus (no Critical findings), followed by one fix wave and a scoped re-review (all 20 items addressed).
+
+Still open before Phase 1 is fully closed:
+
+- [ ] CI run green on GitHub (no remote yet).
+- [ ] The owner's manual checks: the UI via `npm run dev` (criteria 1 and 6), and install → launch → second launch → uninstall (criterion 8).
+
+### Carry-over into the Phase 2a plan
+
+These came from the Phase 1 reviews. The Phase 2a plan must schedule each one; none may be dropped silently.
+
+1. **First task:** attach the E2E console and `securitypolicyviolation` listeners before the first page load (`app.on('window')` or an init script). Today they attach after `firstWindow()`, so errors during startup could go unseen.
+2. Handler factories return `Pick<IpcHandlerMap, …>`, and the full map is built with `satisfies IpcHandlerMap`.
+3. Validate IPC arguments with a typed per-channel `parseArgs`, required for every channel that takes arguments.
+4. Add an `IpcEventContract` for main → renderer events, plus a `sendEvent` that targets only the main window's webContents and skips it when it is destroyed. The preload exposes `onX(cb) => unsubscribe`, and the listener never receives the `IpcRendererEvent`. utilityProcess output is relayed through main, never through a raw MessagePort. Kill the scanner child process on quit. Build the worker as a second electron-vite main input.
+5. `render-process-gone` policy: ignore `clean-exit` and crashes during quit, and show "stopped unexpectedly" wording after the first load. Decide it together with the scanner-crash policy.
+6. Store test: `loadAppInfo` retries after an error.
+7. Report renderer bundle size (572 kB today), installer size and idle RAM in CI. Make the CI build step explicit rather than relying on the E2E build.
+8. Cosmetic: the busy (`aria-disabled`) button still shows its hover colour.
+9. Phase 4: copy CSV through main's `clipboard` over IPC, because the renderer's clipboard permission is denied.
 
 Installer: 115.7 MB, unsigned, default icon.
 
