@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useId, useRef } from 'react'
 import { useAppStore } from '../stores/app-store-context'
 
 export function WelcomePanel() {
@@ -8,6 +8,7 @@ export function WelcomePanel() {
   const chooseFolder = useAppStore((s) => s.chooseFolder)
   const dismissError = useAppStore((s) => s.dismissError)
   const headingId = useId()
+  const chooseButtonRef = useRef<HTMLButtonElement>(null)
 
   return (
     <section
@@ -29,10 +30,11 @@ export function WelcomePanel() {
       )}
 
       <button
+        ref={chooseButtonRef}
         type="button"
         onClick={() => void chooseFolder()}
-        disabled={folderPickerOpen}
-        className="rounded-control bg-accent px-4 py-2 font-medium text-on-accent hover:bg-accent-hover disabled:cursor-default disabled:opacity-60"
+        aria-disabled={folderPickerOpen ? 'true' : undefined}
+        className="rounded-control bg-accent px-4 py-2 font-medium text-on-accent hover:bg-accent-hover aria-disabled:cursor-default aria-disabled:opacity-60"
       >
         {scanTarget === null ? 'Choose folder' : 'Choose a different folder'}
       </button>
@@ -45,7 +47,10 @@ export function WelcomePanel() {
           <p>{errorMessage}</p>
           <button
             type="button"
-            onClick={dismissError}
+            onClick={() => {
+              dismissError()
+              chooseButtonRef.current?.focus()
+            }}
             className="shrink-0 rounded-control px-2 py-0.5 font-medium underline-offset-2 hover:underline"
           >
             Dismiss
