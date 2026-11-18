@@ -90,6 +90,25 @@ describe('createAppStore', () => {
       expect(store.getState().folderPickerOpen).toBe(false)
     })
 
+    it('clears the error when a new pick starts, then stores the folder after a failed pick', async () => {
+      const pending = deferred<SelectFolderResult>()
+      const selectFolder = vi
+        .fn<() => Promise<SelectFolderResult>>()
+        .mockRejectedValueOnce(new Error('IPC down'))
+        .mockImplementationOnce(() => pending.promise)
+      const store = createAppStore(createFakeApi({ selectFolder }))
+
+      await store.getState().chooseFolder()
+      expect(store.getState().errorMessage).not.toBeNull()
+
+      const second = store.getState().chooseFolder()
+      expect(store.getState().errorMessage).toBeNull()
+      pending.resolve({ canceled: false, path: 'D:\\Photos' })
+      await second
+
+      expect(store.getState()).toMatchObject({ scanTarget: 'D:\\Photos', errorMessage: null })
+    })
+
     it('shows a friendly error when the picker fails, and can dismiss it', async () => {
       const api = createFakeApi({ selectFolder: vi.fn().mockRejectedValue(new Error('IPC down')) })
       const store = createAppStore(api)
