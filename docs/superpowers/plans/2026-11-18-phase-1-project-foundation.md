@@ -32,7 +32,7 @@
 | `package.json`, `package-lock.json`                                                       | Scripts, metadata, dependencies                                              | 1    |
 | `tsconfig.json`, `tsconfig.node.json`, `tsconfig.web.json`                                | Strict TS for node-side and web-side code                                    | 1    |
 | `electron.vite.config.ts`                                                                 | Build config for main/preload/renderer + aliases                             | 1    |
-| `vitest.config.mts`                                                                        | Unit test runner config                                                      | 1    |
+| `vitest.config.mts`                                                                       | Unit test runner config                                                      | 1    |
 | `eslint.config.mjs`, `.prettierrc.json`, `.prettierignore`, `.editorconfig`, `.gitignore` | Quality gates                                                                | 1    |
 | `LICENSE`                                                                                 | MIT                                                                          | 1    |
 | `src/shared/ipc-contract.ts`                                                              | Channel → args/result types, `AppInfo`, `SelectFolderResult`, `StorageIQApi` | 1    |
