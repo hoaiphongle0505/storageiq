@@ -34,7 +34,13 @@ test('launches a locked-down renderer with the StorageIQ bridge', async () => {
   const keys = await page.evaluate(() =>
     Object.keys((globalThis as unknown as { storageiq: object }).storageiq).sort(),
   )
-  expect(keys).toEqual(['getAppInfo', 'selectFolder'])
+  expect(keys).toEqual([
+    'getAppInfo',
+    'onScanDone',
+    'onScanFailed',
+    'onScanProgress',
+    'selectFolder',
+  ])
 })
 
 test('shows the version reported by the main process', async () => {
