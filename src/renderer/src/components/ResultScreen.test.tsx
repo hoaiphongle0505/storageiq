@@ -57,11 +57,31 @@ describe('<ResultScreen />', () => {
 
   it('uses singular wording for one unreadable folder', async () => {
     await renderResult({
-      errors: [{ path: 'D:\\Locked', reason: 'other', code: 'EBUSY' }],
+      errors: [{ path: 'D:\\Locked', kind: 'folder', reason: 'other', code: 'EBUSY' }],
       errorCount: 1,
     })
     expect(screen.getByText('1 folder couldn’t be read')).toBeInTheDocument()
     expect(screen.getByText('Windows reported an error (EBUSY).')).toBeInTheDocument()
+  })
+
+  it('says items, not folders, when an unreadable file is listed', async () => {
+    await renderResult({
+      errors: [
+        { path: 'D:\\pagefile.sys', kind: 'file', reason: 'access-denied', code: 'EPERM' },
+        { path: 'D:\\Locked', kind: 'folder', reason: 'access-denied', code: 'EPERM' },
+      ],
+      errorCount: 2,
+    })
+    expect(screen.getByText('2 items couldn’t be read')).toBeInTheDocument()
+    expect(screen.queryByText(/folders couldn’t be read/)).not.toBeInTheDocument()
+  })
+
+  it('uses singular wording for one unreadable file', async () => {
+    await renderResult({
+      errors: [{ path: 'D:\\pagefile.sys', kind: 'file', reason: 'access-denied', code: 'EPERM' }],
+      errorCount: 1,
+    })
+    expect(screen.getByText('1 item couldn’t be read')).toBeInTheDocument()
   })
 
   it('shows no list when every folder was read', async () => {

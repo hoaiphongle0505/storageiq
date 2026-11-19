@@ -53,8 +53,18 @@ export function makeDone(overrides: Partial<ScanDone> = {}): ScanDone {
       },
     ],
     errors: [
-      { path: 'D:\\System Volume Information', reason: 'access-denied', code: 'EPERM' },
-      { path: 'D:\\Old\\Very\\Long\\Path', reason: 'path-too-long', code: 'ENAMETOOLONG' },
+      {
+        path: 'D:\\System Volume Information',
+        kind: 'folder',
+        reason: 'access-denied',
+        code: 'EPERM',
+      },
+      {
+        path: 'D:\\Old\\Very\\Long\\Path',
+        kind: 'folder',
+        reason: 'path-too-long',
+        code: 'ENAMETOOLONG',
+      },
     ],
     errorCount: 2,
     ...overrides,

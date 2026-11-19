@@ -26,8 +26,12 @@ export interface FolderSummary {
 
 export type ScanErrorReason = 'access-denied' | 'path-too-long' | 'not-found' | 'other'
 
+/** Whether the entry that failed is a folder or a file (known from the directory listing). */
+export type ScanErrorKind = 'file' | 'folder'
+
 export interface ScanError {
   path: string
+  kind: ScanErrorKind
   reason: ScanErrorReason
   /** The Node.js error code, for example `EPERM`. */
   code: string

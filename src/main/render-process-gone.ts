@@ -24,3 +24,17 @@ export function decideRenderProcessGone(input: RenderProcessGoneInput): RenderPr
   if (!input.loaded) return 'fail-startup'
   return input.reloadedAfterCrash ? 'quit' : 'reload'
 }
+
+/**
+ * The reload path after a renderer crash. The scan is stopped first: the dialog is synchronous
+ * and modal, and its text says the scan was stopped.
+ */
+export function reloadAfterRendererCrash(steps: {
+  stopScan?: () => void
+  showDialog: () => void
+  reload: () => void
+}): void {
+  steps.stopScan?.()
+  steps.showDialog()
+  steps.reload()
+}

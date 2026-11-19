@@ -3,6 +3,7 @@ import { app, BrowserWindow, dialog, nativeTheme } from 'electron'
 import { shouldTreatAsFatalLoadFailure } from './load-failure'
 import {
   decideRenderProcessGone,
+  reloadAfterRendererCrash,
   RENDERER_GONE_QUIT_MESSAGE,
   RENDERER_GONE_RELOAD_MESSAGE,
   RENDERER_GONE_TITLE,
@@ -67,9 +68,11 @@ export function createMainWindow(config: MainWindowConfig): BrowserWindow {
         return
       case 'reload':
         reloadedAfterCrash = true
-        dialog.showErrorBox(RENDERER_GONE_TITLE, RENDERER_GONE_RELOAD_MESSAGE)
-        config.onRendererReload?.()
-        window.webContents.reload()
+        reloadAfterRendererCrash({
+          stopScan: config.onRendererReload,
+          showDialog: () => dialog.showErrorBox(RENDERER_GONE_TITLE, RENDERER_GONE_RELOAD_MESSAGE),
+          reload: () => window.webContents.reload(),
+        })
         return
       case 'quit':
         dialog.showErrorBox(RENDERER_GONE_TITLE, RENDERER_GONE_QUIT_MESSAGE)

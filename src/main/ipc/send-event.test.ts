@@ -35,4 +35,12 @@ describe('createEventSender', () => {
     createEventSender(() => window)('scan:failed', failed)
     expect(send).not.toHaveBeenCalled()
   })
+
+  it('drops the event when webContents.send throws', () => {
+    const { window, send } = fakeWindow()
+    send.mockImplementation(() => {
+      throw new Error('Render frame was disposed before WebFrameMain could be accessed')
+    })
+    expect(() => createEventSender(() => window)('scan:failed', failed)).not.toThrow()
+  })
 })

@@ -101,6 +101,8 @@ if (!app.isPackaged) {
 
 if (process.argv.includes(SELF_TEST_FLAG)) {
   // No window, no single-instance lock: list drives, run one scan, exit with a status code.
+  // A temp userData keeps this run away from a live instance's profile.
+  app.setPath('userData', path.join(app.getPath('temp'), 'StorageIQ-self-test'))
   app
     .whenReady()
     .then(() =>

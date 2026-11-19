@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   decideRenderProcessGone,
+  reloadAfterRendererCrash,
   type RenderProcessGoneAction,
   type RenderProcessGoneInput,
 } from './render-process-gone'
@@ -28,5 +29,25 @@ describe('decideRenderProcessGone', () => {
     ['a second crash after the reload', { reloadedAfterCrash: true }, 'quit'],
   ])('%s', (_label, overrides, expected) => {
     expect(decideRenderProcessGone({ ...base, ...overrides })).toBe(expected)
+  })
+})
+
+describe('reloadAfterRendererCrash', () => {
+  it('stops the scan before the dialog, then reloads', () => {
+    const calls: string[] = []
+    reloadAfterRendererCrash({
+      stopScan: () => calls.push('stop'),
+      showDialog: () => calls.push('dialog'),
+      reload: () => calls.push('reload'),
+    })
+    expect(calls).toEqual(['stop', 'dialog', 'reload'])
+  })
+
+  it('works without a stopScan callback', () => {
+    const showDialog = vi.fn()
+    const reload = vi.fn()
+    reloadAfterRendererCrash({ showDialog, reload })
+    expect(showDialog).toHaveBeenCalledOnce()
+    expect(reload).toHaveBeenCalledOnce()
   })
 })

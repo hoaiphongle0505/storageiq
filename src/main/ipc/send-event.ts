@@ -16,6 +16,10 @@ export function createEventSender(getMainWindow: () => EventWindow | null): Send
   return (channel, payload) => {
     const window = getMainWindow()
     if (!window || window.isDestroyed() || window.webContents.isDestroyed()) return
-    window.webContents.send(channel, payload)
+    try {
+      window.webContents.send(channel, payload)
+    } catch {
+      // The frame was disposed between the check and the send (renderer crash or reload): drop.
+    }
   }
 }

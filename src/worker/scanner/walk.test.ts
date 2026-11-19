@@ -11,7 +11,7 @@ const ROOT = 'C:\\Data'
 function recordingSink() {
   const folders: string[] = []
   const files: Array<{ parent: string; bytes: number }> = []
-  const errors: Array<{ path: string; code: string }> = []
+  const errors: Array<{ path: string; code: string; kind: string }> = []
   const visited: string[] = []
   const sink: WalkSink<string> = {
     folder: (parent, name) => {
@@ -22,8 +22,8 @@ function recordingSink() {
     file: (parent, bytes) => {
       files.push({ parent, bytes })
     },
-    error: (errorPath, code) => {
-      errors.push({ path: errorPath, code })
+    error: (errorPath, code, kind) => {
+      errors.push({ path: errorPath, code, kind })
     },
     visiting: (dirPath) => {
       visited.push(dirPath)
@@ -88,8 +88,8 @@ describe('walk with an injected file system', () => {
     await walk(ROOT, ROOT, sink, { fs, signal: never() })
 
     expect(errors).toHaveLength(2)
-    expect(errors).toContainEqual({ path: locked, code: 'EACCES' })
-    expect(errors).toContainEqual({ path: deep, code: 'ENAMETOOLONG' })
+    expect(errors).toContainEqual({ path: locked, code: 'EACCES', kind: 'folder' })
+    expect(errors).toContainEqual({ path: deep, code: 'ENAMETOOLONG', kind: 'folder' })
     expect(files).toEqual([{ parent: path.join(ROOT, 'Open'), bytes: 7 }])
   })
 
@@ -102,8 +102,41 @@ describe('walk with an injected file system', () => {
 
     await walk(ROOT, ROOT, sink, { fs, signal: never() })
 
-    expect(errors).toEqual([{ path: gone, code: 'ENOENT' }])
-    expect(files).toEqual([{ parent: ROOT, bytes: 4 }])
+    expect(errors).toEqual([{ path: gone, code: 'ENOENT', kind: 'file' }])
+    expect(files).toHaveLength(2) // the unreadable file is still counted, at 0 bytes
+    expect(totalBytes(files)).toBe(4)
+  })
+
+  it('counts a file whose lstat fails with EPERM at 0 bytes and reports it as a file', async () => {
+    const pagefile = path.join(ROOT, 'pagefile.sys')
+    const fs = createFakeWalkFs(
+      ROOT,
+      dir({ 'pagefile.sys': file(8_000_000_000), 'a.bin': file(3) }),
+      {
+        lstatErrors: { [pagefile]: 'EPERM' },
+      },
+    )
+    const { sink, files, errors } = recordingSink()
+
+    await walk(ROOT, ROOT, sink, { fs, signal: never() })
+
+    expect(files).toHaveLength(2)
+    expect(totalBytes(files)).toBe(3)
+    expect(errors).toEqual([{ path: pagefile, code: 'EPERM', kind: 'file' }])
+  })
+
+  it('reports a folder whose lstat fails as a folder and does not count it', async () => {
+    const locked = path.join(ROOT, 'Locked')
+    const fs = createFakeWalkFs(ROOT, dir({ Locked: dir({ 's.bin': file(1) }) }), {
+      lstatErrors: { [locked]: 'EPERM' },
+    })
+    const { sink, folders, files, errors } = recordingSink()
+
+    await walk(ROOT, ROOT, sink, { fs, signal: never() })
+
+    expect(folders).toEqual([])
+    expect(files).toEqual([])
+    expect(errors).toEqual([{ path: locked, code: 'EPERM', kind: 'folder' }])
   })
 
   it('keeps what was read when a listing fails part-way', async () => {
@@ -119,7 +152,7 @@ describe('walk with an injected file system', () => {
 
     await walk(ROOT, ROOT, sink, { fs, signal: never() })
 
-    expect(errors).toEqual([{ path: flaky, code: 'EIO' }])
+    expect(errors).toEqual([{ path: flaky, code: 'EIO', kind: 'folder' }])
     expect(files).toEqual([{ parent: flaky, bytes: 10 }])
   })
 
@@ -131,7 +164,7 @@ describe('walk with an injected file system', () => {
 
     await walk(ROOT, ROOT, sink, { fs, signal: never() })
 
-    expect(errors).toEqual([{ path: ROOT, code: 'EPERM' }])
+    expect(errors).toEqual([{ path: ROOT, code: 'EPERM', kind: 'folder' }])
     expect(folders).toEqual([])
     expect(files).toEqual([])
   })
@@ -244,6 +277,6 @@ describe('walk on disk', () => {
 
     await walk(missing, missing, sink, { fs: nodeWalkFs, signal: never() })
 
-    expect(errors).toEqual([{ path: missing, code: 'ENOENT' }])
+    expect(errors).toEqual([{ path: missing, code: 'ENOENT', kind: 'folder' }])
   })
 })

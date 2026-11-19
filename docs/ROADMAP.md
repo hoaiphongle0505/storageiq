@@ -89,9 +89,9 @@ StorageIQ/
 │  ├─ shared/                      # types shared by all processes (no runtime deps)
 │  ├─ main/                        # Electron main process
 │  │  ├─ ipc/                      # contract registration + handler factories
-│  │  ├─ scan/ · drives/            # scan service (forks the scanner) · drive listing (koffi)
+│  │  └─ scan/ · drives/            # scan service (forks the scanner) · drive listing (koffi)
 │  ├─ preload/                     # contextBridge API
-│  ├─ worker/scanner/               # scanner utilityProcess: walk, tree, top folders (out/main/scanner.js)
+│  ├─ worker/scanner/              # scanner utilityProcess: walk, tree, top folders (out/main/scanner.js)
 │  └─ renderer/
 │     ├─ index.html
 │     └─ src/
@@ -156,7 +156,10 @@ Still open before Phase 1 is fully closed:
 
 ### Phase 2a — Outcome
 
-All automated gates are green (format, lint, typecheck, unit, E2E, packaged self-test). Still pending: the final whole-branch review and the owner's manual checks.
+All automated gates are green locally (format, lint, typecheck, unit, E2E, packaged self-test); CI on GitHub has not run yet (no remote). Still pending: the owner's manual checks.
+
+- [ ] CI run green on GitHub (needs a remote)
+- [ ] Phase 2b: read the real size of locked system files (pagefile.sys, hiberfil.sys, swapfile.sys, DumpStack.log.tmp), which fail lstat with EPERM and are counted today as 0-byte files. Use the size from the directory listing (FindFirstFileExW through koffi) so totals include them.
 
 koffi 3.3.8 (runtime dependency, unpacked from the asar, `npmRebuild: false`).
 
@@ -183,7 +186,7 @@ These came from the Phase 1 reviews. The Phase 2a plan must schedule each one; n
 8. Cosmetic: the busy (`aria-disabled`) button still shows its hover colour. — **done (Tasks 6, 7)**
 9. Phase 4: copy CSV through main's `clipboard` over IPC, because the renderer's clipboard permission is denied. — **still scheduled for Phase 4**
 
-Installer: 115.7 MB, unsigned, default icon.
+Phase 1 installer: 115.7 MB, unsigned, default icon.
 
 CI: `.github/workflows/ci.yml` is written and parses, but is not yet verified on GitHub (no remote configured).
 
