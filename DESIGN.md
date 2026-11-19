@@ -32,6 +32,8 @@ Text contrast meets WCAG 2.2 AA in both themes. Focus is a 2 px accent outline w
 ## Guidance changes applied to the baseline
 
 - Inline error "Dismiss" button: added `py-0.5` so the target is at least 24 x 24 CSS px (WCAG 2.2 SC 2.5.8 Target Size, `modern-web-guidance` accessibility guide, "Target sizes"). Without it the button was about 20 px tall.
+- Unreadable-folders disclosure `<summary>`: added `min-h-6 py-0.5` so the toggle meets the 24 x 24 CSS px minimum target (WCAG 2.2 SC 2.5.8; `accessibility` guide, "Target sizes"). Native `<details>` kept (`html`/`search-hidden-content` guides: searchable, accessible by default; no heading inside `<summary>`).
+- Stat grids (`<dl>`) on the scanning and result screens: `grid-cols-2 sm:grid-cols-4` so four stats wrap at narrow widths instead of overflowing (reflow, WCAG 1.4.10; `form-factor-adaptation` guide).
 
 Checked and already compliant, so unchanged: the error uses `role="alert"` (live-region guide, critical failures); focus uses `:focus-visible` with an outline and `outline-offset` (focus-indicator guide); the shell uses semantic `main`, `footer` and a labelled `section`; the craft floor's contrast, kicker/eyebrow, nested-card and side-border rules.
 

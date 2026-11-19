@@ -47,7 +47,7 @@ export function ScanningScreen() {
         </Button>
       </div>
 
-      <dl className="grid grid-cols-4 gap-4">
+      <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <Stat label="Files found" value={formatCount(files)} />
         <Stat label="Folders found" value={formatCount(folders)} />
         <Stat label="Size found" value={formatBytes(bytes)} />
