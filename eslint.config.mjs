@@ -26,6 +26,7 @@ export default defineConfig(
       'src/worker/**/*.ts',
       'e2e/**/*.ts',
       '*.config.{ts,mts,mjs}',
+      'scripts/**/*.mjs',
     ],
     languageOptions: { globals: globals.node },
   },

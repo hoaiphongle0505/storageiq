@@ -1,4 +1,4 @@
-import type { ScanDone, ScanFailed, ScanProgress, ScanStartResult } from './scan-types'
+import type { DriveInfo, ScanDone, ScanFailed, ScanProgress, ScanStartResult } from './scan-types'
 
 /** Metadata about the running application, shown in the status bar. */
 export interface AppInfo {
@@ -17,6 +17,7 @@ export type SelectFolderResult = { canceled: true } | { canceled: false; path: s
  * Each channel maps to its argument tuple and its resolved result.
  */
 export interface IpcContract {
+  'drives:list': { args: []; result: DriveInfo[] }
   'app:get-info': { args: []; result: AppInfo }
   'dialog:select-folder': { args: []; result: SelectFolderResult }
   'scan:start': { args: [path: string]; result: ScanStartResult }
@@ -44,6 +45,8 @@ export type Unsubscribe = () => void
 export interface StorageIQApi {
   getAppInfo(): Promise<AppInfo>
   selectFolder(): Promise<SelectFolderResult>
+  /** Fixed and removable drives with label and space (network and optical drives are left out). */
+  listDrives(): Promise<DriveInfo[]>
   /** Starts scanning `path` (an absolute local folder); a running scan is superseded. */
   startScan(path: string): Promise<ScanStartResult>
   /** Stops the scan; unknown or finished IDs are ignored. */

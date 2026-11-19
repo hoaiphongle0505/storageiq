@@ -1,9 +1,15 @@
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
 import { app, type BrowserWindow, dialog, ipcMain, Menu, session, utilityProcess } from 'electron'
+import type { ScanDone, ScanFailed } from '@shared/scan-types'
 import { SCANNER_SERVICE_NAME } from '@shared/scanner-protocol'
+import type { DriveApi } from './drives/drive-api'
+import { createKoffiDriveApi } from './drives/koffi-drive-api'
+import { listDrives } from './drives/list-drives'
 import { createAppHandlers } from './ipc/app-handlers'
+import { createDriveHandlers } from './ipc/drive-handlers'
 import { type IpcHandlerMap, registerIpcHandlers } from './ipc/register'
 import { createScanHandlers } from './ipc/scan-handlers'
 import { createEventSender } from './ipc/send-event'
@@ -11,6 +17,7 @@ import { createScanService, type ScannerChild } from './scan/scan-service'
 import { hardenWebContents } from './security/harden-web-contents'
 import { isTrustedRendererUrl } from './security/trusted-url'
 import { isTrustedIpcSender } from './security/trusted-sender'
+import { runSelfTest, SELF_TEST_FLAG } from './self-test'
 import { createMainWindow } from './window'
 
 const APP_USER_MODEL_ID = 'io.github.storageiq.app'
@@ -22,6 +29,20 @@ const isTrustedUrl = (url: string) => isTrustedRendererUrl(url, { rendererRoot, 
 
 let mainWindow: BrowserWindow | null = null
 let quitting = false
+let driveApi: Promise<DriveApi> | null = null
+
+/** Loads koffi on first use; a failed load is retried on the next call. */
+function getDriveApi(): Promise<DriveApi> {
+  driveApi ??= createKoffiDriveApi().catch((error: unknown) => {
+    driveApi = null
+    throw error
+  })
+  return driveApi
+}
+
+async function listSystemDrives() {
+  return listDrives(await getDriveApi())
+}
 
 function forkScanner(): ScannerChild {
   const child = utilityProcess.fork(scannerPath, [], { serviceName: SCANNER_SERVICE_NAME })
@@ -45,6 +66,22 @@ const scanService = createScanService({
   createScanId: () => randomUUID(),
 })
 
+/** Self-test only: one scan in a fresh scanner process, resolved with its final event. */
+function scanOnce(root: string): Promise<ScanDone | ScanFailed> {
+  return new Promise((resolve) => {
+    const service = createScanService({
+      forkScanner,
+      createScanId: () => randomUUID(),
+      sendEvent: (channel, payload) => {
+        if (channel === 'scan:progress') return
+        service.dispose()
+        resolve(payload as ScanDone | ScanFailed)
+      },
+    })
+    service.start(root)
+  })
+}
+
 function focusMainWindow(): void {
   if (!mainWindow) return
   if (mainWindow.isMinimized()) mainWindow.restore()
@@ -62,7 +99,40 @@ if (!app.isPackaged) {
   app.setPath('userData', path.join(app.getPath('appData'), 'StorageIQ-dev'))
 }
 
-if (!app.requestSingleInstanceLock()) {
+if (process.argv.includes(SELF_TEST_FLAG)) {
+  // No window, no single-instance lock: list drives, run one scan, exit with a status code.
+  app
+    .whenReady()
+    .then(() =>
+      runSelfTest({
+        listDrives: listSystemDrives,
+        unpackedNativeModule: app.isPackaged
+          ? path.join(
+              process.resourcesPath,
+              'app.asar.unpacked',
+              'node_modules',
+              '@koromix',
+              'koffi-win32-x64',
+              'win32_x64',
+              'koffi.node',
+            )
+          : null,
+        fileExists: existsSync,
+        scanRoot: process.resourcesPath,
+        scanOnce,
+        log: (line) => {
+          process.stdout.write(`[self-test] ${line}\n`)
+        },
+      }),
+    )
+    .then(
+      (code) => app.exit(code),
+      (error: unknown) => {
+        process.stderr.write(`[self-test] ${String(error)}\n`)
+        app.exit(1)
+      },
+    )
+} else if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.on('second-instance', focusMainWindow)
@@ -98,6 +168,7 @@ if (!app.requestSingleInstanceLock()) {
           },
         }),
         ...createScanHandlers({ scanService, stat }),
+        ...createDriveHandlers({ listDrives: listSystemDrives }),
       } satisfies IpcHandlerMap
 
       registerIpcHandlers(ipcMain, handlers, (event) =>
