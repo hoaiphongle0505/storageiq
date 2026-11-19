@@ -22,7 +22,7 @@ export function UnreadableList({
 }) {
   return (
     <details className="rounded-panel border border-line bg-panel px-4 py-3">
-      <summary className="cursor-pointer font-medium">
+      <summary className="min-h-6 cursor-pointer py-0.5 font-medium">
         {errorCount === 1
           ? '1 folder couldn’t be read'
           : `${formatCount(errorCount)} folders couldn’t be read`}
