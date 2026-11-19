@@ -23,6 +23,7 @@
     "src/main/**/*",
     "src/preload/**/*",
     "src/shared/**/*",
+    "src/worker/**/*",
     "e2e/**/*",
     "electron.vite.config.ts",
     "vitest.config.mts",
