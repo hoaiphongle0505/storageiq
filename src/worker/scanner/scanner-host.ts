@@ -18,7 +18,7 @@ export interface ScannerHost {
   handle(request: ScannerRequest): void
   /** Resolves when the most recently started scan has finished. */
   idle(): Promise<void>
-  /** The tree of the last finished scan (kept for Phase 3's "children of X" queries). */
+  /** The tree of the last finished scan (for Phase 3's "children of X" queries); null while a scan runs. */
   lastTree(): ScanTree | null
 }
 
@@ -82,6 +82,7 @@ export function createScannerHost(deps: ScannerHostDeps): ScannerHost {
         return
       }
       latestScanId = request.scanId
+      finishedTree = null // do not hold the previous tree while the new scan builds its own
       current?.controller.abort() // a new start supersedes the running scan
       const controller = new AbortController()
       const scan: RunningScan = { scanId: request.scanId, controller, finished: Promise.resolve() }

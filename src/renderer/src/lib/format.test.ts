@@ -32,7 +32,9 @@ describe('formatCount', () => {
 
 describe('formatDuration', () => {
   it.each([
-    [0, '0.0 s'],
+    [0, 'under 0.1 s'],
+    [99, 'under 0.1 s'],
+    [100, '0.1 s'],
     [870, '0.9 s'],
     [9_940, '9.9 s'],
     [12_400, '12 s'],

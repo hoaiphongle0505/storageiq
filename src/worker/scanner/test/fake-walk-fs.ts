@@ -80,7 +80,13 @@ export function createFakeWalkFs(
           try {
             for (const name of names) {
               await Promise.resolve()
-              yield { name }
+              // Like a real Dirent, `isDirectory` only works as a method call (it reads `this`).
+              yield {
+                name,
+                isDirectory(this: { name: string }) {
+                  return nodes.get(path.join(dirPath, this.name))?.type === 'dir'
+                },
+              }
               if (failAfterFirst !== undefined) throw codeError(failAfterFirst)
             }
           } finally {

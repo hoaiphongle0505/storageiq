@@ -13,6 +13,15 @@ function reasonText(error: ScanError): string {
     : REASON_TEXT[error.reason]
 }
 
+function summaryText(errors: ScanError[], errorCount: number): string {
+  // Entries beyond the listed ones are unknown, so only a fully folder list keeps the folder wording.
+  const allFolders = errors.every((error) => error.kind === 'folder')
+  const noun = allFolders ? 'folder' : 'item'
+  return errorCount === 1
+    ? `1 ${noun} couldn’t be read`
+    : `${formatCount(errorCount)} ${noun}s couldn’t be read`
+}
+
 export function UnreadableList({
   errors,
   errorCount,
@@ -23,9 +32,7 @@ export function UnreadableList({
   return (
     <details className="rounded-panel border border-line bg-panel px-4 py-3">
       <summary className="min-h-6 cursor-pointer py-0.5 font-medium">
-        {errorCount === 1
-          ? '1 folder couldn’t be read'
-          : `${formatCount(errorCount)} folders couldn’t be read`}
+        {summaryText(errors, errorCount)}
       </summary>
       <ul className="mt-3 flex flex-col gap-2">
         {errors.map((error, index) => (

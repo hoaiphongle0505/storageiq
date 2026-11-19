@@ -45,13 +45,14 @@ describe('createScanTree', () => {
   it('keeps the first 1000 errors and counts every one', () => {
     const tree = createScanTree(ROOT)
     for (let i = 0; i < MAX_SCAN_ERRORS + 5; i += 1) {
-      tree.error(path.join(ROOT, `locked-${i}`), 'EPERM')
+      tree.error(path.join(ROOT, `locked-${i}`), 'EPERM', 'folder')
     }
     expect(MAX_SCAN_ERRORS).toBe(1000)
     expect(tree.errors).toHaveLength(1000)
     expect(tree.errorCount).toBe(1005)
     expect(tree.errors[0]).toEqual({
       path: path.join(ROOT, 'locked-0'),
+      kind: 'folder',
       reason: 'access-denied',
       code: 'EPERM',
     })

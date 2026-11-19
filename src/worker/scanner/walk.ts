@@ -1,9 +1,15 @@
 import { promises as fsp } from 'node:fs'
 import path from 'node:path'
+import type { ScanErrorKind } from '@shared/scan-types'
 
-/** One directory entry; only the name is used (the type comes from `lstat`). */
+/**
+ * One directory entry. `isDirectory()` comes from the directory listing itself (no handle is
+ * opened), so it is known even when `lstat` later fails. For entries `lstat` can read, the
+ * walk trusts `lstat` for the type.
+ */
 export interface WalkDirent {
   name: string
+  isDirectory(): boolean
 }
 
 export interface WalkStats {
@@ -33,7 +39,7 @@ export interface WalkSink<D> {
   /** A file, link or other non-folder entry inside `parent`. Links count with 0 bytes. */
   file(parent: D, bytes: number): void
   /** `path` could not be listed or inspected; the walk continues. */
-  error(path: string, code: string): void
+  error(path: string, code: string, kind: ScanErrorKind): void
   /** The walk started listing `path`. */
   visiting(path: string): void
 }
@@ -84,14 +90,20 @@ export function walk<D>(
   return new Promise<void>((resolve, reject) => {
     let failed = false
 
-    const inspect = async (dirPath: string, handle: D, names: string[]): Promise<void> => {
+    const inspect = async (dirPath: string, handle: D, entries: WalkDirent[]): Promise<void> => {
       const results = await Promise.all(
-        names.map(async (name) => {
+        entries.map(async (entry) => {
+          const { name } = entry
           const entryPath = path.join(dirPath, name)
           try {
             return { name, entryPath, stats: await fs.lstat(entryPath) }
           } catch (error) {
-            sink.error(entryPath, errorCode(error))
+            const isFolder = entry.isDirectory() // a method call: a real Dirent needs its own `this`
+            sink.error(entryPath, errorCode(error), isFolder ? 'folder' : 'file')
+            // Windows refuses lstat on locked system files (pagefile.sys, hiberfil.sys,
+            // swapfile.sys, DumpStack.log.tmp). They are still files, so count them, at 0
+            // bytes. Phase 2b will read their real size through koffi (FindFirstFileExW).
+            if (!isFolder) sink.file(handle, 0)
             return null
           }
         }),
@@ -116,22 +128,22 @@ export function walk<D>(
       try {
         entries = await fs.opendir(dirPath)
       } catch (error) {
-        sink.error(dirPath, errorCode(error))
+        sink.error(dirPath, errorCode(error), 'folder')
         return
       }
-      let batch: string[] = []
+      let batch: WalkDirent[] = []
       try {
         for await (const entry of entries) {
           if (signal.aborted) break
-          batch.push(entry.name)
+          batch.push(entry)
           if (batch.length >= LSTAT_BATCH_SIZE) {
-            const names = batch
+            const entriesToInspect = batch
             batch = []
-            await inspect(dirPath, handle, names)
+            await inspect(dirPath, handle, entriesToInspect)
           }
         }
       } catch (error) {
-        sink.error(dirPath, errorCode(error))
+        sink.error(dirPath, errorCode(error), 'folder')
       }
       if (!signal.aborted && batch.length > 0) await inspect(dirPath, handle, batch)
     }

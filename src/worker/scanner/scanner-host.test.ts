@@ -172,7 +172,33 @@ describe('createScannerHost', () => {
       folders: 0,
       bytes: 0,
       topFolders: [],
-      errors: [{ path: ROOT, reason: 'access-denied', code: 'EACCES' }],
+      errors: [{ path: ROOT, kind: 'folder', reason: 'access-denied', code: 'EACCES' }],
+      errorCount: 1,
+    })
+  })
+
+  it('drops the previous tree as soon as a new scan starts', async () => {
+    const t = setup()
+    t.host.handle({ type: 'start', scanId: 's1', root: ROOT })
+    await t.host.idle()
+    expect(t.host.lastTree()).not.toBeNull()
+
+    t.host.handle({ type: 'start', scanId: 's2', root: ROOT })
+    expect(t.host.lastTree()).toBeNull()
+    await t.host.idle()
+    expect(t.host.lastTree()).not.toBeNull()
+  })
+
+  it('counts a locked file at 0 bytes and reports it as a file', async () => {
+    const notes = path.join(ROOT, 'notes.txt')
+    const t = setup({ lstatErrors: { [notes]: 'EPERM' } })
+    t.host.handle({ type: 'start', scanId: 's1', root: ROOT })
+    await t.host.idle()
+
+    expect(t.done()[0]).toMatchObject({
+      files: 4,
+      bytes: 600,
+      errors: [{ path: notes, kind: 'file', reason: 'access-denied', code: 'EPERM' }],
       errorCount: 1,
     })
   })

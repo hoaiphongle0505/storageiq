@@ -93,10 +93,10 @@ export function createScanTree(rootPath: string): ScanTree {
       }
     },
 
-    error(errorPath, code) {
+    error(errorPath, code, kind) {
       errorCount += 1
       if (errors.length < MAX_SCAN_ERRORS) {
-        errors.push({ path: errorPath, reason: scanErrorReason(code), code })
+        errors.push({ path: errorPath, kind, reason: scanErrorReason(code), code })
       }
     },
 

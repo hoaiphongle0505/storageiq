@@ -18,6 +18,7 @@ export function formatBytes(bytes: number): string {
 }
 
 export function formatDuration(ms: number): string {
+  if (ms < 100) return 'under 0.1 s'
   if (ms < 10_000) return `${(ms / 1000).toFixed(1)} s`
   const totalSeconds = Math.round(ms / 1000)
   if (totalSeconds < 60) return `${totalSeconds} s`
