@@ -2,8 +2,8 @@
 
 Living document owned by the technical lead. Update it whenever a phase completes: tick tasks, record decisions, and name the next phase.
 
-**Current phase:** Phase 2a — Core Scanner (next)
-**Last updated:** 2026-11-18
+**Current phase:** Phase 2b — Honest Totals (next)
+**Last updated:** 2026-11-19
 
 ---
 
@@ -89,8 +89,9 @@ StorageIQ/
 │  ├─ shared/                      # types shared by all processes (no runtime deps)
 │  ├─ main/                        # Electron main process
 │  │  ├─ ipc/                      # contract registration + handler factories
-│  │  └─ scanner/                  # (Phase 2) utilityProcess entry + traversal
+│  │  ├─ scan/ · drives/            # scan service (forks the scanner) · drive listing (koffi)
 │  ├─ preload/                     # contextBridge API
+│  ├─ worker/scanner/               # scanner utilityProcess: walk, tree, top folders (out/main/scanner.js)
 │  └─ renderer/
 │     ├─ index.html
 │     └─ src/
@@ -107,18 +108,18 @@ StorageIQ/
 
 ## Roadmap
 
-| #   | Phase                        | Status                                                                                                                                               | Exit criterion                                                                                                                                                                                          |
-| --- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Project Foundation           | **Done** (automated gates green; owner's manual UI and installer check pending) — [plan](superpowers/plans/2026-11-18-phase-1-project-foundation.md) | Secure app shell launches, picks a folder through typed IPC, all checks green in CI, NSIS installer builds                                                                                              |
-| 2a  | Core Scanner                 | **Next**                                                                                                                                             | Scans a real drive in a utilityProcess; progress plus a largest-folders snapshot about every 250 ms; cancel; unreadable folders listed; removable drives listed; CI reports installer size and idle RAM |
-| 2b  | Honest Totals                | Not started                                                                                                                                          | Online-only (cloud) files excluded from on-disk size and never downloaded; hardlinks counted once; reconciliation line vs. Windows' used space; FindFirstFileExW speed measured                         |
-| 3   | Tree View                    | Not started                                                                                                                                          | Virtualized, keyboard-navigable, size-sorted tree that grows during the scan; "Open in Explorer"; 1M entries at 60 fps                                                                                  |
-| 4   | Largest Files & Explanations | Not started                                                                                                                                          | Largest-files list; plain-language labels for about 30 well-known space hogs in the tree and the list; "Copy as CSV" — **MVP complete**                                                                 |
-| 5   | Treemap                      | Not started                                                                                                                                          | Squarified treemap as a secondary view, with drill-down synced to the tree                                                                                                                              |
-| 6   | Duplicate Finder             | Not started                                                                                                                                          | Size → partial hash → full hash; cancelable; never deduplicates hardlinks                                                                                                                               |
-| 7   | History (light)              | Not started                                                                                                                                          | SQLite remembers the last scan of each drive; shows "+X GB since last time"                                                                                                                             |
-| 8   | Export                       | Not started                                                                                                                                          | CSV and XLSX export of the tree and the largest files                                                                                                                                                   |
-| 9   | AI Features                  | Not started                                                                                                                                          | Explanations beyond the fixed dictionary; local-vs-cloud decision recorded first                                                                                                                        |
+| #   | Phase                        | Status                                                                                                                                                        | Exit criterion                                                                                                                                                                                          |
+| --- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Project Foundation           | **Done** (automated gates green; owner's manual UI and installer check pending) — [plan](superpowers/plans/2026-11-18-phase-1-project-foundation.md)          | Secure app shell launches, picks a folder through typed IPC, all checks green in CI, NSIS installer builds                                                                                              |
+| 2a  | Core Scanner                 | **Done** (automated gates green; final whole-branch review and owner's manual checks pending) — [plan](superpowers/plans/2026-11-19-phase-2a-core-scanner.md) | Scans a real drive in a utilityProcess; progress plus a largest-folders snapshot about every 250 ms; cancel; unreadable folders listed; removable drives listed; CI reports installer size and idle RAM |
+| 2b  | Honest Totals                | **Next**                                                                                                                                                      | Online-only (cloud) files excluded from on-disk size and never downloaded; hardlinks counted once; reconciliation line vs. Windows' used space; FindFirstFileExW speed measured                         |
+| 3   | Tree View                    | Not started                                                                                                                                                   | Virtualized, keyboard-navigable, size-sorted tree that grows during the scan; "Open in Explorer"; 1M entries at 60 fps                                                                                  |
+| 4   | Largest Files & Explanations | Not started                                                                                                                                                   | Largest-files list; plain-language labels for about 30 well-known space hogs in the tree and the list; "Copy as CSV" — **MVP complete**                                                                 |
+| 5   | Treemap                      | Not started                                                                                                                                                   | Squarified treemap as a secondary view, with drill-down synced to the tree                                                                                                                              |
+| 6   | Duplicate Finder             | Not started                                                                                                                                                   | Size → partial hash → full hash; cancelable; never deduplicates hardlinks                                                                                                                               |
+| 7   | History (light)              | Not started                                                                                                                                                   | SQLite remembers the last scan of each drive; shows "+X GB since last time"                                                                                                                             |
+| 8   | Export                       | Not started                                                                                                                                                   | CSV and XLSX export of the tree and the largest files                                                                                                                                                   |
+| 9   | AI Features                  | Not started                                                                                                                                                   | Explanations beyond the fixed dictionary; local-vs-cloud decision recorded first                                                                                                                        |
 
 ### Phase 1 — Project Foundation (task checklist)
 
@@ -143,19 +144,44 @@ Still open before Phase 1 is fully closed:
 - [ ] CI run green on GitHub (no remote yet).
 - [ ] The owner's manual checks: the UI via `npm run dev` (criteria 1 and 6), and install → launch → second launch → uninstall (criterion 8).
 
+### Phase 2a — Core Scanner (task checklist)
+
+- [x] T1 E2E console and CSP listeners attached before the first page load
+- [x] T2 IPC infrastructure: `Pick` handler factories, per-channel `parseArgs`, typed events, `sendEvent`, preload `onX`
+- [x] T3 Scanner core: concurrent walk (≤ 16 directories, no reparse points, AbortSignal), folder tree, top folders
+- [x] T4 Scanner utilityProcess, scan service (relay, supersede, crash → `scan:failed`, kill on quit), `render-process-gone` policy
+- [x] T5 Drives through koffi (fixed + removable), `drives:list`, packaged self-test
+- [x] T6 Scan store and the pick, scanning, result and crash screens
+- [x] T7 Scan E2E, explicit CI build step, packaged check, report-only metrics
+
+### Phase 2a — Outcome
+
+All automated gates are green (format, lint, typecheck, unit, E2E, packaged self-test). Still pending: the final whole-branch review and the owner's manual checks.
+
+koffi 3.3.8 (runtime dependency, unpacked from the asar, `npmRebuild: false`).
+
+Metrics (report only, from the Task 7 run): renderer bundle 594.0 kB, installer 116.2 MB, idle RAM 341 MB, scan of 20,000 generated files 0.4 s, cancel latency 57 ms.
+
+Deviations from Phase 1 conventions (recorded here, approved with the plan):
+
+- koffi is a runtime `dependency`, not a dev dependency, because its native module ships in the app.
+- `--self-test` command-line switch: lists drives, checks koffi is in `app.asar.unpacked`, runs one scan in the scanner process, exits with a status code (`npm run test:packaged`).
+- E2E launches Electron with `-r e2e/support/capture-console.cjs` (test-only) to attach listeners before the first page load.
+- The scanner sets `process.noAsar = true` so `.asar` archives on disk count as files.
+
 ### Carry-over into the Phase 2a plan
 
 These came from the Phase 1 reviews. The Phase 2a plan must schedule each one; none may be dropped silently.
 
-1. **First task:** attach the E2E console and `securitypolicyviolation` listeners before the first page load (`app.on('window')` or an init script). Today they attach after `firstWindow()`, so errors during startup could go unseen.
-2. Handler factories return `Pick<IpcHandlerMap, …>`, and the full map is built with `satisfies IpcHandlerMap`.
-3. Validate IPC arguments with a typed per-channel `parseArgs`, required for every channel that takes arguments.
-4. Add an `IpcEventContract` for main → renderer events, plus a `sendEvent` that targets only the main window's webContents and skips it when it is destroyed. The preload exposes `onX(cb) => unsubscribe`, and the listener never receives the `IpcRendererEvent`. utilityProcess output is relayed through main, never through a raw MessagePort. Kill the scanner child process on quit. Build the worker as a second electron-vite main input.
-5. `render-process-gone` policy: ignore `clean-exit` and crashes during quit, and show "stopped unexpectedly" wording after the first load. Decide it together with the scanner-crash policy.
-6. Store test: `loadAppInfo` retries after an error.
-7. Report renderer bundle size (572 kB today), installer size and idle RAM in CI. Make the CI build step explicit rather than relying on the E2E build.
-8. Cosmetic: the busy (`aria-disabled`) button still shows its hover colour.
-9. Phase 4: copy CSV through main's `clipboard` over IPC, because the renderer's clipboard permission is denied.
+1. **First task:** attach the E2E console and `securitypolicyviolation` listeners before the first page load (`app.on('window')` or an init script). Today they attach after `firstWindow()`, so errors during startup could go unseen. — **done in Phase 2a Task 1**
+2. Handler factories return `Pick<IpcHandlerMap, …>`, and the full map is built with `satisfies IpcHandlerMap`. — **done (Tasks 2, 4, 5)**
+3. Validate IPC arguments with a typed per-channel `parseArgs`, required for every channel that takes arguments. — **done (Tasks 2, 4, 5)**
+4. Add an `IpcEventContract` for main → renderer events, plus a `sendEvent` that targets only the main window's webContents and skips it when it is destroyed. The preload exposes `onX(cb) => unsubscribe`, and the listener never receives the `IpcRendererEvent`. utilityProcess output is relayed through main, never through a raw MessagePort. Kill the scanner child process on quit. Build the worker as a second electron-vite main input. — **done (Tasks 2, 4)**
+5. `render-process-gone` policy: ignore `clean-exit` and crashes during quit, and show "stopped unexpectedly" wording after the first load. Decide it together with the scanner-crash policy. — **done (Task 4)**
+6. Store test: `loadAppInfo` retries after an error. — **done (Task 6)**
+7. Report renderer bundle size (572 kB today), installer size and idle RAM in CI. Make the CI build step explicit rather than relying on the E2E build. — **done (Task 7)**
+8. Cosmetic: the busy (`aria-disabled`) button still shows its hover colour. — **done (Tasks 6, 7)**
+9. Phase 4: copy CSV through main's `clipboard` over IPC, because the renderer's clipboard permission is denied. — **still scheduled for Phase 4**
 
 Installer: 115.7 MB, unsigned, default icon.
 
