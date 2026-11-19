@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { AppInfo, SelectFolderResult } from '@shared/ipc-contract'
+import type { AppInfo } from '@shared/ipc-contract'
 import { createFakeApi, TEST_APP_INFO } from '../test/fake-api'
 import { createAppStore } from './app-store'
 
@@ -12,14 +12,10 @@ function deferred<T>() {
 }
 
 describe('createAppStore', () => {
-  it('starts idle with no folder selected', () => {
-    const state = createAppStore(createFakeApi()).getState()
-    expect(state).toMatchObject({
+  it('starts idle', () => {
+    expect(createAppStore(createFakeApi()).getState()).toMatchObject({
       appInfo: null,
       appInfoStatus: 'idle',
-      scanTarget: null,
-      folderPickerOpen: false,
-      errorMessage: null,
     })
   })
 
@@ -50,77 +46,20 @@ describe('createAppStore', () => {
 
       expect(api.getAppInfo).toHaveBeenCalledTimes(1)
     })
-  })
 
-  describe('chooseFolder', () => {
-    it('stores the folder the user picked', async () => {
-      const api = createFakeApi({
-        selectFolder: vi.fn().mockResolvedValue({ canceled: false, path: 'D:\\Photos' }),
-      })
-      const store = createAppStore(api)
-      await store.getState().chooseFolder()
-      expect(store.getState()).toMatchObject({ scanTarget: 'D:\\Photos', folderPickerOpen: false })
-    })
+    it('retries after an error (roadmap carry-over 6)', async () => {
+      const getAppInfo = vi
+        .fn<() => Promise<AppInfo>>()
+        .mockRejectedValueOnce(new Error('boom'))
+        .mockResolvedValueOnce(TEST_APP_INFO)
+      const store = createAppStore(createFakeApi({ getAppInfo }))
 
-    it('keeps the previous folder when the user cancels', async () => {
-      const selectFolder = vi
-        .fn<() => Promise<SelectFolderResult>>()
-        .mockResolvedValueOnce({ canceled: false, path: 'D:\\Photos' })
-        .mockResolvedValueOnce({ canceled: true })
-      const store = createAppStore(createFakeApi({ selectFolder }))
+      await store.getState().loadAppInfo()
+      expect(store.getState().appInfoStatus).toBe('error')
+      await store.getState().loadAppInfo()
 
-      await store.getState().chooseFolder()
-      await store.getState().chooseFolder()
-
-      expect(store.getState().scanTarget).toBe('D:\\Photos')
-    })
-
-    it('ignores a second request while the picker is already open', async () => {
-      const pending = deferred<SelectFolderResult>()
-      const api = createFakeApi({ selectFolder: vi.fn(() => pending.promise) })
-      const store = createAppStore(api)
-
-      const first = store.getState().chooseFolder()
-      expect(store.getState().folderPickerOpen).toBe(true)
-      await store.getState().chooseFolder()
-      pending.resolve({ canceled: true })
-      await first
-
-      expect(api.selectFolder).toHaveBeenCalledTimes(1)
-      expect(store.getState().folderPickerOpen).toBe(false)
-    })
-
-    it('clears the error when a new pick starts, then stores the folder after a failed pick', async () => {
-      const pending = deferred<SelectFolderResult>()
-      const selectFolder = vi
-        .fn<() => Promise<SelectFolderResult>>()
-        .mockRejectedValueOnce(new Error('IPC down'))
-        .mockImplementationOnce(() => pending.promise)
-      const store = createAppStore(createFakeApi({ selectFolder }))
-
-      await store.getState().chooseFolder()
-      expect(store.getState().errorMessage).not.toBeNull()
-
-      const second = store.getState().chooseFolder()
-      expect(store.getState().errorMessage).toBeNull()
-      pending.resolve({ canceled: false, path: 'D:\\Photos' })
-      await second
-
-      expect(store.getState()).toMatchObject({ scanTarget: 'D:\\Photos', errorMessage: null })
-    })
-
-    it('shows a friendly error when the picker fails, and can dismiss it', async () => {
-      const api = createFakeApi({ selectFolder: vi.fn().mockRejectedValue(new Error('IPC down')) })
-      const store = createAppStore(api)
-
-      await store.getState().chooseFolder()
-      expect(store.getState()).toMatchObject({
-        folderPickerOpen: false,
-        errorMessage: 'StorageIQ couldn’t open the folder picker. Please try again.',
-      })
-
-      store.getState().dismissError()
-      expect(store.getState().errorMessage).toBeNull()
+      expect(getAppInfo).toHaveBeenCalledTimes(2)
+      expect(store.getState()).toMatchObject({ appInfo: TEST_APP_INFO, appInfoStatus: 'ready' })
     })
   })
 })
