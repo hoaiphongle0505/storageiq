@@ -2,7 +2,7 @@
 
 A free, open-source disk space analyzer for Windows. StorageIQ shows where your disk space went, and explains it in plain words. It scans a drive or folder and shows which folders and files use the most space, so you can decide what to clean up.
 
-> **Status:** early development (Phase 1, Project Foundation, complete). Phase 2a (Core Scanner) is next. See the [roadmap](docs/ROADMAP.md).
+> **Status:** early development. Phase 2a (Core Scanner) has passed its automated gates; the final review and manual checks are still pending. It lets you scan a drive or folder, see live progress, the largest folders and any folders that couldn’t be read. Phase 2b (Honest Totals) is next. See the [roadmap](docs/ROADMAP.md).
 
 ## Requirements
 
@@ -21,6 +21,8 @@ npm run lint
 npm run format:check
 npm run build        # production build into out/
 npm run dist         # build the Windows installer into release/<version>/
+npm run test:packaged # run the packaged app's self-test (after npm run dist)
+npm run metrics      # print report-only metrics (bundle, installer, RAM, scan time)
 ```
 
 Notes:
@@ -34,6 +36,7 @@ Installers are currently unsigned, so Windows SmartScreen will warn on first run
 ## Architecture
 
 - `src/main`: Electron main process (window, security policy, IPC handlers)
+- `src/worker`: the scanner utilityProcess (directory walk, folder tree, largest folders)
 - `src/preload`: the only bridge to the renderer (`window.storageiq`)
 - `src/renderer`: React UI (Tailwind, Zustand)
 - `src/shared`: types shared by every process, including the IPC contract

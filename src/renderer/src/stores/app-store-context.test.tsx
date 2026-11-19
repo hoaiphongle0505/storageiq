@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { useAppStore } from './app-store-context'
 
 function Probe() {
-  useAppStore((s) => s.scanTarget)
+  useAppStore((s) => s.appInfo)
   return null
 }
 

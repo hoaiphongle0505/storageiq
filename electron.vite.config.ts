@@ -8,6 +8,16 @@ const sharedAlias = { '@shared': resolve('src/shared') }
 export default defineConfig({
   main: {
     resolve: { alias: sharedAlias },
+    build: {
+      rolldownOptions: {
+        // One main build, two entries: the app (out/main/index.js) and the scanner
+        // utilityProcess (out/main/scanner.js, forked by src/main/scan/scan-service.ts).
+        input: {
+          index: resolve('src/main/index.ts'),
+          scanner: resolve('src/worker/scanner/entry.ts'),
+        },
+      },
+    },
   },
   preload: {
     resolve: { alias: sharedAlias },
