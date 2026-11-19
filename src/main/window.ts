@@ -22,7 +22,10 @@ export interface MainWindowConfig {
 
 let failing = false
 
-function failStartup(detail: string): void {
+function failStartup(detail: string, quitting: boolean): void {
+  // Quitting aborts an in-flight load (loadFile rejects with ERR_FAILED); that is not a startup
+  // failure, and the modal error box would block the quit forever on a headless machine.
+  if (quitting) return
   if (failing) return // did-fail-load and the load promise both report the same failure
   failing = true
   dialog.showErrorBox(
@@ -46,7 +49,7 @@ export function createMainWindow(config: MainWindowConfig): BrowserWindow {
     'did-fail-load',
     (_event, errorCode, errorDescription, _url, isMainFrame) => {
       if (shouldTreatAsFatalLoadFailure(errorCode, isMainFrame)) {
-        failStartup(errorDescription)
+        failStartup(errorDescription, config.isQuitting())
       }
     },
   )
@@ -64,7 +67,7 @@ export function createMainWindow(config: MainWindowConfig): BrowserWindow {
       case 'ignore':
         return
       case 'fail-startup':
-        failStartup(`The window process stopped unexpectedly (${details.reason}).`)
+        failStartup(`The window process stopped unexpectedly (${details.reason}).`, false)
         return
       case 'reload':
         reloadedAfterCrash = true
@@ -92,7 +95,7 @@ export function createMainWindow(config: MainWindowConfig): BrowserWindow {
     ? window.loadURL(config.devServerUrl)
     : window.loadFile(path.join(config.rendererRoot, 'index.html'))
   load.catch((error: unknown) => {
-    failStartup(error instanceof Error ? error.message : String(error))
+    failStartup(error instanceof Error ? error.message : String(error), config.isQuitting())
   })
 
   return window
