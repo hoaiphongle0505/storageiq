@@ -23,4 +23,13 @@ export default defineConfig(
     files: ['src/main/**/*.ts', 'src/preload/**/*.ts', 'e2e/**/*.ts', '*.config.{ts,mts,mjs}'],
     languageOptions: { globals: globals.node },
   },
+  {
+    files: ['e2e/support/capture-console.cjs'],
+    languageOptions: { sourceType: 'commonjs', globals: globals.node },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
+  {
+    files: ['e2e/support/csp-listener.cjs'],
+    languageOptions: { sourceType: 'script', globals: globals.browser },
+  },
 )
