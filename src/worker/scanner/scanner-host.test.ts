@@ -138,6 +138,29 @@ describe('createScannerHost', () => {
     expect(statusById).toEqual({ s1: 'canceled', s2: 'complete' })
   })
 
+  it('keeps the newest scan’s tree when a superseded scan settles after it', async () => {
+    let release: () => void = () => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let calls = 0
+    const t = setup({
+      beforeOpendir: async () => {
+        calls += 1
+        if (calls === 1) await gate // only the first scan's first listing is held back
+      },
+    })
+    t.host.handle({ type: 'start', scanId: 's1', root: ROOT })
+    t.host.handle({ type: 'start', scanId: 's2', root: ROOT })
+    await vi.waitFor(() => expect(t.done()).toHaveLength(1))
+    expect(t.done()[0]).toMatchObject({ scanId: 's2', status: 'complete' })
+
+    release()
+    await vi.waitFor(() => expect(t.done()).toHaveLength(2))
+    expect(t.done()[1]).toMatchObject({ scanId: 's1', status: 'canceled' })
+    expect(t.host.lastTree()?.totals()).toEqual({ files: 4, folders: 2, bytes: 605 })
+  })
+
   it('ends a scan of an unreadable root as complete with zero totals and one error', async () => {
     const t = setup({ opendirErrors: { [ROOT]: 'EACCES' } })
     t.host.handle({ type: 'start', scanId: 's1', root: ROOT })

@@ -44,6 +44,7 @@ export function parseScannerRequest(data: unknown): ScannerRequest | null {
 export function createScannerHost(deps: ScannerHostDeps): ScannerHost {
   let current: RunningScan | null = null
   let finishedTree: ScanTree | null = null
+  let latestScanId: string | null = null
 
   const run = async (scanId: string, rootPath: string, signal: AbortSignal): Promise<void> => {
     const tree = createScanTree(rootPath)
@@ -69,7 +70,8 @@ export function createScannerHost(deps: ScannerHostDeps): ScannerHost {
       errors: [...tree.errors],
       errorCount: tree.errorCount,
     }
-    finishedTree = tree
+    // A superseded scan that settles late must not replace the newer scan's tree.
+    if (latestScanId === scanId) finishedTree = tree
     deps.post({ type: 'done', payload: done })
   }
 
@@ -79,6 +81,7 @@ export function createScannerHost(deps: ScannerHostDeps): ScannerHost {
         if (current?.scanId === request.scanId) current.controller.abort()
         return
       }
+      latestScanId = request.scanId
       current?.controller.abort() // a new start supersedes the running scan
       const controller = new AbortController()
       const scan: RunningScan = { scanId: request.scanId, controller, finished: Promise.resolve() }
