@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { app, type BrowserWindow, dialog, ipcMain, Menu, session } from 'electron'
 import { createAppHandlers } from './ipc/app-handlers'
-import { registerIpcHandlers } from './ipc/register'
+import { type IpcHandlerMap, registerIpcHandlers } from './ipc/register'
 import { hardenWebContents } from './security/harden-web-contents'
 import { isTrustedRendererUrl } from './security/trusted-url'
 import { isTrustedIpcSender } from './security/trusted-sender'
@@ -52,9 +52,8 @@ if (!app.requestSingleInstanceLock()) {
       )
       session.defaultSession.setPermissionCheckHandler(() => false)
 
-      registerIpcHandlers(
-        ipcMain,
-        createAppHandlers({
+      const handlers = {
+        ...createAppHandlers({
           app,
           dialog,
           getMainWindow: () => mainWindow,
@@ -64,11 +63,13 @@ if (!app.requestSingleInstanceLock()) {
             electronVersion: process.versions.electron,
           },
         }),
-        (event) =>
-          isTrustedIpcSender(event, {
-            mainWebContents: mainWindow?.webContents,
-            isTrustedUrl,
-          }),
+      } satisfies IpcHandlerMap
+
+      registerIpcHandlers(ipcMain, handlers, (event) =>
+        isTrustedIpcSender(event, {
+          mainWebContents: mainWindow?.webContents,
+          isTrustedUrl,
+        }),
       )
 
       mainWindow = createMainWindow({ preloadPath, rendererRoot, devServerUrl })
