@@ -6,7 +6,14 @@ import tseslint from 'typescript-eslint'
 
 export default defineConfig(
   {
-    ignores: ['out/**', 'release/**', 'node_modules/**', 'playwright-report/**', 'test-results/**'],
+    ignores: [
+      'out/**',
+      'release/**',
+      'node_modules/**',
+      'playwright-report/**',
+      'test-results/**',
+      'metrics/**',
+    ],
   },
   js.configs.recommended,
   tseslint.configs.recommended,

@@ -57,3 +57,25 @@ export function createScanFixture(): ScanFixture {
     remove: () => rmSync(base, { recursive: true, force: true }),
   }
 }
+
+export interface LargeFixture {
+  root: string
+  files: number
+  remove(): void
+}
+
+/** `fileCount` files of 1 KB, 100 per folder, for the report-only scan-time metric. */
+export function createLargeFixture(fileCount: number): LargeFixture {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'storageiq-metrics-'))
+  const filesPerFolder = 100
+  const payload = Buffer.alloc(1024)
+  for (let i = 0; i < fileCount; i += 1) {
+    const folder = path.join(
+      root,
+      `group-${String(Math.floor(i / filesPerFolder)).padStart(3, '0')}`,
+    )
+    if (i % filesPerFolder === 0) mkdirSync(folder)
+    writeFileSync(path.join(folder, `file-${i}.bin`), payload)
+  }
+  return { root, files: fileCount, remove: () => rmSync(root, { recursive: true, force: true }) }
+}
