@@ -1,6 +1,12 @@
 import { vi } from 'vitest'
 import type { AppInfo, SelectFolderResult, StorageIQApi } from '@shared/ipc-contract'
-import type { ScanDone, ScanFailed, ScanProgress, ScanStartResult } from '@shared/scan-types'
+import type {
+  DriveInfo,
+  ScanDone,
+  ScanFailed,
+  ScanProgress,
+  ScanStartResult,
+} from '@shared/scan-types'
 
 export const TEST_APP_INFO: AppInfo = {
   name: 'StorageIQ',
@@ -9,6 +15,13 @@ export const TEST_APP_INFO: AppInfo = {
   arch: 'x64',
   electronVersion: '38.0.0',
 }
+
+const GB = 1024 ** 3
+
+export const TEST_DRIVES: DriveInfo[] = [
+  { root: 'C:\\', label: 'Local Disk', kind: 'fixed', totalBytes: 512 * GB, freeBytes: 128 * GB },
+  { root: 'E:\\', label: 'Photos', kind: 'removable', totalBytes: 64 * GB, freeBytes: 16 * GB },
+]
 
 /** A fake bridge plus `emit…` helpers that play the main process sending events. */
 export interface FakeApi extends StorageIQApi {
@@ -42,6 +55,7 @@ export function createFakeApi(overrides: Partial<StorageIQApi> = {}): FakeApi {
   return {
     getAppInfo: vi.fn(async () => TEST_APP_INFO),
     selectFolder: vi.fn(async (): Promise<SelectFolderResult> => ({ canceled: true })),
+    listDrives: vi.fn(async () => TEST_DRIVES),
     startScan: vi.fn(async (): Promise<ScanStartResult> => ({ scanId: 'scan-1' })),
     cancelScan: vi.fn(async () => undefined),
     onScanProgress: vi.fn(progress.subscribe),

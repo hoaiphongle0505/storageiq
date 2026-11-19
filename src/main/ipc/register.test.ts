@@ -23,6 +23,7 @@ function createHandlers(overrides: Partial<IpcHandlerMap> = {}): IpcHandlerMap {
   return {
     'app:get-info': { parseArgs: noArgs, handle: () => appInfo },
     'dialog:select-folder': { parseArgs: noArgs, handle: () => ({ canceled: true }) },
+    'drives:list': { parseArgs: noArgs, handle: () => [] },
     'scan:start': { parseArgs: oneString, handle: () => ({ scanId: 'scan-1' }) },
     'scan:cancel': { parseArgs: oneString, handle: () => undefined },
     ...overrides,
@@ -64,6 +65,7 @@ describe('registerIpcHandlers', () => {
     expect([...ipc.listeners.keys()].sort()).toEqual([
       'app:get-info',
       'dialog:select-folder',
+      'drives:list',
       'scan:cancel',
       'scan:start',
     ])

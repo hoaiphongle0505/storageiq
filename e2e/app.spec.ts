@@ -40,6 +40,7 @@ test('launches a locked-down renderer with the StorageIQ bridge', async () => {
   expect(keys).toEqual([
     'cancelScan',
     'getAppInfo',
+    'listDrives',
     'onScanDone',
     'onScanFailed',
     'onScanProgress',
@@ -125,4 +126,13 @@ test('rejects a relative scan path before the scanner sees it', async () => {
     }
   })
   expect(outcome).toContain('Invalid IPC arguments')
+})
+
+test('lists the system drive through koffi', async () => {
+  const systemRoot = `${process.env['SystemDrive'] ?? 'C:'}\\`
+  const drives = await page.evaluate(() =>
+    (globalThis as unknown as { storageiq: StorageIQApi }).storageiq.listDrives(),
+  )
+  expect(drives).toContainEqual(expect.objectContaining({ root: systemRoot, kind: 'fixed' }))
+  for (const drive of drives) expect(['fixed', 'removable']).toContain(drive.kind)
 })

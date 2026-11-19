@@ -37,3 +37,15 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: StorageIQ
   uninstallDisplayName: StorageIQ
+
+# koffi (drive listing) is a native Node-API module; koffi 3 loads it from the optional package
+# @koromix/koffi-win32-x64. Both stay outside app.asar so Windows can load koffi.node. Electron
+# redirects require() of these paths inside app.asar to app.asar.unpacked. The onlyLoadAppFromAsar
+# fuse only restricts where the app entry is loaded from, so this still works; the asar integrity
+# fuse does not cover unpacked files. `npm run test:packaged` verifies the packaged app.
+asarUnpack:
+  - node_modules/koffi/**
+  - node_modules/@koromix/koffi-win32-x64/**
+
+# koffi ships prebuilt, ABI-stable Node-API binaries: nothing needs rebuilding for Electron.
+npmRebuild: false
