@@ -121,3 +121,9 @@ test('lists the system drive through koffi', async () => {
   expect(drives).toContainEqual(expect.objectContaining({ root: systemRoot, kind: 'fixed' }))
   for (const drive of drives) expect(['fixed', 'removable']).toContain(drive.kind)
 })
+
+test('quits cleanly when closed while the first page is still loading', async () => {
+  // Quitting aborts the in-flight load; that must not raise the modal startup-error box.
+  await app!.close()
+  app = undefined
+})
