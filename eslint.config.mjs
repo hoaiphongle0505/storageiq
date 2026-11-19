@@ -6,7 +6,14 @@ import tseslint from 'typescript-eslint'
 
 export default defineConfig(
   {
-    ignores: ['out/**', 'release/**', 'node_modules/**', 'playwright-report/**', 'test-results/**'],
+    ignores: [
+      'out/**',
+      'release/**',
+      'node_modules/**',
+      'playwright-report/**',
+      'test-results/**',
+      'metrics/**',
+    ],
   },
   js.configs.recommended,
   tseslint.configs.recommended,
@@ -20,7 +27,23 @@ export default defineConfig(
     },
   },
   {
-    files: ['src/main/**/*.ts', 'src/preload/**/*.ts', 'e2e/**/*.ts', '*.config.{ts,mts,mjs}'],
+    files: [
+      'src/main/**/*.ts',
+      'src/preload/**/*.ts',
+      'src/worker/**/*.ts',
+      'e2e/**/*.ts',
+      '*.config.{ts,mts,mjs}',
+      'scripts/**/*.mjs',
+    ],
     languageOptions: { globals: globals.node },
+  },
+  {
+    files: ['e2e/support/capture-console.cjs'],
+    languageOptions: { sourceType: 'commonjs', globals: globals.node },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
+  {
+    files: ['e2e/support/csp-listener.cjs'],
+    languageOptions: { sourceType: 'script', globals: globals.browser },
   },
 )

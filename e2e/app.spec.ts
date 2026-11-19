@@ -1,30 +1,16 @@
-import {
-  _electron as electron,
-  type ElectronApplication,
-  expect,
-  type Page,
-  test,
-} from '@playwright/test'
+import { type ElectronApplication, expect, type Page, test } from '@playwright/test'
+import type { StorageIQApi } from '../src/shared/ipc-contract'
+import type { ScanDone } from '../src/shared/scan-types'
+import { createScanFixture } from './support/fixture'
+import { consoleErrors, cspListenerReady, launchApp } from './support/launch'
 
 let app: ElectronApplication | undefined
 let page: Page
-let consoleErrors: string[] = []
-
-// ELECTRON_RUN_AS_NODE makes Electron behave as plain Node, so it must not leak into the launch.
-const launchEnv: Record<string, string> = Object.fromEntries(
-  Object.entries(process.env).filter(
-    (entry): entry is [string, string] =>
-      entry[1] !== undefined && entry[0] !== 'ELECTRON_RUN_AS_NODE',
-  ),
-)
 
 test.beforeEach(async () => {
-  app = await electron.launch({ args: ['.'], env: launchEnv })
-  consoleErrors = []
-  page = await app.firstWindow()
-  page.on('console', (message) => {
-    if (message.type() === 'error') consoleErrors.push(message.text())
-  })
+  const launched = await launchApp()
+  app = launched.app
+  page = launched.page
 })
 
 test.afterEach(async () => {
@@ -51,7 +37,16 @@ test('launches a locked-down renderer with the StorageIQ bridge', async () => {
   const keys = await page.evaluate(() =>
     Object.keys((globalThis as unknown as { storageiq: object }).storageiq).sort(),
   )
-  expect(keys).toEqual(['getAppInfo', 'selectFolder'])
+  expect(keys).toEqual([
+    'cancelScan',
+    'getAppInfo',
+    'listDrives',
+    'onScanDone',
+    'onScanFailed',
+    'onScanProgress',
+    'selectFolder',
+    'startScan',
+  ])
 })
 
 test('shows the version reported by the main process', async () => {
@@ -61,53 +56,74 @@ test('shows the version reported by the main process', async () => {
   ).toBeVisible()
 })
 
-test('shows the folder chosen in the native picker', async () => {
-  await app!.evaluate(({ dialog }) => {
-    dialog.showOpenDialog = (async () => ({
-      canceled: false,
-      filePaths: ['C:\\StorageIQ-e2e'],
-    })) as typeof dialog.showOpenDialog
-  })
-
-  await page.getByRole('button', { name: 'Choose folder' }).click()
-
-  await expect(page.getByText('Selected folder')).toBeVisible()
-  await expect(page.getByRole('contentinfo')).toContainText('C:\\StorageIQ-e2e')
-  await expect(page.getByRole('button', { name: 'Choose a different folder' })).toBeVisible()
+test('logs no console errors or CSP violations from the first page load on', async () => {
+  await expect.poll(() => cspListenerReady(app!)).toBe(true)
+  await expect(page.getByRole('contentinfo').getByText(/^StorageIQ \d/)).toBeVisible()
+  expect(await consoleErrors(app!)).toEqual([])
 })
 
-test('logs no console errors or CSP violations after load and after choosing a folder', async () => {
-  await expect(page.getByRole('contentinfo').getByText(/^StorageIQ \d/)).toBeVisible()
-  await page.evaluate(() => {
-    interface Scope {
-      __cspViolations: string[]
-      document: EventTarget
-    }
-    interface Violation extends Event {
-      violatedDirective: string
-      blockedURI: string
-    }
-    const scope = globalThis as unknown as Scope
-    scope.__cspViolations = []
-    scope.document.addEventListener('securitypolicyviolation', (event) => {
-      const violation = event as Violation
-      scope.__cspViolations.push(`${violation.violatedDirective} ${violation.blockedURI}`)
+test('the listeners really catch a CSP violation', async () => {
+  // A remote script is blocked by `script-src 'self'`; the hook must report it.
+  await page.addScriptTag({ url: 'https://example.invalid/blocked.js' }).catch(() => undefined)
+  await expect
+    .poll(() => consoleErrors(app!))
+    .toContainEqual(expect.stringContaining('[csp] script-src'))
+})
+
+test('scans a folder through the bridge in the scanner process', async () => {
+  const fixture = createScanFixture()
+  try {
+    const done = await page.evaluate((root) => {
+      const api = (globalThis as unknown as { storageiq: StorageIQApi }).storageiq
+      return new Promise<ScanDone>((resolve, reject) => {
+        const off = api.onScanDone((result) => {
+          off()
+          resolve(result)
+        })
+        api.startScan(root).catch(reject)
+      })
+    }, fixture.root)
+
+    expect(done).toMatchObject({
+      status: 'complete',
+      files: fixture.expected.files,
+      folders: fixture.expected.folders,
+      bytes: fixture.expected.bytes,
+      errorCount: 0,
     })
-  })
-  const violations = () =>
-    page.evaluate(() => (globalThis as unknown as { __cspViolations: string[] }).__cspViolations)
-  expect(consoleErrors).toEqual([])
-  expect(await violations()).toEqual([])
+    expect(done.topFolders.map((row) => row.name)).toEqual([
+      ...fixture.expected.topFolderNames,
+      'Everything else',
+    ])
+  } finally {
+    fixture.remove()
+  }
+})
 
-  await app!.evaluate(({ dialog }) => {
-    dialog.showOpenDialog = (async () => ({
-      canceled: false,
-      filePaths: ['C:\\StorageIQ-e2e'],
-    })) as typeof dialog.showOpenDialog
+test('rejects a relative scan path before the scanner sees it', async () => {
+  const outcome = await page.evaluate(async () => {
+    const api = (globalThis as unknown as { storageiq: StorageIQApi }).storageiq
+    try {
+      await api.startScan('relative\\folder')
+      return 'resolved'
+    } catch (error) {
+      return String(error)
+    }
   })
-  await page.getByRole('button', { name: 'Choose folder' }).click()
-  await expect(page.getByText('Selected folder')).toBeVisible()
+  expect(outcome).toContain('Invalid IPC arguments')
+})
 
-  expect(consoleErrors).toEqual([])
-  expect(await violations()).toEqual([])
+test('lists the system drive through koffi', async () => {
+  const systemRoot = `${process.env['SystemDrive'] ?? 'C:'}\\`
+  const drives = await page.evaluate(() =>
+    (globalThis as unknown as { storageiq: StorageIQApi }).storageiq.listDrives(),
+  )
+  expect(drives).toContainEqual(expect.objectContaining({ root: systemRoot, kind: 'fixed' }))
+  for (const drive of drives) expect(['fixed', 'removable']).toContain(drive.kind)
+})
+
+test('quits cleanly when closed while the first page is still loading', async () => {
+  // Quitting aborts the in-flight load; that must not raise the modal startup-error box.
+  await app!.close()
+  app = undefined
 })

@@ -23,7 +23,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "electron-vite build && playwright test",
-    "dist": "npm run build && electron-builder --win --x64 --publish never"
+    "dist": "npm run build && electron-builder --win --x64 --publish never",
+    "test:packaged": "node scripts/check-packaged-app.mjs",
+    "metrics": "node scripts/report-metrics.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -52,5 +54,8 @@
     "vite": "^8.3.8",
     "vitest": "^5.1.1",
     "zustand": "^5.1.0"
+  },
+  "dependencies": {
+    "koffi": "3.3.8"
   }
 }

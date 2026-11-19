@@ -28,10 +28,28 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
-      - run: npm run test:e2e
+
+      - name: Build
+        run: npx electron-vite build
+
+      - name: End-to-end tests
+        run: npx playwright test
 
       - name: Package installer
         run: npx electron-builder --win --x64 --publish never
+
+      - name: Packaged app self-test (koffi from app.asar.unpacked, scanner process)
+        run: npm run test:packaged
+
+      - name: Collect metrics (report only)
+        continue-on-error: true
+        env:
+          STORAGEIQ_METRICS: '1'
+        run: npx playwright test e2e/metrics.spec.ts
+
+      - name: Report metrics (report only)
+        continue-on-error: true
+        run: npm run metrics
 
       - uses: actions/upload-artifact@v4
         with:

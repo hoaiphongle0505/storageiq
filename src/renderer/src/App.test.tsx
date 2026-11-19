@@ -1,34 +1,15 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
-import type { SelectFolderResult, StorageIQApi } from '@shared/ipc-contract'
+import { describe, expect, it } from 'vitest'
 import { App } from './App'
-import { createAppStore } from './stores/app-store'
-import { AppStoreProvider } from './stores/app-store-context'
-import { createFakeApi, TEST_APP_INFO } from './test/fake-api'
-
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((r) => {
-    resolve = r
-  })
-  return { promise, resolve }
-}
-
-function renderApp(api: StorageIQApi = createFakeApi()) {
-  const store = createAppStore(api)
-  render(
-    <AppStoreProvider store={store}>
-      <App />
-    </AppStoreProvider>,
-  )
-  return store
-}
+import { TEST_APP_INFO } from './test/fake-api'
+import { renderWithStores } from './test/render'
+import { makeDone, makeFailed, makeProgress } from './test/scan-fixtures'
 
 describe('<App />', () => {
-  it('greets the user and shows the version from the main process', async () => {
-    renderApp()
+  it('opens on the pick-location screen and shows the version from main', async () => {
+    renderWithStores(<App />)
     expect(
       screen.getByRole('heading', { level: 1, name: 'See what’s filling your disk' }),
     ).toBeInTheDocument()
@@ -36,61 +17,36 @@ describe('<App />', () => {
     expect(await screen.findByText(`StorageIQ ${TEST_APP_INFO.version}`)).toBeInTheDocument()
   })
 
-  it('shows the chosen folder after the user picks one', async () => {
+  it('goes from a drive to the scanning screen to the result', async () => {
     const user = userEvent.setup()
-    renderApp(
-      createFakeApi({
-        selectFolder: vi.fn().mockResolvedValue({ canceled: false, path: 'D:\\Photos' }),
-      }),
-    )
+    const { api } = renderWithStores(<App />)
 
-    await user.click(screen.getByRole('button', { name: 'Choose folder' }))
+    await user.click(await screen.findByRole('button', { name: /^Local Disk \(C:\)/ }))
+    expect(await screen.findByRole('heading', { level: 1, name: 'Scanning' })).toBeInTheDocument()
 
-    expect(await screen.findByText('Selected folder')).toBeInTheDocument()
-    expect(within(screen.getByRole('contentinfo')).getByText('D:\\Photos')).toBeInTheDocument()
+    act(() => api.emitScanProgress(makeProgress()))
+    act(() => api.emitScanDone(makeDone()))
+
+    expect(screen.getByRole('heading', { level: 1, name: 'Scan complete' })).toBeInTheDocument()
+    expect(screen.getByRole('contentinfo')).toHaveTextContent('C:\\')
+  })
+
+  it('shows the crash screen when the scanner fails, and Retry scans again', async () => {
+    const user = userEvent.setup()
+    const { api } = renderWithStores(<App />)
+
+    await user.click(await screen.findByRole('button', { name: /^Local Disk \(C:\)/ }))
+    await screen.findByRole('heading', { level: 1, name: 'Scanning' })
+    act(() => api.emitScanFailed(makeFailed()))
+
     expect(
-      within(screen.getByText('Selected folder').parentElement as HTMLElement).getByText(
-        'D:\\Photos',
-      ),
+      screen.getByRole('heading', {
+        level: 1,
+        name: 'The scan stopped unexpectedly. You can try again.',
+      }),
     ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Choose a different folder' })).toBeInTheDocument()
-  })
-
-  it('shows a dismissible error when the folder picker fails', async () => {
-    const user = userEvent.setup()
-    renderApp(createFakeApi({ selectFolder: vi.fn().mockRejectedValue(new Error('IPC down')) }))
-
-    await user.click(screen.getByRole('button', { name: 'Choose folder' }))
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('StorageIQ couldn’t open the folder picker. Please try again.')
-
-    await user.click(screen.getByRole('button', { name: 'Dismiss' }))
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-  })
-
-  it('keeps keyboard focus on the button while the folder picker is open', async () => {
-    const user = userEvent.setup()
-    const pending = deferred<SelectFolderResult>()
-    renderApp(createFakeApi({ selectFolder: vi.fn(() => pending.promise) }))
-
-    const button = screen.getByRole('button', { name: 'Choose folder' })
-    await user.click(button)
-
-    expect(button).toHaveAttribute('aria-disabled', 'true')
-    expect(button).not.toBeDisabled()
-    expect(button).toHaveFocus()
-    pending.resolve({ canceled: true })
-    await waitFor(() => expect(button).not.toHaveAttribute('aria-disabled', 'true'))
-  })
-
-  it('returns focus to the Choose folder button after the error is dismissed', async () => {
-    const user = userEvent.setup()
-    renderApp(createFakeApi({ selectFolder: vi.fn().mockRejectedValue(new Error('IPC down')) }))
-
-    await user.click(screen.getByRole('button', { name: 'Choose folder' }))
-    await screen.findByRole('alert')
-    await user.click(screen.getByRole('button', { name: 'Dismiss' }))
-
-    expect(screen.getByRole('button', { name: 'Choose folder' })).toHaveFocus()
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(api.startScan).toHaveBeenCalledTimes(2)
+    expect(await screen.findByRole('heading', { level: 1, name: 'Scanning' })).toBeInTheDocument()
   })
 })
