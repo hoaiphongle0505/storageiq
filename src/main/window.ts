@@ -1,12 +1,22 @@
 import path from 'node:path'
 import { app, BrowserWindow, dialog, nativeTheme } from 'electron'
 import { shouldTreatAsFatalLoadFailure } from './load-failure'
+import {
+  decideRenderProcessGone,
+  RENDERER_GONE_QUIT_MESSAGE,
+  RENDERER_GONE_RELOAD_MESSAGE,
+  RENDERER_GONE_TITLE,
+} from './render-process-gone'
 import { createMainWindowOptions, WINDOW_BACKGROUND } from './window-options'
 
 export interface MainWindowConfig {
   preloadPath: string
   rendererRoot: string
   devServerUrl?: string
+  /** True once the app has started quitting; renderer exits during quit are ignored. */
+  isQuitting(): boolean
+  /** Called just before the window reloads after a renderer crash. */
+  onRendererReload?(): void
 }
 
 let failing = false
@@ -28,6 +38,8 @@ export function createMainWindow(config: MainWindowConfig): BrowserWindow {
       dark: nativeTheme.shouldUseDarkColors,
     }),
   )
+  let loaded = false
+  let reloadedAfterCrash = false
 
   window.webContents.on(
     'did-fail-load',
@@ -37,8 +49,33 @@ export function createMainWindow(config: MainWindowConfig): BrowserWindow {
       }
     },
   )
+  window.webContents.on('did-finish-load', () => {
+    loaded = true
+  })
   window.webContents.on('render-process-gone', (_event, details) => {
-    failStartup(`The window process stopped unexpectedly (${details.reason}).`)
+    const action = decideRenderProcessGone({
+      reason: details.reason,
+      quitting: config.isQuitting(),
+      loaded,
+      reloadedAfterCrash,
+    })
+    switch (action) {
+      case 'ignore':
+        return
+      case 'fail-startup':
+        failStartup(`The window process stopped unexpectedly (${details.reason}).`)
+        return
+      case 'reload':
+        reloadedAfterCrash = true
+        dialog.showErrorBox(RENDERER_GONE_TITLE, RENDERER_GONE_RELOAD_MESSAGE)
+        config.onRendererReload?.()
+        window.webContents.reload()
+        return
+      case 'quit':
+        dialog.showErrorBox(RENDERER_GONE_TITLE, RENDERER_GONE_QUIT_MESSAGE)
+        app.quit()
+        return
+    }
   })
   const syncBackground = () =>
     window.setBackgroundColor(

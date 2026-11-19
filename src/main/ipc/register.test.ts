@@ -1,7 +1,7 @@
 import type { IpcMainInvokeEvent } from 'electron'
 import { describe, expect, it, vi } from 'vitest'
 import type { AppInfo } from '@shared/ipc-contract'
-import { InvalidIpcArgumentsError, noArgs } from './parse-args'
+import { InvalidIpcArgumentsError, noArgs, oneString } from './parse-args'
 import {
   type IpcHandlerMap,
   type IpcRegistrar,
@@ -23,6 +23,8 @@ function createHandlers(overrides: Partial<IpcHandlerMap> = {}): IpcHandlerMap {
   return {
     'app:get-info': { parseArgs: noArgs, handle: () => appInfo },
     'dialog:select-folder': { parseArgs: noArgs, handle: () => ({ canceled: true }) },
+    'scan:start': { parseArgs: oneString, handle: () => ({ scanId: 'scan-1' }) },
+    'scan:cancel': { parseArgs: oneString, handle: () => undefined },
     ...overrides,
   }
 }
@@ -59,7 +61,12 @@ describe('registerIpcHandlers', () => {
   it('registers exactly one listener per contract channel', () => {
     const ipc = createFakeIpc()
     registerIpcHandlers(ipc, createHandlers(), isTrusted)
-    expect([...ipc.listeners.keys()].sort()).toEqual(['app:get-info', 'dialog:select-folder'])
+    expect([...ipc.listeners.keys()].sort()).toEqual([
+      'app:get-info',
+      'dialog:select-folder',
+      'scan:cancel',
+      'scan:start',
+    ])
   })
 
   it('forwards calls from trusted senders to the handler', async () => {
@@ -109,5 +116,21 @@ describe('registerIpcHandlers', () => {
     )
     expect(parseArgs).toHaveBeenCalledWith([])
     expect(handle).not.toHaveBeenCalled()
+  })
+
+  it('passes the parsed arguments, not the raw ones, to the handler', async () => {
+    const ipc = createFakeIpc()
+    const handle = vi.fn(() => ({ scanId: 'scan-1' }))
+    registerIpcHandlers(
+      ipc,
+      createHandlers({
+        'scan:start': { parseArgs: (args) => [String(args[0]).toUpperCase()], handle },
+      }),
+      isTrusted,
+    )
+
+    await call(ipc, 'scan:start', TRUSTED, ['c:\\data'])
+
+    expect(handle).toHaveBeenCalledWith(expect.anything(), 'C:\\DATA')
   })
 })

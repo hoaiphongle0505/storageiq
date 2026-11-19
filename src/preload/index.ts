@@ -9,6 +9,8 @@ function invoke<C extends IpcChannel>(channel: C, ...args: IpcArgs<C>): Promise<
 const api: StorageIQApi = {
   getAppInfo: () => invoke('app:get-info'),
   selectFolder: () => invoke('dialog:select-folder'),
+  startScan: (root) => invoke('scan:start', root),
+  cancelScan: (scanId) => invoke('scan:cancel', scanId),
   onScanProgress: (listener) => subscribe(ipcRenderer, 'scan:progress', listener),
   onScanDone: (listener) => subscribe(ipcRenderer, 'scan:done', listener),
   onScanFailed: (listener) => subscribe(ipcRenderer, 'scan:failed', listener),
