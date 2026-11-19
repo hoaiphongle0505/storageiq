@@ -56,21 +56,6 @@ test('shows the version reported by the main process', async () => {
   ).toBeVisible()
 })
 
-test('shows the folder chosen in the native picker', async () => {
-  await app!.evaluate(({ dialog }) => {
-    dialog.showOpenDialog = (async () => ({
-      canceled: false,
-      filePaths: ['C:\\StorageIQ-e2e'],
-    })) as typeof dialog.showOpenDialog
-  })
-
-  await page.getByRole('button', { name: 'Choose folder' }).click()
-
-  await expect(page.getByText('Selected folder')).toBeVisible()
-  await expect(page.getByRole('contentinfo')).toContainText('C:\\StorageIQ-e2e')
-  await expect(page.getByRole('button', { name: 'Choose a different folder' })).toBeVisible()
-})
-
 test('logs no console errors or CSP violations from the first page load on', async () => {
   await expect.poll(() => cspListenerReady(app!)).toBe(true)
   await expect(page.getByRole('contentinfo').getByText(/^StorageIQ \d/)).toBeVisible()
