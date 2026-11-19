@@ -1,4 +1,4 @@
-import type { ScanDone, ScanFailed, ScanProgress } from './scan-types'
+import type { ScanDone, ScanFailed, ScanProgress, ScanStartResult } from './scan-types'
 
 /** Metadata about the running application, shown in the status bar. */
 export interface AppInfo {
@@ -19,6 +19,8 @@ export type SelectFolderResult = { canceled: true } | { canceled: false; path: s
 export interface IpcContract {
   'app:get-info': { args: []; result: AppInfo }
   'dialog:select-folder': { args: []; result: SelectFolderResult }
+  'scan:start': { args: [path: string]; result: ScanStartResult }
+  'scan:cancel': { args: [scanId: string]; result: void }
 }
 
 export type IpcChannel = keyof IpcContract
@@ -42,6 +44,10 @@ export type Unsubscribe = () => void
 export interface StorageIQApi {
   getAppInfo(): Promise<AppInfo>
   selectFolder(): Promise<SelectFolderResult>
+  /** Starts scanning `path` (an absolute local folder); a running scan is superseded. */
+  startScan(path: string): Promise<ScanStartResult>
+  /** Stops the scan; unknown or finished IDs are ignored. */
+  cancelScan(scanId: string): Promise<void>
   onScanProgress(listener: (progress: ScanProgress) => void): Unsubscribe
   onScanDone(listener: (done: ScanDone) => void): Unsubscribe
   onScanFailed(listener: (failed: ScanFailed) => void): Unsubscribe

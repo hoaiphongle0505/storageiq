@@ -1,6 +1,6 @@
 import { vi } from 'vitest'
 import type { AppInfo, SelectFolderResult, StorageIQApi } from '@shared/ipc-contract'
-import type { ScanDone, ScanFailed, ScanProgress } from '@shared/scan-types'
+import type { ScanDone, ScanFailed, ScanProgress, ScanStartResult } from '@shared/scan-types'
 
 export const TEST_APP_INFO: AppInfo = {
   name: 'StorageIQ',
@@ -42,6 +42,8 @@ export function createFakeApi(overrides: Partial<StorageIQApi> = {}): FakeApi {
   return {
     getAppInfo: vi.fn(async () => TEST_APP_INFO),
     selectFolder: vi.fn(async (): Promise<SelectFolderResult> => ({ canceled: true })),
+    startScan: vi.fn(async (): Promise<ScanStartResult> => ({ scanId: 'scan-1' })),
+    cancelScan: vi.fn(async () => undefined),
     onScanProgress: vi.fn(progress.subscribe),
     onScanDone: vi.fn(done.subscribe),
     onScanFailed: vi.fn(failed.subscribe),
