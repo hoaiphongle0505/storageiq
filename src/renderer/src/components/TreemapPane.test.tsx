@@ -198,4 +198,14 @@ describe('<LevelBar />', () => {
     await user.keyboard('{ArrowRight}')
     expect(screen.getByRole('button', { name: 'Level 0' })).toHaveFocus()
   })
+
+  it('its icons are aria-hidden svgs and its accessible name is unchanged', async () => {
+    await renderPane()
+    const close = screen.getByRole('button', { name: 'Hide treemap' })
+    expect(close).toHaveAccessibleName('Hide treemap')
+    const svg = close.querySelector('svg')
+    expect(svg).not.toBeNull()
+    expect(svg).toHaveAttribute('aria-hidden', 'true')
+    expect(svg).toHaveAttribute('focusable', 'false')
+  })
 })

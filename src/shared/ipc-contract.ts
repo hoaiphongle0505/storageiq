@@ -56,6 +56,24 @@ export type ContextMenuOutcome =
   /** Three Explorer actions are already running; try again in a moment. */
   | { kind: 'busy' }
 
+/** One icon as PNG data URLs. */
+export interface IconImage {
+  /** `data:image/png;base64,…` of the small icon (the system small-icon size, 16 px at 100 %). */
+  small: string
+  /** The large icon (the system large-icon size, 32 px at 100 %), used when devicePixelRatio ≥ 1.25. */
+  large: string
+}
+
+/** `icons:for-nodes` result. */
+export interface IconBatch {
+  /** nodeId → icon key. A node that no longer resolves is absent. */
+  keys: Record<NodeId, string>
+  /** icon key → images. Contains every key named in `keys` that could be produced. */
+  images: Record<string, IconImage>
+  /** Per-file ids that were answered with their type’s icon only (time budget); ask again. */
+  pending: NodeId[]
+}
+
 /** `folder:create` result: the folder that now holds the new one, and the new folder's name. */
 export interface CreateFolderResult {
   parentId: NodeId
@@ -110,6 +128,8 @@ export interface IpcContract {
   }
   'folder:create': { args: [scanId: string, nodeId: NodeId]; result: CreateFolderResult }
   'clipboard:copy-path': { args: [scanId: string, nodeIds: NodeId[]]; result: void }
+  'icons:for-nodes': { args: [scanId: string, nodeIds: NodeId[]]; result: IconBatch }
+  'icons:for-types': { args: [typeKeys: string[]]; result: Record<string, IconImage> }
   'update:install': { args: []; result: void }
 }
 
@@ -193,6 +213,13 @@ export interface StorageIQApi {
    * the paths).
    */
   copyNodePath(scanId: string, nodeIds: NodeId[]): Promise<void>
+  /**
+   * Windows’ own icons for rows of the current scan (1 to 64 ids). A key missing from `images`
+   * means “keep the placeholder”; native failures answer empty, only invalid arguments reject.
+   */
+  getIcons(scanId: string, nodeIds: NodeId[]): Promise<IconBatch>
+  /** Windows’ icons by type key (`dir`, `drive`, `file`, `ext:<extension>`), 1 to 64 keys. */
+  getTypeIcons(typeKeys: string[]): Promise<Record<string, IconImage>>
   onScanProgress(listener: (progress: ScanProgress) => void): Unsubscribe
   onScanDone(listener: (done: ScanDone) => void): Unsubscribe
   onScanFailed(listener: (failed: ScanFailed) => void): Unsubscribe

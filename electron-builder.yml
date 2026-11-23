@@ -61,13 +61,15 @@ nsis:
 asarUnpack:
   - node_modules/koffi/**
   - node_modules/@koromix/koffi-win32-x64/**
-  # The walker and shell worker threads load out/main/walker.js and out/main/shell-worker.js from
-  # the unpacked tree, so neither the scripts nor their koffi import rely on asar patching in a
-  # thread. electron.vite.config.ts builds both as self-contained bundles (no shared chunks), so
+  # The walker, shell worker and icon worker threads load out/main/walker.js, shell-worker.js and
+  # icon-worker.js from the unpacked tree, so neither the scripts nor their koffi import rely on
+  # asar patching in a thread. electron.vite.config.ts builds all three as self-contained bundles
+  # (no shared chunks), so
   # nothing else leaves the asar: the app and scanner code stay covered by the asar integrity
   # check. Never add out/main/chunks here.
   - out/main/walker.js
   - out/main/shell-worker.js
+  - out/main/icon-worker.js
 
 # koffi ships prebuilt, ABI-stable Node-API binaries: nothing needs rebuilding for Electron.
 npmRebuild: false

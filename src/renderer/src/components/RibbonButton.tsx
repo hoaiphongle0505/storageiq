@@ -1,4 +1,4 @@
-import type { LucideIcon } from 'lucide-react'
+import type { FluentIcon } from '../lib/icons'
 
 /** Large ribbon command: icon above a short label (WCAG 2.5.8: well over 24 × 24 px). */
 export const RIBBON_BUTTON_CLASS =
@@ -10,7 +10,7 @@ export const RIBBON_SMALL_CLASS =
 
 export interface RibbonButtonProps {
   label: string
-  icon: LucideIcon
+  icon: FluentIcon
   onClick(): void
   /** Toggle buttons pass their state; action buttons leave it undefined. */
   pressed?: boolean
@@ -42,7 +42,7 @@ export function RibbonButton({
       }}
       className={RIBBON_BUTTON_CLASS}
     >
-      <Icon aria-hidden="true" className="size-5.5" strokeWidth={1.75} />
+      <Icon aria-hidden="true" focusable={false} />
       <span>{label}</span>
     </button>
   )

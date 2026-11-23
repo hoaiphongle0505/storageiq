@@ -28,6 +28,8 @@ const api: StorageIQApi = {
     invoke('shell:context-menu', scanId, nodeIds, x, y, extended),
   createFolder: (scanId, nodeId) => invoke('folder:create', scanId, nodeId),
   copyNodePath: (scanId, nodeIds) => invoke('clipboard:copy-path', scanId, nodeIds),
+  getIcons: (scanId, nodeIds) => invoke('icons:for-nodes', scanId, nodeIds),
+  getTypeIcons: (typeKeys) => invoke('icons:for-types', typeKeys),
   onScanProgress: (listener) => subscribe(ipcRenderer, 'scan:progress', listener),
   onScanDone: (listener) => subscribe(ipcRenderer, 'scan:done', listener),
   onScanFailed: (listener) => subscribe(ipcRenderer, 'scan:failed', listener),

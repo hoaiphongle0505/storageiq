@@ -1,7 +1,8 @@
 // Runs the packaged app with --self-test: koffi must load from app.asar.unpacked, at least one
 // drive must be listed, the Explorer context menu must build through COM, and the scanner
 // utilityProcess must complete a scan of the resources folder without walking into app.asar, and the
-// shell worker thread must build the Explorer menu (so a missing shell-worker.js fails).
+// shell worker thread must build the Explorer menu (so a missing shell-worker.js fails), and the
+// icon worker thread must return a PNG for .txt (so a missing icon-worker.js fails).
 // Exit code 0 means pass (codes: src/main/self-test.ts).
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
@@ -14,7 +15,7 @@ if (!existsSync(exe)) {
   process.exit(1)
 }
 
-// The licences of the shipped dependencies sit next to the executable, and nothing but the two worker
+// The licences of the shipped dependencies sit next to the executable, and nothing but the three worker
 // scripts leaves the asar from out/main (shared chunks there would escape the integrity check).
 const resources = path.join(path.dirname(exe), 'resources')
 if (!existsSync(path.join(resources, 'THIRD_PARTY_NOTICES.txt'))) {
@@ -23,9 +24,9 @@ if (!existsSync(path.join(resources, 'THIRD_PARTY_NOTICES.txt'))) {
 }
 const unpackedMain = path.join(resources, 'app.asar.unpacked', 'out', 'main')
 const unpackedFiles = existsSync(unpackedMain) ? readdirSync(unpackedMain) : []
-if (unpackedFiles.join() !== 'shell-worker.js,walker.js') {
+if (unpackedFiles.join() !== 'icon-worker.js,shell-worker.js,walker.js') {
   console.error(
-    `out/main in app.asar.unpacked must hold only shell-worker.js and walker.js, found: ${unpackedFiles.join(', ') || 'nothing'}`,
+    `out/main in app.asar.unpacked must hold only icon-worker.js, shell-worker.js and walker.js, found: ${unpackedFiles.join(', ') || 'nothing'}`,
   )
   process.exit(1)
 }
@@ -45,5 +46,5 @@ if (result.status !== 0) {
   process.exit(1)
 }
 console.log(
-  'Packaged self-test passed: koffi loaded from app.asar.unpacked; the Explorer menu built; the scanner ran.',
+  'Packaged self-test passed: koffi loaded from app.asar.unpacked; the Explorer menu built; the icon worker returned a PNG; the scanner ran.',
 )

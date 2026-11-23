@@ -15,7 +15,7 @@ The full spec, with every value, is `docs/superpowers/specs/2026-11-23-strata-vi
 5. Numbers are data: tabular figures everywhere, sizes right-aligned.
 6. Calm about problems: recoverable messages are info (blue-grey, `Info` icon); only a scanner crash is danger, as a tinted strip with an icon.
 7. Contrast is a gate: every text pair 4.5:1 and every UI pair 3:1, in both themes.
-8. Respect the system: light/dark, `prefers-contrast: more` (no cushion, ink gaps), `forced-colors` (system colours, text-only legend), `prefers-reduced-motion`. Windows system fonts only; Lucide icons, decorative and `aria-hidden`.
+8. Respect the system: light/dark, `prefers-contrast: more` (no cushion, ink gaps), `forced-colors` (system colours, text-only legend), `prefers-reduced-motion`. Windows system fonts only; Windows' own shell icons in the tree and Fluent UI System Icons elsewhere, decorative and `aria-hidden`.
 
 ## Tokens
 

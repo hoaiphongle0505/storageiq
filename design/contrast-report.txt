@@ -164,5 +164,15 @@ Contrast report for design/tokens.json (WCAG 2.2; ui = 3:1 for UI parts and focu
   PASS   7.74:1  dark-bar-fill            on dark-surface-panel   ui
   PASS   5.56:1  dark-accent              on dark-selection       ui
   PASS   8.73:1  dark-accent              on dark-surface-sunken  ui
+  PASS   3.67:1  light-icon-folder       on light-surface-app     ui
+  PASS   3.93:1  light-icon-folder       on light-surface-panel   ui
+  PASS   4.07:1  light-icon-folder       on light-surface-raised  ui
+  PASS   3.19:1  light-icon-folder       on light-selection       ui
+  PASS   3.42:1  light-icon-folder       on light-row-hover       ui
+  PASS   9.25:1  dark-icon-folder        on dark-surface-app      ui
+  PASS   8.66:1  dark-icon-folder        on dark-surface-panel    ui
+  PASS   7.85:1  dark-icon-folder        on dark-surface-raised   ui
+  PASS   6.22:1  dark-icon-folder        on dark-selection        ui
+  PASS   7.98:1  dark-icon-folder        on dark-row-hover        ui
 
-  164 pairs, 0 failing AA
+  174 pairs, 0 failing AA

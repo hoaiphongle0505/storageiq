@@ -1,6 +1,6 @@
-import { TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { formatBytes, formatCount, formatSize } from '../lib/format'
+import { IconWarning } from '../lib/icons'
 import { selectionTotal } from '../lib/selection'
 import { rowIndexOf } from '../lib/tree-view-model'
 import { ANNOUNCE_INTERVAL_MS, useThrottledAnnouncement } from '../lib/use-throttled-announcement'
@@ -92,7 +92,7 @@ export function StatusBar() {
             onClick={() => setShowExcluded(true)}
             className="flex min-h-6 items-center gap-1 rounded-control px-1.5 text-ink underline underline-offset-2 transition-colors duration-[120ms] hover:bg-row-hover"
           >
-            <TriangleAlert aria-hidden="true" className="size-3.5 text-warning" />
+            <IconWarning aria-hidden="true" focusable={false} />
             {formatCount(excluded)} excluded
           </button>
         ) : (

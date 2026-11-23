@@ -1,7 +1,7 @@
-import { X } from 'lucide-react'
 import { type MouseEvent, useEffect, useRef, useState } from 'react'
 import type { SizeMode, TreemapLayout } from '@shared/tree-types'
 import { rowName } from '../lib/format'
+import { IconDismiss } from '../lib/icons'
 import { drawTreemap, hitTest, readTreemapColors } from '../lib/treemap-draw'
 import { useWorkspace } from '../stores/workspace-store-context'
 import { BUTTON_VARIANT_CLASSES } from './Button'
@@ -174,7 +174,7 @@ export function TreemapPane({ height }: { height: number }) {
           onClick={() => setTreemapVisible(false)}
           className={`flex size-6 items-center justify-center rounded-control ${BUTTON_VARIANT_CLASSES.quiet} transition-colors duration-[120ms]`}
         >
-          <X aria-hidden="true" className="size-4" />
+          <IconDismiss aria-hidden="true" focusable={false} />
         </button>
       </div>
       <div ref={wrapperRef} className="relative min-h-0 flex-1 bg-(--treemap-edge)">

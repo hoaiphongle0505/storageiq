@@ -1,5 +1,11 @@
 import { vi } from 'vitest'
-import type { AppInfo, SelectFolderResult, StorageIQApi, UpdateReady } from '@shared/ipc-contract'
+import type {
+  AppInfo,
+  IconBatch,
+  SelectFolderResult,
+  StorageIQApi,
+  UpdateReady,
+} from '@shared/ipc-contract'
 import type {
   DriveDetails,
   DriveInfo,
@@ -302,6 +308,8 @@ export function createFakeApi(overrides: Partial<StorageIQApi> = {}): FakeApi {
     showContextMenu: vi.fn(async () => ({ kind: 'dismissed' as const })),
     createFolder: vi.fn(async () => ({ parentId: 'd1', name: 'New folder' })),
     copyNodePath: vi.fn(async () => undefined),
+    getIcons: vi.fn(async (): Promise<IconBatch> => ({ keys: {}, images: {}, pending: [] })),
+    getTypeIcons: vi.fn(async () => ({})),
     onScanProgress: vi.fn(progress.subscribe),
     onScanDone: vi.fn(done.subscribe),
     onScanFailed: vi.fn(failed.subscribe),

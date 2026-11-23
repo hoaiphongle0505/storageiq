@@ -36,6 +36,7 @@
   --color-bar-track: var(--bar-track);
   --color-bar-fill: var(--bar-fill);
   --color-pressed: var(--pressed);
+  --color-icon-folder: var(--icon-folder);
   --font-sans: var(--family-sans);
   --font-display: var(--family-display);
   --font-small: var(--family-small);
@@ -81,6 +82,11 @@
   }
 
   @media (forced-colors: active) {
+    /* Colour icons (Fluent …Color glyphs) keep their own fills; currentColor icons follow the system. */
+    svg[data-color-icon] {
+      forced-color-adjust: none;
+    }
+
     [aria-pressed='true'] {
       outline: 2px solid Highlight;
       outline-offset: -2px;

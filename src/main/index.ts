@@ -26,8 +26,11 @@ import type { DriveApi } from './drives/drive-api'
 import { driveRootOf, isDriveRoot, readDriveDetails } from './drives/drive-details'
 import { createKoffiDriveApi } from './drives/koffi-drive-api'
 import { listDrives } from './drives/list-drives'
+import { createIconService, type IconService, type IconWorkerLike } from './icons/icon-service'
+import { ICON_WORKER_DATA } from './icons/icon-worker-protocol'
 import { createAppHandlers } from './ipc/app-handlers'
 import { createDriveHandlers } from './ipc/drive-handlers'
+import { createIconHandlers } from './ipc/icon-handlers'
 import { type IpcHandlerMap, registerIpcHandlers } from './ipc/register'
 import { createScanHandlers } from './ipc/scan-handlers'
 import { createEventSender } from './ipc/send-event'
@@ -58,6 +61,8 @@ const preloadPath = path.join(__dirname, '../preload/index.js')
 const scannerPath = path.join(__dirname, 'scanner.js')
 /** The shell worker thread (a self-contained bundle, unpacked from the asar when packaged). */
 const shellWorkerPath = path.join(__dirname, 'shell-worker.js')
+/** The icon worker thread (a self-contained bundle, unpacked from the asar when packaged). */
+const iconWorkerPath = path.join(__dirname, 'icon-worker.js')
 const devServerUrl = app.isPackaged ? undefined : process.env['ELECTRON_RENDERER_URL']
 const isTrustedUrl = (url: string) => isTrustedRendererUrl(url, { rendererRoot, devServerUrl })
 
@@ -66,6 +71,7 @@ let quitting = false
 let updater: Updater | null = null
 let driveApi: Promise<DriveApi> | null = null
 let shellPool: ShellWorkerPool | null = null
+let iconService: IconService | null = null
 
 /** Loads koffi on first use; a failed load is retried on the next call. */
 function getDriveApi(): Promise<DriveApi> {
@@ -116,6 +122,29 @@ function getShellPool(): ShellWorkerPool {
     },
   })
   return shellPool
+}
+
+/**
+ * The icon service and its single worker thread, created on first use. The worker is separate
+ * from the shell worker pool: a stuck icon call must not take one of the three Explorer-action
+ * slots, and it can be restarted without touching a running action.
+ */
+function getIconService(): IconService {
+  iconService ??= createIconService({
+    spawn: () =>
+      new Worker(packagedPath(iconWorkerPath), {
+        workerData: ICON_WORKER_DATA,
+      }) as unknown as IconWorkerLike,
+    schedule: (callback, ms) => {
+      const timer = setTimeout(callback, ms)
+      timer.unref()
+      return () => clearTimeout(timer)
+    },
+    now: Date.now,
+    maxEntries: 512,
+    maxPathKeys: 4096,
+  })
+  return iconService
 }
 
 /** A worker thread loads a real file: inside app.asar it comes from app.asar.unpacked. */
@@ -285,6 +314,12 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
         scanRoot: process.resourcesPath,
         scanOnce,
         probeShellMenu: (target) => getShellPool().probe([target]),
+        probeIcon: async () =>
+          (
+            await getIconService().request([
+              { key: 'ext:txt', target: { kind: 'file', ext: 'txt' } },
+            ])
+          ).images['ext:txt']?.small ?? '',
         log: (line) => {
           process.stdout.write(`[self-test] ${line}\n`)
         },
@@ -309,6 +344,7 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
     // A thread inside a shell call cannot be interrupted, so the process may linger until it
     // returns: release the single-instance lock so a relaunch is not blocked meanwhile.
     disposePoolAtQuit(shellPool, () => app.releaseSingleInstanceLock())
+    iconService?.dispose()
     updater?.dispose()
     scanService.dispose() // kills the scanner; no event is sent during quit
   })
@@ -383,6 +419,14 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
             }),
         }),
         ...createTreeHandlers({ scanService, refreshFolder }),
+        ...createIconHandlers({
+          scanService,
+          icons: {
+            request: (targets) => getIconService().request(targets),
+            knownFolders: () => getIconService().knownFolders(),
+            newScan: () => iconService?.newScan(),
+          },
+        }),
         ...createShellHandlers({
           scanService,
           refreshFolder,

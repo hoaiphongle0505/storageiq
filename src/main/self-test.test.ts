@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { DriveInfo, ScanDone, ScanFailed } from '@shared/scan-types'
 import type { TreeRow } from '@shared/tree-types'
-import { runSelfTest, SELF_TEST_EXIT, type SelfTestDeps, type SelfTestScan } from './self-test'
+import {
+  PNG_DATA_URL_PREFIX,
+  runSelfTest,
+  SELF_TEST_EXIT,
+  type SelfTestDeps,
+  type SelfTestScan,
+} from './self-test'
 
 const DRIVES: DriveInfo[] = [
   { root: 'C:\\', label: 'Local Disk', kind: 'fixed', totalBytes: 100, freeBytes: 40 },
@@ -54,6 +60,7 @@ function setup(overrides: Partial<SelfTestDeps> = {}) {
     scanRoot: 'C:\\App\\resources',
     scanOnce: vi.fn(async () => completed()),
     probeShellMenu: vi.fn(async () => MENU),
+    probeIcon: vi.fn(async () => `${PNG_DATA_URL_PREFIX}AAAA`),
     log: (line) => {
       lines.push(line)
     },
@@ -71,6 +78,7 @@ describe('runSelfTest', () => {
     expect(deps.probeShellMenu).toHaveBeenCalledWith('C:\\App\\resources')
     expect(lines).toContain('drives: C:\\')
     expect(lines).toContain('shell menu: 7 items')
+    expect(lines).toContain('icon: ext:txt PNG')
   })
 
   it('fails when koffi cannot list drives', async () => {
@@ -102,6 +110,17 @@ describe('runSelfTest', () => {
   it('fails when the shell menu has only StorageIQ’s own items', async () => {
     const { deps } = setup({ probeShellMenu: vi.fn(async () => ['StorageIQ', 'New folder', '']) })
     expect(await runSelfTest(deps)).toBe(SELF_TEST_EXIT.shellMenuFailed)
+  })
+
+  it('fails when the icon worker answers nothing or something that is not a PNG', async () => {
+    for (const probeIcon of [
+      vi.fn(async () => ''),
+      vi.fn(async () => 'data:image/png;base64,AAAA'),
+      vi.fn().mockRejectedValue(new Error('no icon-worker.js')),
+    ]) {
+      const { deps } = setup({ probeIcon })
+      expect(await runSelfTest(deps)).toBe(SELF_TEST_EXIT.iconFailed)
+    }
   })
 
   it('fails when the scanner process fails', async () => {

@@ -188,3 +188,35 @@ export function driveRootArgs(args: readonly unknown[]): [string] {
   if (match === null) throw new InvalidIpcArgumentsError('expected a drive root like C:\\')
   return [`${(match[1] ?? '').toUpperCase()}:\\`]
 }
+
+/** Most node ids or type keys one icon call takes. */
+export const MAX_ICON_ITEMS = 64
+
+/** `icons:for-nodes`: `[scanId, nodeIds]` (1 to 64 ids). */
+export function iconNodesArgs(args: readonly unknown[]): [string, NodeId[]] {
+  expectCount(args, 2)
+  return [scanIdArg(args[0]), nodeIdListArg(args[1], MAX_ICON_ITEMS)]
+}
+
+/**
+ * The only keys the renderer may name for `icons:for-types`: no path, no drive letter, and no
+ * extension containing a dot or a separator.
+ */
+export const ICON_TYPE_KEY_PATTERN = /^(dir|drive|file|ext:[a-z0-9_$~-]{1,16})$/
+
+/** `icons:for-types`: `[typeKeys]` (an array of 1 to 64 keys). */
+export function iconTypesArgs(args: readonly unknown[]): [string[]] {
+  expectCount(args, 1)
+  const [value] = args
+  if (!Array.isArray(value) || value.length < 1 || value.length > MAX_ICON_ITEMS) {
+    throw new InvalidIpcArgumentsError(`expected 1 to ${MAX_ICON_ITEMS} icon type keys`)
+  }
+  return [
+    Array.from(value as unknown[], (key) => {
+      if (typeof key !== 'string' || !ICON_TYPE_KEY_PATTERN.test(key)) {
+        throw new InvalidIpcArgumentsError('expected an icon type key')
+      }
+      return key
+    }),
+  ]
+}

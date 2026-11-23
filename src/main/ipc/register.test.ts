@@ -5,6 +5,8 @@ import {
   childrenArgs,
   contextMenuArgs,
   expandArgs,
+  iconNodesArgs,
+  iconTypesArgs,
   InvalidIpcArgumentsError,
   nodeArgs,
   noArgs,
@@ -45,6 +47,11 @@ function createHandlers(overrides: Partial<IpcHandlerMap> = {}): IpcHandlerMap {
     'tree:expand-ids': { parseArgs: expandArgs, handle: () => [] },
     'tree:refresh': { parseArgs: scanNodeArgs, handle: () => null },
     'treemap:layout': { parseArgs: treemapArgs, handle: () => null },
+    'icons:for-nodes': {
+      parseArgs: iconNodesArgs,
+      handle: () => ({ keys: {}, images: {}, pending: [] }),
+    },
+    'icons:for-types': { parseArgs: iconTypesArgs, handle: () => ({}) },
     'update:install': { parseArgs: noArgs, handle: () => undefined },
     'shell:open-in-explorer': { parseArgs: scanNodeArgs, handle: () => undefined },
     'shell:context-menu': { parseArgs: contextMenuArgs, handle: () => ({ kind: 'dismissed' }) },
@@ -94,6 +101,8 @@ describe('registerIpcHandlers', () => {
       'drive:info',
       'drives:list',
       'folder:create',
+      'icons:for-nodes',
+      'icons:for-types',
       'places:list',
       'scan:cancel',
       'scan:start',
@@ -141,6 +150,29 @@ describe('registerIpcHandlers', () => {
     expect(handle).not.toHaveBeenCalled()
     await expect(call(ipc, 'update:install', TRUSTED, [])).resolves.toBeUndefined()
     expect(handle).toHaveBeenCalledTimes(1)
+  })
+
+  it('icons channels reject a sender that is not the main window', async () => {
+    const ipc = createFakeIpc()
+    const forNodes = vi.fn(() => ({ keys: {}, images: {}, pending: [] }))
+    const forTypes = vi.fn(() => ({}))
+    registerIpcHandlers(
+      ipc,
+      createHandlers({
+        'icons:for-nodes': { parseArgs: iconNodesArgs, handle: forNodes },
+        'icons:for-types': { parseArgs: iconTypesArgs, handle: forTypes },
+      }),
+      isTrusted,
+    )
+    await expect(
+      call(ipc, 'icons:for-nodes', 'https://evil.example/', ['0d6b2f6e-8a3c', ['f1']]),
+    ).rejects.toThrow(UntrustedSenderError)
+    await expect(call(ipc, 'icons:for-types', 'https://evil.example/', [['dir']])).rejects.toThrow(
+      UntrustedSenderError,
+    )
+    expect(forNodes).not.toHaveBeenCalled()
+    expect(forTypes).not.toHaveBeenCalled()
+    await expect(call(ipc, 'icons:for-types', TRUSTED, [['dir']])).resolves.toEqual({})
   })
 
   it('rejects malformed arguments without running the handler', async () => {

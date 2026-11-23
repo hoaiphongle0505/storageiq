@@ -1,21 +1,22 @@
-import {
-  ChevronDown,
-  FileStack,
-  FolderOpen,
-  FolderPlus,
-  HardDrive,
-  Info,
-  ListTree,
-  LogOut,
-  PanelBottom,
-  Percent,
-  RefreshCw,
-  Scale,
-  Square,
-} from 'lucide-react'
 import { type ReactNode, useId, useRef, useState } from 'react'
 import type { SizeMode } from '@shared/tree-types'
 import { SIZE_UNITS, type SizeUnit } from '../lib/format'
+import {
+  type FluentIcon,
+  IconAbout,
+  IconChevronDown,
+  IconExit,
+  IconExpand,
+  IconModeAllocated,
+  IconModeFiles,
+  IconModePercent,
+  IconModeSize,
+  IconNewFolder,
+  IconOpenFolder,
+  IconRefresh,
+  IconStop,
+  IconTreemap,
+} from '../lib/icons'
 import { useFocusgroupFallback } from '../lib/use-focusgroup'
 import { EXPAND_ALL_LEVELS } from '../stores/workspace-store'
 import { useWorkspace } from '../stores/workspace-store-context'
@@ -32,24 +33,24 @@ const TABS: Array<{ id: RibbonTab; label: string }> = [
   { id: 'view', label: 'View' },
 ]
 
-const MODES: Array<{ mode: SizeMode; label: string; icon: typeof Scale; title: string }> = [
-  { mode: 'size', label: 'Size', icon: Scale, title: 'Rank and draw by file size' },
+const MODES: Array<{ mode: SizeMode; label: string; icon: FluentIcon; title: string }> = [
+  { mode: 'size', label: 'Size', icon: IconModeSize, title: 'Rank and draw by file size' },
   {
     mode: 'allocated',
     label: 'Allocated',
-    icon: HardDrive,
+    icon: IconModeAllocated,
     title: 'Rank and draw by space taken on disk (whole clusters)',
   },
   {
     mode: 'files',
     label: 'File count',
-    icon: FileStack,
+    icon: IconModeFiles,
     title: 'Rank and draw by number of files',
   },
   {
     mode: 'percent',
     label: 'Percent',
-    icon: Percent,
+    icon: IconModePercent,
     title: 'Show each item’s share of its folder',
   },
 ]
@@ -104,14 +105,14 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
       <SelectMenu />
       <RibbonButton
         label="Stop"
-        icon={Square}
+        icon={IconStop}
         disabled={!scanning}
         title="Stop the running scan"
         onClick={() => void stopScan()}
       />
       <RibbonButton
         label="Refresh"
-        icon={RefreshCw}
+        icon={IconRefresh}
         disabled={scanning || target === null}
         title="Scan the same location again (F5)"
         onClick={() => void rescan()}
@@ -143,10 +144,10 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
         },
       ]}
     >
-      <ListTree aria-hidden="true" className="size-5.5" strokeWidth={1.75} />
+      <IconExpand aria-hidden="true" focusable={false} />
       <span className="flex items-center gap-0.5">
         Expand
-        <ChevronDown aria-hidden="true" className="size-3" />
+        <IconChevronDown aria-hidden="true" focusable={false} />
       </span>
     </MenuButton>
   )
@@ -192,7 +193,7 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
       {expandMenu}
       <RibbonButton
         label="Open in Explorer"
-        icon={FolderOpen}
+        icon={IconOpenFolder}
         disabled={!hasTree || selectedId === null || severalSelected}
         title="Open the selected item in File Explorer (Enter)"
         onClick={() => {
@@ -201,7 +202,7 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
       />
       <RibbonButton
         label="New folder"
-        icon={FolderPlus}
+        icon={IconNewFolder}
         disabled={!hasTree || scanning || selectedId === null || severalSelected}
         title="Create a folder in the selected folder (Ctrl+N)"
         onClick={() => {
@@ -214,10 +215,10 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
   const panels: Record<RibbonTab, ReactNode> = {
     file: (
       <Group label="App">
-        <RibbonButton label="About" icon={Info} title="About StorageIQ" onClick={onAbout} />
+        <RibbonButton label="About" icon={IconAbout} title="About StorageIQ" onClick={onAbout} />
         <RibbonButton
           label="Exit"
-          icon={LogOut}
+          icon={IconExit}
           title="Close StorageIQ"
           onClick={() => void quit()}
         />
@@ -244,7 +245,7 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
         <Group label="Treemap">
           <RibbonButton
             label="Treemap"
-            icon={PanelBottom}
+            icon={IconTreemap}
             pressed={treemapVisible}
             title="Show or hide the treemap"
             onClick={() => setTreemapVisible(!treemapVisible)}

@@ -13,7 +13,31 @@ const path = require('node:path')
 
 const ROOT = path.resolve(__dirname, '..')
 const OUTPUT = path.join(ROOT, 'out', 'THIRD_PARTY_NOTICES.txt')
-const BUNDLED_DEV_DEPENDENCIES = ['react', 'react-dom', 'zustand', 'lucide-react']
+const BUNDLED_DEV_DEPENDENCIES = ['react', 'react-dom', 'zustand', '@fluentui/react-icons']
+
+// Packages that ship no licence file: their licence text, as published in their repository.
+const MIT_MICROSOFT = `MIT License
+
+Copyright (c) Microsoft Corporation.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.`
+const FALLBACK_LICENSE_TEXT = { '@fluentui/react-icons': MIT_MICROSOFT }
 const LICENSE_FILE = /^(licen[cs]e|copying|notice)(\.|$)/i
 
 function readJson(file) {
@@ -91,7 +115,7 @@ function render(packages) {
     parts.push('='.repeat(72), `${meta.name} ${meta.version}  (${licenseId(meta)})`)
     if (repository) parts.push(repository)
     parts.push('='.repeat(72), '')
-    const text = licenseText(dir)
+    const text = licenseText(dir) || FALLBACK_LICENSE_TEXT[meta.name] || ''
     parts.push(
       text === ''
         ? `No licence file is included in the package; licence: ${licenseId(meta)}.`

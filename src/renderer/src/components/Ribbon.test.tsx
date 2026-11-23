@@ -150,4 +150,24 @@ describe('<Ribbon />', () => {
     await user.click(command('Treemap'))
     expect(workspace.getState().treemapVisible).toBe(false)
   })
+
+  it('its icons are aria-hidden svgs and its accessible name is unchanged', () => {
+    renderRibbon()
+    for (const name of ['Stop', 'Refresh', 'Size', 'Allocated', 'File count', 'Percent']) {
+      const button = command(name)
+      expect(button).toHaveAccessibleName(name)
+      const svgs = button.querySelectorAll('svg')
+      expect(svgs).toHaveLength(1)
+      expect(svgs[0]).toHaveAttribute('aria-hidden', 'true')
+      expect(svgs[0]).toHaveAttribute('focusable', 'false')
+    }
+    expect(command(/^Select/)).toHaveAccessibleName('Select')
+    expect(command(/^Expand/)).toHaveAccessibleName('Expand')
+    for (const svg of toolbar().querySelectorAll('svg')) {
+      expect(svg).toHaveAttribute('aria-hidden', 'true')
+    }
+    // Colour glyphs (Refresh, Percent) are marked so forced colours leave them alone.
+    expect(command('Refresh').querySelector('svg')).toHaveAttribute('data-color-icon')
+    expect(command('Stop').querySelector('svg')).not.toHaveAttribute('data-color-icon')
+  })
 })

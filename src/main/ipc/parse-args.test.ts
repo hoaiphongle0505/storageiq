@@ -3,8 +3,11 @@ import {
   childrenArgs,
   contextMenuArgs,
   expandArgs,
+  iconNodesArgs,
+  iconTypesArgs,
   InvalidIpcArgumentsError,
   MAX_ACTION_ITEMS,
+  MAX_ICON_ITEMS,
   nodeArgs,
   nodeIdListArg,
   noArgs,
@@ -178,5 +181,61 @@ describe('contextMenuArgs', () => {
     ]) {
       expect(() => contextMenuArgs(args)).toThrow(InvalidIpcArgumentsError)
     }
+  })
+})
+
+describe('icon arguments', () => {
+  const ids = (count: number) => Array.from({ length: count }, (_, i) => `f${i + 1}`)
+
+  it('iconNodesArgs accepts 1 id and 64 ids', () => {
+    expect(MAX_ICON_ITEMS).toBe(64)
+    expect(iconNodesArgs([SCAN, ['f1']])).toEqual([SCAN, ['f1']])
+    expect(iconNodesArgs([SCAN, ids(64)])[1]).toHaveLength(64)
+  })
+
+  it('iconNodesArgs rejects an empty list, 65 ids, a non-array, a non-string id and a bad pattern', () => {
+    for (const list of [[], ids(65), 'f1', [7], ['../x'], ['x1']]) {
+      expect(() => iconNodesArgs([SCAN, list])).toThrow(InvalidIpcArgumentsError)
+    }
+    expect(() => iconNodesArgs([SCAN, []])).toThrow('expected 1 to 64 tree node ids')
+  })
+
+  it('iconNodesArgs rejects a missing or malformed scan id', () => {
+    expect(() => iconNodesArgs([['f1']])).toThrow(InvalidIpcArgumentsError)
+    expect(() => iconNodesArgs(['not a scan id!', ['f1']])).toThrow(InvalidIpcArgumentsError)
+    expect(() => iconNodesArgs([42, ['f1']])).toThrow(InvalidIpcArgumentsError)
+  })
+
+  it('iconTypesArgs accepts dir, drive, file and ext keys', () => {
+    const keys = ['dir', 'drive', 'file', 'ext:txt', 'ext:7z', 'ext:a_b$~-']
+    expect(iconTypesArgs([keys])).toEqual([keys])
+  })
+
+  it('iconTypesArgs rejects a path, a drive letter, a dotted extension, a separator and an uppercase key', () => {
+    for (const key of [
+      'C:\\Windows',
+      'C:\\',
+      'drive:C',
+      'ext:.txt',
+      'ext:a.b',
+      'ext:a/b',
+      'ext:a\\b',
+      'ext:TXT',
+      'DIR',
+      'f:0123456789ab',
+      'ext:',
+      'ext:12345678901234567',
+      7,
+    ]) {
+      expect(() => iconTypesArgs([[key]])).toThrow(InvalidIpcArgumentsError)
+    }
+  })
+
+  it('iconTypesArgs rejects 65 keys and an empty list', () => {
+    expect(() => iconTypesArgs([Array.from({ length: 65 }, () => 'dir')])).toThrow(
+      InvalidIpcArgumentsError,
+    )
+    expect(() => iconTypesArgs([[]])).toThrow(InvalidIpcArgumentsError)
+    expect(() => iconTypesArgs(['dir'])).toThrow(InvalidIpcArgumentsError)
   })
 })

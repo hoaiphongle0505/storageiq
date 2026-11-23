@@ -1,6 +1,8 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
+import { createIconCache } from './lib/icon-cache'
+import { IconCacheProvider } from './lib/icon-cache-context'
 import { createAppStore } from './stores/app-store'
 import { AppStoreProvider } from './stores/app-store-context'
 import { createWorkspaceStore } from './stores/workspace-store'
@@ -18,12 +20,15 @@ if (window.storageiq === undefined) {
 
 const appStore = createAppStore(window.storageiq)
 const workspaceStore = createWorkspaceStore(window.storageiq)
+const iconCache = createIconCache({ getIcons: window.storageiq.getIcons })
 
 createRoot(container).render(
   <StrictMode>
     <AppStoreProvider store={appStore}>
       <WorkspaceStoreProvider store={workspaceStore}>
-        <App />
+        <IconCacheProvider cache={iconCache}>
+          <App />
+        </IconCacheProvider>
       </WorkspaceStoreProvider>
     </AppStoreProvider>
   </StrictMode>,

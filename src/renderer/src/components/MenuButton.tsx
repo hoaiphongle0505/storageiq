@@ -1,4 +1,3 @@
-import type { LucideIcon } from 'lucide-react'
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -9,12 +8,13 @@ import {
   useRef,
   useState,
 } from 'react'
+import type { FluentIcon } from '../lib/icons'
 import { useFocusgroupFallback } from '../lib/use-focusgroup'
 
 export interface MenuEntry {
   id: string
   label: string
-  icon?: LucideIcon
+  icon?: FluentIcon
   /** Extra text at the end of the item, for example a drive letter. */
   hint?: string
   disabled?: boolean
@@ -216,7 +216,7 @@ function MenuGroup({
             aria-disabled="true"
             className="flex min-h-8 w-full items-center gap-2 rounded-control px-2.5 text-left text-[13px] leading-[18px] text-ink-subtle"
           >
-            <span aria-hidden="true" className="size-4 shrink-0" />
+            <span aria-hidden="true" className="size-5 shrink-0" />
             {section.emptyText}
           </button>
         ) : (
@@ -234,9 +234,9 @@ function MenuGroup({
                 className="flex min-h-8 w-full items-center gap-2 rounded-control px-2.5 text-left text-[13px] leading-[18px] text-ink transition-colors duration-[120ms] hover:bg-row-hover focus-visible:bg-row-hover focus-visible:outline-offset-[-2px] aria-disabled:text-ink-subtle aria-disabled:hover:bg-transparent"
               >
                 {Icon ? (
-                  <Icon aria-hidden="true" className="size-4 shrink-0 text-ink-muted" />
+                  <Icon aria-hidden="true" focusable={false} className="shrink-0 text-ink-muted" />
                 ) : (
-                  <span aria-hidden="true" className="size-4 shrink-0" />
+                  <span aria-hidden="true" className="size-5 shrink-0" />
                 )}
                 <span className="min-w-0 flex-1 truncate">{entry.label}</span>
                 {entry.hint && (

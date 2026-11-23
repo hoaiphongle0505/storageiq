@@ -1,4 +1,3 @@
-import { ChevronRight, File, Files, Folder, HardDrive } from 'lucide-react'
 import {
   type KeyboardEvent,
   type MouseEvent,
@@ -29,9 +28,12 @@ import {
   single,
   toggle,
 } from '../lib/selection'
+import { useIconCache } from '../lib/icon-cache-context'
+import { IconChevronRight } from '../lib/icons'
 import { buildVisibleModel, chunksFor, type VisibleRow } from '../lib/tree-view-model'
 import { type ColumnId, effectiveSort } from '../stores/workspace-store'
 import { useWorkspace } from '../stores/workspace-store-context'
+import { FileIcon } from './FileIcon'
 
 /** Must equal `--size-tree-row` in design/tokens.json. */
 export const TREE_ROW_HEIGHT = 30
@@ -59,14 +61,6 @@ export const EMPTY_TREE_TEXT = 'Choose a drive or folder from Select to see what
 
 export function rowDomId(id: NodeId): string {
   return `tree-row-${id}`
-}
-
-function RowIcon({ row, root }: { row: TreeRow; root: boolean }) {
-  const className = 'size-4 shrink-0 text-ink-muted'
-  if (root) return <HardDrive aria-hidden="true" className={className} />
-  if (row.kind === 'files') return <Files aria-hidden="true" className={className} />
-  if (row.kind === 'file') return <File aria-hidden="true" className={className} />
-  return <Folder aria-hidden="true" className={className} />
 }
 
 interface RowProps {
@@ -143,12 +137,15 @@ function GridRow({
           className="flex size-5 shrink-0 items-center justify-center text-ink-muted hover:text-ink"
         >
           {hasChildren && (
-            <ChevronRight
-              className={`size-4 transition-transform ${expanded ? 'rotate-90' : ''}`}
+            <IconChevronRight
+              data-chevron=""
+              aria-hidden="true"
+              focusable={false}
+              className={`transition-transform ${expanded ? 'rotate-90' : ''}`}
             />
           )}
         </span>
-        <RowIcon row={row} root={line.parentId === null} />
+        <FileIcon row={row} root={line.parentId === null} />
         <span className="relative flex min-w-0 flex-1 items-center gap-2 px-1">
           <span
             aria-hidden="true"
@@ -238,6 +235,7 @@ export function TreeGrid() {
   const createFolder = useWorkspace((s) => s.createFolder)
   const copyPaths = useWorkspace((s) => s.copyPaths)
 
+  const iconCache = useIconCache()
   const scrollRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewport, setViewport] = useState(600)
@@ -265,6 +263,18 @@ export function TreeGrid() {
     if (scanId === null) return
     requestChunks([{ nodeId: ROOT_NODE_ID, chunk: 0 }, ...chunksFor(model, first, last)])
   }, [scanId, model, first, last, revision, requestChunks])
+
+  // Windows' icons for the rendered window (the virtual window plus the overscan); "[N files]"
+  // rows have no icon of their own. The cache batches, dedupes and drops what scrolled by.
+  useEffect(() => {
+    if (scanId === null || iconCache === null) return
+    const ids: NodeId[] = []
+    for (let i = first; i <= last; i += 1) {
+      const row = model.rowAt(i)?.row
+      if (row && row.kind !== 'files') ids.push(row.id)
+    }
+    iconCache.request(scanId, ids)
+  }, [scanId, iconCache, model, first, last])
 
   const ensureVisible = (index: number) => {
     const element = scrollRef.current

@@ -18,7 +18,7 @@ export function UpdateBanner() {
       className={`flex items-center justify-between gap-4 border-b border-line px-4 py-2 ${BANNER_VARIANT_CLASSES.info}`}
     >
       <div className="flex min-w-0 items-center gap-3">
-        <Icon aria-hidden="true" className="size-4 shrink-0" />
+        <Icon aria-hidden="true" focusable={false} className="shrink-0" />
         <p className="text-sm text-ink">
           StorageIQ {updateReady.version} is ready. Restart to update.
         </p>

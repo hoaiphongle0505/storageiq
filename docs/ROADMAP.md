@@ -202,7 +202,7 @@ Deviations from the plan (made after reviews, approved by the owner):
 
 ### Phase 3 — Analyzer Workspace (task checklist)
 
-- [x] T1 Design system: `design/tokens.json` → `tokens.css` → Tailwind, `components.md`, contrast report (0 AA failures), Lucide icons
+- [x] T1 Design system: `design/tokens.json` → `tokens.css` → Tailwind, `components.md`, contrast report (0 AA failures), icons
 - [x] T2 Columnar tree store in the scanner (folders and files, allocated size from the cluster size), 1M-file perf test
 - [x] T3 Scanner queries: children pages and sort, node details, expand levels, squarified treemap, folder refresh
 - [x] T4 Main and preload: `drive:info`, `places:list`, tree and treemap channels, open in Explorer, clipboard, new folder, `app:quit`
@@ -230,7 +230,7 @@ Deviations from the plan: the Phase 3 addendum added stale-row handling (T8a), t
 
 Decisions recorded with the plan:
 
-- `lucide-react` 1.69.0 is the renderer's icon set (dev dependency, bundled by Vite).
+- Icons: tree rows show Windows' own shell icons, drawn by a dedicated icon worker thread (`SHGetFileInfoW`, never on the UI thread) and cached; the ribbon, menus, banners and status bar use Fluent UI System Icons (`@fluentui/react-icons` 2.0.345, MIT, a dev dependency bundled by Vite). All Fluent icons are imported in one module, `src/renderer/src/lib/icons.ts`.
 - The right-click menu is the real Windows Explorer menu, built from main with koffi (`SHParseDisplayName`, `SHBindToParent`, `IShellFolder::GetUIObjectOf`, `IContextMenu`/`2`/`3`, `TrackPopupMenuEx`, `InvokeCommand`). Explorer's own commands, including Delete, therefore work from StorageIQ; StorageIQ's own code still never deletes (Phase 6).
 - Tree and treemap requests name rows by scanner ids (`d…`, `g…`, `f…`); main resolves every path that reaches the shell or the clipboard from the scanner's tree, never from the renderer.
 

@@ -1,7 +1,7 @@
 # StorageIQ components (Phase 3 workspace, Strata look)
 
 Structure follows the owner's reference layout (ribbon, column tree, treemap pane, level bar,
-status bar); names, icons (Lucide), colours and copy are StorageIQ's own. Visual values:
+status bar); names, colours and copy are StorageIQ's own; icons are Windows' own shell icons (drawn by Windows at runtime) in the tree and Fluent UI System Icons (MIT) elsewhere. Visual values:
 `docs/superpowers/specs/2026-11-23-strata-visual-design.md`. Tokens:
 `design/tokens.json` → `design/tokens.css` (`npm run tokens`) → Tailwind utilities in
 `src/renderer/src/styles/global.css`. Contrast: `design/contrast-report.txt` (0 AA failures).
@@ -40,7 +40,7 @@ MenuButton / SelectMenu
 TreeGrid (column tree)
   columns   Name (min 280 px, flexible) · Size 112 · Allocated 112 · Files 96 · Folders 96 ·
             % of Parent 112 · Last Modified 120 (the reference's order and proportions)
-  rows      30 px, no row lines; indent 16 px per level; chevron, Lucide icon, Mode value + name
+  rows      30 px, no row lines; indent 16 px per level; chevron, Windows shell icon (Fluent placeholder until it loads, always in a fixed 16 px box), Mode value + name
             over a bar (bg bar, 3 px radius) sized to the share of the parent; % column has a
             48 × 6 px meter (bar-track, bar-fill); bold at ≥ 10 %; "[N files]" row per folder
   states    default, hover (row-hover), selected (selection + 2 px inset accent left edge),
@@ -99,7 +99,7 @@ StatusBar
 
 Banner, Dialog, Button
   Banner    role=alert; variants info (recoverable errors), danger (scanner crash, Retry),
-            warning, success (reserved): tinted strip, 3 px tone stripe, Lucide icon
+            warning, success (reserved): tinted strip, 3 px tone stripe, Fluent icon (colour variant where Fluent has one)
             (BANNER_ICONS), Retry primary, Dismiss quiet; BANNER_VARIANT_CLASSES is shared
   Dialog    native <dialog> via showModal(); bg raised, shadow dialog, backdrop token; Escape
             and Close; focus returns to the opener

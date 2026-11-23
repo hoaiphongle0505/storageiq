@@ -10,6 +10,7 @@ export const SELF_TEST_EXIT = {
   noDrives: 11,
   nativeNotUnpacked: 12,
   shellMenuFailed: 13,
+  iconFailed: 14,
   scanFailed: 20,
   asarEntered: 21,
   walkEmpty: 22,
@@ -18,6 +19,12 @@ export const SELF_TEST_EXIT = {
 
 /** A real Explorer menu has Open, Copy, Properties and more; fewer items means COM failed. */
 export const MIN_SHELL_MENU_ITEMS = 5
+
+/**
+ * Base64 of the PNG signature (89 50 4E 47 0D 0A 1A 0A) after the data URL header: every PNG the
+ * icon worker returns starts with it.
+ */
+export const PNG_DATA_URL_PREFIX = 'data:image/png;base64,iVBORw0KGgo'
 
 /** One finished scan plus the scanned root's direct child rows. */
 export type SelfTestScan = { done: ScanDone; rootChildren: TreeRow[] } | { failed: ScanFailed }
@@ -32,6 +39,8 @@ export interface SelfTestDeps {
   scanOnce(root: string): Promise<SelfTestScan>
   /** Labels of the Explorer context menu for `path`, built and destroyed without showing it. */
   probeShellMenu(path: string): Promise<string[]>
+  /** The icon worker's small `.txt` icon as a data URL; empty when the worker did not answer. */
+  probeIcon(): Promise<string>
   log(line: string): void
 }
 
@@ -67,6 +76,20 @@ export async function runSelfTest(deps: SelfTestDeps): Promise<number> {
     return SELF_TEST_EXIT.shellMenuFailed
   }
   deps.log(`shell menu: ${shellItems} items`)
+
+  // The icon worker thread (icon-worker.js) must load koffi and answer with a PNG.
+  let icon: string
+  try {
+    icon = await deps.probeIcon()
+  } catch (error) {
+    deps.log(`icon: ${String(error)}`)
+    return SELF_TEST_EXIT.iconFailed
+  }
+  if (!icon.startsWith(PNG_DATA_URL_PREFIX)) {
+    deps.log('icon: the icon worker did not return a PNG')
+    return SELF_TEST_EXIT.iconFailed
+  }
+  deps.log('icon: ext:txt PNG')
 
   const result = await deps.scanOnce(deps.scanRoot)
   if ('failed' in result) {

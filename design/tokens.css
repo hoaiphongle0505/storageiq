@@ -17,6 +17,7 @@
   --focus: #0d6b63;
   --selection: #d5e8e2;
   --row-hover: #efebe4;
+  --icon-folder: #a87400;
   --pressed: #dcebe6;
   --danger: #a3321f;
   --on-danger: #ffffff;
@@ -102,6 +103,7 @@
     --focus: #5cc3b5;
     --selection: #1f3d3a;
     --row-hover: #1f2731;
+    --icon-folder: #e8b53e;
     --pressed: #1d3a38;
     --danger: #f0a99a;
     --on-danger: #2a0d07;

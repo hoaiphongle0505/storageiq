@@ -163,7 +163,7 @@ describe('<TreeGrid />', () => {
       expect(screen.queryByRole('row', { name: /Clips/ })).not.toBeInTheDocument(),
     )
     const videos = () => screen.getByRole('row', { name: /Videos/ })
-    const chevron = () => videos().querySelector('svg.lucide-chevron-right') as SVGElement
+    const chevron = () => videos().querySelector('[data-chevron]') as SVGElement
     await user.click(chevron())
     expect(await screen.findByRole('row', { name: /Clips/ })).toBeInTheDocument()
     expect(videos()).toHaveAttribute('aria-expanded', 'true')
@@ -399,5 +399,55 @@ describe('<TreeGrid /> multi-select', () => {
     expect(api.openInExplorer).not.toHaveBeenCalled()
     await userEvent.setup().keyboard('{Control>}n{/Control}')
     expect(api.createFolder).not.toHaveBeenCalled()
+  })
+
+  it('rows request icons for the rendered window only', async () => {
+    const api = createFakeApi()
+    await renderTree(api)
+    await waitFor(() => expect(api.getIcons).toHaveBeenCalled())
+    const asked = vi.mocked(api.getIcons).mock.calls.flatMap(([, ids]) => ids)
+    // The root, its two folders and nothing else: the "[3 files]" row (g0) has no icon of its
+    // own, and the rows inside the collapsed Videos folder are not rendered.
+    expect([...asked].sort()).toEqual(['d0', 'd1', 'd2'])
+    expect(vi.mocked(api.getIcons).mock.calls.every(([scanId]) => scanId === 'scan-1')).toBe(true)
+    await userEvent.setup().dblClick(screen.getByRole('row', { name: /Videos/ }))
+    await screen.findByRole('row', { name: /Clips/ })
+    await waitFor(() => {
+      const more = vi.mocked(api.getIcons).mock.calls.flatMap(([, ids]) => ids)
+      expect(more).toContain('d3')
+    })
+    const all = vi.mocked(api.getIcons).mock.calls.flatMap(([, ids]) => ids)
+    expect(all.filter((id) => id === 'd1')).toHaveLength(1) // never asked twice
+    expect(all.some((id) => id.startsWith('g'))).toBe(false)
+  })
+
+  it('a row shows its img after the fake api answers', async () => {
+    const api = createFakeApi({
+      getIcons: vi.fn(async (_scan: string, ids: string[]) => ({
+        keys: Object.fromEntries(ids.map((id) => [id, 'dir'])),
+        images: {
+          dir: { small: 'data:image/png;base64,FOLDER', large: 'data:image/png;base64,FOLDER2' },
+        },
+        pending: [],
+      })),
+    })
+    await renderTree(api)
+    const videos = screen.getByRole('row', { name: /Videos/ })
+    await waitFor(() => expect(videos.querySelector('img[data-icon]')).not.toBeNull())
+    const image = videos.querySelector('img[data-icon]') as HTMLImageElement
+    expect(image).toHaveAttribute('data-icon', 'dir')
+    expect(image).toHaveAttribute('src', 'data:image/png;base64,FOLDER')
+    expect(image.closest('[data-file-icon]')).toHaveClass('size-4')
+    // The "[N files]" row keeps its placeholder.
+    expect(screen.getByRole('row', { name: /\[3 files\]/ }).querySelector('img')).toBeNull()
+  })
+
+  it('icons and chevrons are aria-hidden svgs and the rows keep their accessible names', async () => {
+    await renderTree()
+    const videos = screen.getByRole('row', { name: /Videos/ })
+    for (const svg of videos.querySelectorAll('svg')) {
+      expect(svg).toHaveAttribute('aria-hidden', 'true')
+    }
+    expect(videos.querySelector('[data-chevron]')).not.toBeNull()
   })
 })

@@ -92,4 +92,18 @@ describe('preload bridge', () => {
     expect(typeof exposed['copyNodePath']).toBe('function')
     expect(exposed['writeClipboardText']).toBeUndefined()
   })
+
+  it('getIcons and getTypeIcons send only ids and type keys', async () => {
+    const { ipcRenderer } = await import('electron')
+    await (exposed['getIcons'] as unknown as (...args: unknown[]) => Promise<unknown>)('scan-1', [
+      'f1',
+      'd2',
+    ])
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('icons:for-nodes', 'scan-1', ['f1', 'd2'])
+    await (exposed['getTypeIcons'] as unknown as (...args: unknown[]) => Promise<unknown>)([
+      'dir',
+      'ext:txt',
+    ])
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('icons:for-types', ['dir', 'ext:txt'])
+  })
 })

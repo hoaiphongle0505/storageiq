@@ -1,4 +1,13 @@
-import { ChevronDown, Clock, Cloud, FileText, FolderSearch, HardDrive, Usb } from 'lucide-react'
+import {
+  IconChevronDown,
+  IconChooseFolder,
+  IconCloud,
+  IconDocuments,
+  IconDrive,
+  IconRecent,
+  IconSelect,
+  IconUsbDrive,
+} from '../lib/icons'
 import { useWorkspace } from '../stores/workspace-store-context'
 import { MenuButton, type MenuSection } from './MenuButton'
 import { RIBBON_BUTTON_CLASS } from './RibbonButton'
@@ -20,7 +29,7 @@ export function SelectMenu() {
       entries: drives.map((drive) => ({
         id: drive.root,
         label: `${drive.label} (${drive.root.slice(0, 2)})`,
-        icon: drive.kind === 'removable' ? Usb : HardDrive,
+        icon: drive.kind === 'removable' ? IconUsbDrive : IconDrive,
         onSelect: () => void startScan(drive.root),
       })),
     },
@@ -31,7 +40,7 @@ export function SelectMenu() {
       entries: places.places.map((place) => ({
         id: place.path,
         label: place.label,
-        icon: place.kind === 'documents' ? FileText : Cloud,
+        icon: place.kind === 'documents' ? IconDocuments : IconCloud,
         onSelect: () => void startScan(place.path),
       })),
     },
@@ -42,7 +51,7 @@ export function SelectMenu() {
       entries: places.recent.map((path) => ({
         id: `recent:${path}`,
         label: path,
-        icon: Clock,
+        icon: IconRecent,
         onSelect: () => void startScan(path),
       })),
     },
@@ -53,7 +62,7 @@ export function SelectMenu() {
         {
           id: 'choose',
           label: 'Choose a folder…',
-          icon: FolderSearch,
+          icon: IconChooseFolder,
           disabled: folderPickerOpen,
           onSelect: () => void chooseFolder(),
         },
@@ -69,10 +78,10 @@ export function SelectMenu() {
       className={RIBBON_BUTTON_CLASS}
       title="Choose a drive or folder to scan"
     >
-      <FolderSearch aria-hidden="true" className="size-5.5" strokeWidth={1.75} />
+      <IconSelect aria-hidden="true" focusable={false} />
       <span className="flex items-center gap-0.5">
         Select
-        <ChevronDown aria-hidden="true" className="size-3" />
+        <IconChevronDown aria-hidden="true" focusable={false} />
       </span>
     </MenuButton>
   )

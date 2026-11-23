@@ -37,16 +37,20 @@ Installers are currently unsigned, so Windows SmartScreen will warn on first run
 
 ## Architecture
 
-- `src/main`: Electron main process (window, security policy, IPC handlers, drive and volume details through koffi, the Explorer context menu through COM, auto-update)
+- `src/main`: Electron main process (window, security policy, IPC handlers, drive and volume details through koffi, the Explorer context menu through COM, Windows shell icons on a worker thread, auto-update)
 - `src/worker`: the scanner utilityProcess (parallel directory walk, columnar tree store, tree pages, file-type categories, treemap layout, folder refresh)
 - `src/preload`: the only bridge to the renderer (`window.storageiq`)
-- `src/renderer`: React UI (Tailwind, Zustand, Lucide icons): ribbon, column tree, treemap with legend, status bar
+- `src/renderer`: React UI (Tailwind, Zustand, Fluent UI System Icons): ribbon, column tree, treemap with legend, status bar
 - `src/shared`: types shared by every process, including the IPC contract
 - `design`: design tokens (`tokens.json` → `tokens.css`), component specs and the contrast report
 
 The installed app lists the licences of the open-source packages it ships in `THIRD_PARTY_NOTICES.txt` (next to the program; generated at build time by `scripts/build-notices.cjs`, also `npm run notices`).
 
 Security baseline: context isolation, sandboxed renderer, no Node integration, strict CSP, blocked navigation and pop-ups, a sender check and argument validation on every IPC call, and shell actions only on paths from the current scan. Read [docs/ROADMAP.md](docs/ROADMAP.md) for the architecture decisions and [docs/RELEASING.md](docs/RELEASING.md) for releases and updates.
+
+## Credits
+
+Icons: Windows’ own shell icons, drawn by Windows at runtime and never redistributed; Fluent UI System Icons by Microsoft (MIT).
 
 ## License
 

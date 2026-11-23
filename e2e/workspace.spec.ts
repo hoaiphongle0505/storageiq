@@ -111,6 +111,40 @@ test('the Select menu lists the system drive', async () => {
   await expect(menu.getByRole('menuitem', { name: 'Choose a folder…' })).toBeVisible()
 })
 
+test('tree rows render a native icon image', async () => {
+  await scanFixture()
+  const rows = treegrid(page).getByRole('row')
+  await expect(rows.nth(1)).toBeVisible()
+  // The icon box exists with its final size before any bitmap arrives; record it now.
+  const boxOf = () => treegrid(page).locator('[data-file-icon]').first().boundingBox()
+  const before = await boxOf()
+  expect(before).not.toBeNull()
+  expect(before!.width).toBe(16)
+  expect(before!.height).toBe(16)
+  const image = treegrid(page).locator('[role="row"] img[data-icon]').first()
+  await expect(image).toBeVisible({ timeout: 15_000 })
+  await expect
+    .poll(() =>
+      image.evaluate((element) => (element as unknown as { naturalWidth: number }).naturalWidth),
+    )
+    .toBeGreaterThan(0)
+  expect(await boxOf()).toEqual(before)
+})
+
+test('the ribbon shows svg icons and none of the removed icon package’s classes', async () => {
+  // The removed package marked its svgs with a class named after itself.
+  await expect(page.locator(`.${['luc', 'ide'].join('')}`)).toHaveCount(0)
+  const buttons = page.getByRole('toolbar', { name: /commands$/ }).getByRole('button')
+  expect(await buttons.count()).toBeGreaterThan(3)
+  await expect(
+    page
+      .getByRole('toolbar', { name: /commands$/ })
+      .getByRole('button', { name: 'Refresh' })
+      .locator('svg'),
+  ).toHaveCount(1)
+  expect(await consoleErrors(app!)).toEqual([])
+})
+
 test('every column of the tree matches the generated fixture exactly', async () => {
   const { fixture: f, cluster } = await scanFixture()
   const root = treeRow(page, f.root)
