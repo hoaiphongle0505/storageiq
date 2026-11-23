@@ -97,9 +97,12 @@ export function walk<D>(
     const listDirectory = async (dirPath: string, handle: D): Promise<void> => {
       sink.visiting(dirPath)
       const listing = await lister.list(dirPath)
+      if (signal.aborted) return
       if (listing.errorCode !== null) sink.error(dirPath, listing.errorCode, 'folder')
       const { entries } = listing
       for (let start = 0; start < entries.length; start += ABORT_CHUNK) {
+        // Let the event loop run between chunks, so a cancel arriving over IPC is seen.
+        if (start > 0) await new Promise<void>((resolve) => setImmediate(resolve))
         if (signal.aborted) return
         const end = Math.min(start + ABORT_CHUNK, entries.length)
         for (let i = start; i < end; i += 1) {

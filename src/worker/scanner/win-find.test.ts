@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { DirectoryLister } from './walk'
 import {
   createWinFindLister,
+  endOfListingError,
   FILETIME_EPOCH_OFFSET_MS,
   FIND_DATA_SIZE,
   filetimeToMs,
@@ -42,30 +43,31 @@ describe('filetimeToMs', () => {
 })
 
 describe('findPattern', () => {
-  it('appends \\* to a folder', () => {
-    expect(findPattern('C:\\Data')).toBe('C:\\Data\\*')
-    expect(findPattern('C:\\')).toBe('C:\\*')
-    expect(findPattern('C:\\Data\\')).toBe('C:\\Data\\*')
+  it('appends \\* to a folder and always uses the long-path form', () => {
+    expect(findPattern('C:\\Data')).toBe('\\\\?\\C:\\Data\\*')
+    expect(findPattern('C:\\')).toBe('\\\\?\\C:\\*')
+    expect(findPattern('C:\\Data\\')).toBe('\\\\?\\C:\\Data\\*')
+    expect(findPattern('C:/Data/sub')).toBe('\\\\?\\C:\\Data\\sub\\*')
   })
 
-  it('adds the long-path prefix at 248 characters', () => {
-    const base = 'C:\\'
-    const make = (patternLength: number) => base + 'a'.repeat(patternLength - base.length - 2)
-    const short = findPattern(make(LONG_PATH_PREFIX_AT - 1))
-    expect(short).toHaveLength(LONG_PATH_PREFIX_AT - 1)
-    expect(short.startsWith('\\\\?\\')).toBe(false)
-
-    const long = findPattern(make(LONG_PATH_PREFIX_AT))
-    expect(long.startsWith('\\\\?\\C:\\')).toBe(true)
-    expect(long).toHaveLength(LONG_PATH_PREFIX_AT + 4)
-
+  it('prefixes short and long paths alike, and never twice', () => {
+    const short = findPattern(`C:\\${'a'.repeat(LONG_PATH_PREFIX_AT - 10)}`)
+    expect(short.startsWith('\\\\?\\C:\\')).toBe(true)
     const already = `\\\\?\\C:\\${'a'.repeat(300)}`
-    expect(findPattern(already).startsWith('\\\\?\\\\\\?\\')).toBe(false)
     expect(findPattern(already)).toBe(`${already}\\*`)
   })
 
-  it('does not give UNC paths a special form (the scan start refuses them)', () => {
-    expect(findPattern('\\\\server\\share')).toBe('\\\\server\\share\\*')
+  it('maps UNC paths to the \\\\?\\UNC\\ form', () => {
+    expect(findPattern('\\\\server\\share\\dir')).toBe('\\\\?\\UNC\\server\\share\\dir\\*')
+  })
+})
+
+describe('endOfListingError', () => {
+  it('treats ERROR_NO_MORE_FILES and a zero error as the normal end', () => {
+    expect(endOfListingError(18)).toBeNull()
+    expect(endOfListingError(0)).toBeNull()
+    expect(endOfListingError(5)).toBe('EACCES')
+    expect(endOfListingError(1117)).toBe('WIN32_1117')
   })
 })
 
@@ -119,6 +121,22 @@ describe.runIf(isWindows)('the Windows directory lister', () => {
     ).toBeLessThan(5000)
     expect(listing.entries.find((e) => e.name === 'b.bin')?.size).toBe(0)
     expect(listing.entries.find((e) => e.name === 'sub')?.isDirectory).toBe(true)
+  })
+
+  it('lists a folder whose name ends in a period with its own contents', async () => {
+    const dotted = path.join(base, 'trail.')
+    const plain = path.join(base, 'trail')
+    mkdirSync(`\\\\?\\${dotted}`)
+    writeFileSync(`\\\\?\\${path.join(dotted, 'inside.txt')}`, 'abc')
+    mkdirSync(plain)
+    writeFileSync(path.join(plain, 'other.txt'), 'x')
+
+    const listing = await lister.list(dotted)
+
+    expect(listing.errorCode).toBeNull()
+    expect(listing.entries.map((e) => e.name)).toEqual(['inside.txt'])
+    const top = await lister.list(base)
+    expect(top.entries.map((e) => e.name).sort()).toEqual(['trail', 'trail.'])
   })
 
   it('lists a folder deeper than 260 characters', async () => {

@@ -65,15 +65,24 @@ export function win32ErrorToCode(error: number): string {
 }
 
 /**
- * The search pattern for a folder: `<dir>\*`, with `\\?\` in front when 248 characters or more
- * (and not already prefixed). UNC paths are never scanned, so there is no `\\?\UNC\` form.
+ * The search pattern for a folder: `<dir>\*`, always with `\\?\` in front for drive-absolute
+ * paths (`\\?\UNC\server\share` for UNC). Without the prefix Win32 normalisation strips a
+ * trailing period or space from every segment, so a folder named `foo.` would list `foo`. The
+ * prefix also lifts the 260-character limit; the form is not normalised, so forward slashes
+ * become backslashes. Already-prefixed paths are left alone; the tree keeps unprefixed paths.
  */
 export function findPattern(dirPath: string): string {
-  const pattern = dirPath.endsWith('\\') ? `${dirPath}*` : `${dirPath}\\*`
-  if (pattern.length >= LONG_PATH_PREFIX_AT && !pattern.startsWith(LONG_PREFIX)) {
-    return `${LONG_PREFIX}${pattern}`
-  }
+  const clean = dirPath.replace(/\//g, '\\')
+  const pattern = clean.endsWith('\\') ? `${clean}*` : `${clean}\\*`
+  if (pattern.startsWith(LONG_PREFIX)) return pattern
+  if (/^[A-Za-z]:\\/.test(pattern)) return `${LONG_PREFIX}${pattern}`
+  if (pattern.startsWith('\\\\')) return `${LONG_PREFIX}UNC\\${pattern.slice(2)}`
   return pattern
+}
+
+/** Error code for the `GetLastError` read after `FindNextFileW` returned FALSE; null at the end. */
+export function endOfListingError(lastError: number): string | null {
+  return lastError === ERROR_NO_MORE_FILES || lastError === 0 ? null : win32ErrorToCode(lastError)
 }
 
 interface FileTime {
@@ -204,7 +213,7 @@ async function buildLister(): Promise<DirectoryLister> {
         return { entries: [], errorCode: win32ErrorToCode(error) }
       }
       const entries: ListedEntry[] = []
-      let errorCode: string | null = null
+      let errorCode: string | null
       try {
         const first = toEntry(data)
         if (first !== null) entries.push(first)
@@ -212,8 +221,7 @@ async function buildLister(): Promise<DirectoryLister> {
           const entry = toEntry(data)
           if (entry !== null) entries.push(entry)
         }
-        const last = Number(getLastError())
-        if (last !== ERROR_NO_MORE_FILES) errorCode = win32ErrorToCode(last)
+        errorCode = endOfListingError(Number(getLastError()))
       } finally {
         findClose(handle)
       }

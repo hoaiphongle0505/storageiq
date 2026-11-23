@@ -204,6 +204,33 @@ describe('walk with an injected file system', () => {
     expect(seen).toBeGreaterThanOrEqual(100)
   })
 
+  it('an abort from outside the sink is seen between chunks of a large listing', async () => {
+    const controller = new AbortController()
+    const many = Object.fromEntries(
+      Array.from({ length: 20_000 }, (_, i) => [`f${i}.bin`, file(1)]),
+    )
+    const fs = createFakeWalkFs(ROOT, dir(many))
+    const { sink, files } = recordingSink()
+    setTimeout(() => controller.abort(), 0) // like a cancel message arriving over IPC
+
+    await walk(ROOT, ROOT, sink, { lister: fs, signal: controller.signal })
+
+    expect(files.length).toBeLessThan(20_000)
+  })
+
+  it('does not report the error of a folder whose listing finished after an abort', async () => {
+    const controller = new AbortController()
+    const fs = createFakeWalkFs(ROOT, dir({ a: dir() }), {
+      listErrors: { [ROOT]: 'EACCES' },
+      beforeList: async () => controller.abort(),
+    })
+    const { sink, errors } = recordingSink()
+
+    await walk(ROOT, ROOT, sink, { lister: fs, signal: controller.signal })
+
+    expect(errors).toEqual([])
+  })
+
   it('a link that is a directory is counted as a file and not entered', async () => {
     const fs = createFakeWalkFs(ROOT, dir({ Junction: link(true) }))
     const { sink, folders, files } = recordingSink()
