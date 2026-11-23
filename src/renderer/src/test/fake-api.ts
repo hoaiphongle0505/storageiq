@@ -1,5 +1,5 @@
 import { vi } from 'vitest'
-import type { AppInfo, SelectFolderResult, StorageIQApi } from '@shared/ipc-contract'
+import type { AppInfo, SelectFolderResult, StorageIQApi, UpdateReady } from '@shared/ipc-contract'
 import type {
   DriveDetails,
   DriveInfo,
@@ -252,6 +252,7 @@ export interface FakeApi extends StorageIQApi {
   emitScanFailed(failed: ScanFailed): void
   emitScanRestarted(restarted: ScanRestarted): void
   emitTreeChanged(changed: TreeChanged): void
+  emitUpdateReady(ready: UpdateReady): void
   /** Subscribed event listeners across all channels. */
   listenerCount(): number
 }
@@ -278,6 +279,7 @@ export function createFakeApi(overrides: Partial<StorageIQApi> = {}): FakeApi {
   const failed = createChannel<ScanFailed>()
   const restarted = createChannel<ScanRestarted>()
   const changed = createChannel<TreeChanged>()
+  const updateReady = createChannel<UpdateReady>()
   return {
     getAppInfo: vi.fn(async () => TEST_APP_INFO),
     quit: vi.fn(async () => undefined),
@@ -305,13 +307,21 @@ export function createFakeApi(overrides: Partial<StorageIQApi> = {}): FakeApi {
     onScanFailed: vi.fn(failed.subscribe),
     onScanRestarted: vi.fn(restarted.subscribe),
     onTreeChanged: vi.fn(changed.subscribe),
+    installUpdate: vi.fn(async () => undefined),
+    onUpdateReady: vi.fn(updateReady.subscribe),
     ...overrides,
     emitScanProgress: progress.emit,
     emitScanDone: done.emit,
     emitScanFailed: failed.emit,
     emitScanRestarted: restarted.emit,
     emitTreeChanged: changed.emit,
+    emitUpdateReady: updateReady.emit,
     listenerCount: () =>
-      progress.size() + done.size() + failed.size() + restarted.size() + changed.size(),
+      progress.size() +
+      done.size() +
+      failed.size() +
+      restarted.size() +
+      changed.size() +
+      updateReady.size(),
   }
 }

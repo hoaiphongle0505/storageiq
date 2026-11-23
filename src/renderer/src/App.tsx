@@ -6,6 +6,7 @@ import { Splitter } from './components/Splitter'
 import { StatusBar } from './components/StatusBar'
 import { TreeGrid } from './components/TreeGrid'
 import { TreemapPane } from './components/TreemapPane'
+import { UpdateBanner } from './components/UpdateBanner'
 import { useAppStore } from './stores/app-store-context'
 import { useWorkspace } from './stores/workspace-store-context'
 
@@ -60,6 +61,7 @@ export function App() {
     <div className="flex h-full flex-col bg-app text-ink">
       <Ribbon onAbout={() => setAboutOpen(true)} />
       <Banner />
+      <UpdateBanner />
       <main className="flex min-h-0 flex-1 flex-col">
         <TreeGrid />
         {treemapVisible && (

@@ -28,10 +28,17 @@ win:
         - x64
   artifactName: ${productName}-Setup-${version}-${arch}.${ext}
 
+# GitHub Releases feed the auto-update; electron-builder writes app-update.yml from this block.
+publish:
+  provider: github
+  owner: hoaiphongle0505
+  repo: storageiq
+  releaseType: release
+
 nsis:
   oneClick: false
   perMachine: false
-  allowElevation: false
+  allowElevation: true
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true

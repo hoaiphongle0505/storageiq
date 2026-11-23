@@ -9,14 +9,16 @@ const fakeWindow = {} as BrowserWindow
 function setup(overrides: Partial<AppHandlerDeps> = {}) {
   const showOpenDialog = vi.fn<AppHandlerDeps['dialog']['showOpenDialog']>()
   const quit = vi.fn()
+  const installUpdate = vi.fn()
   const deps: AppHandlerDeps = {
     app: { getName: () => 'StorageIQ', getVersion: () => '0.1.0', quit },
     dialog: { showOpenDialog },
     getMainWindow: () => fakeWindow,
     runtime: { platform: 'win32', arch: 'x64', electronVersion: '38.0.0' },
+    installUpdate,
     ...overrides,
   }
-  return { handlers: createAppHandlers(deps), showOpenDialog, quit }
+  return { handlers: createAppHandlers(deps), showOpenDialog, quit, installUpdate }
 }
 
 describe('app:quit', () => {
@@ -25,6 +27,19 @@ describe('app:quit', () => {
     expect(() => handlers['app:quit'].parseArgs(['now'])).toThrow(InvalidIpcArgumentsError)
     handlers['app:quit'].handle(event)
     expect(quit).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('update:install', () => {
+  it('update:install calls installUpdate', () => {
+    const { handlers, installUpdate } = setup()
+    handlers['update:install'].handle(event)
+    expect(installUpdate).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects extra arguments', () => {
+    const { handlers } = setup()
+    expect(() => handlers['update:install'].parseArgs(['x'])).toThrow(InvalidIpcArgumentsError)
   })
 })
 

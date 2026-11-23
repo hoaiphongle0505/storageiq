@@ -33,6 +33,7 @@ import { createEventSender } from './ipc/send-event'
 import { createItemWatcher } from './ipc/item-watcher'
 import { createShellHandlers, itemExists } from './ipc/shell-handlers'
 import { createFolderRefresher, createTreeHandlers } from './ipc/tree-handlers'
+import { autoUpdater } from 'electron-updater'
 import { createRecentScans, listPlaces, RECENT_SCANS_FILE } from './places/places'
 import { createScanService, type ScannerChild } from './scan/scan-service'
 import { hardenWebContents } from './security/harden-web-contents'
@@ -46,6 +47,7 @@ import {
   showShellMenu,
 } from './shell-menu/context-menu'
 import { createWinShellMenu } from './shell-menu/win-shell-menu'
+import { createUpdater, type Updater } from './updater/updater'
 import { createMainWindow } from './window'
 
 const APP_USER_MODEL_ID = 'io.github.storageiq.app'
@@ -57,6 +59,7 @@ const isTrustedUrl = (url: string) => isTrustedRendererUrl(url, { rendererRoot, 
 
 let mainWindow: BrowserWindow | null = null
 let quitting = false
+let updater: Updater | null = null
 let driveApi: Promise<DriveApi> | null = null
 let shellMenuNative: Promise<ShellMenuNative> | null = null
 
@@ -252,6 +255,7 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
   app.on('before-quit', () => {
     quitting = true
     itemWatcher.cancelAll()
+    updater?.dispose()
     scanService.dispose() // kills the scanner; no event is sent during quit
   })
 
@@ -294,6 +298,7 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
             arch: process.arch,
             electronVersion: process.versions.electron,
           },
+          installUpdate: () => updater?.install(),
         }),
         ...createScanHandlers({
           scanService,
@@ -356,6 +361,28 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
       })
       mainWindow.on('closed', () => {
         mainWindow = null
+      })
+
+      updater = createUpdater({
+        autoUpdater,
+        isPackaged: app.isPackaged,
+        selfTest: process.argv.includes(SELF_TEST_FLAG),
+        version: app.getVersion(),
+        send: sendEvent,
+        schedule: (callback, ms) => {
+          const timer = setTimeout(callback, ms)
+          return () => clearTimeout(timer)
+        },
+        scheduleEvery: (callback, ms) => {
+          const timer = setInterval(callback, ms)
+          return () => clearInterval(timer)
+        },
+        log: (message, error) => console.warn(message, error),
+      })
+      updater.start()
+      // A page that loads after the download finished still gets the banner.
+      mainWindow.webContents.on('did-finish-load', () => {
+        if (updater?.ready) sendEvent('update:ready', updater.ready)
       })
     })
     .catch(reportStartupError)

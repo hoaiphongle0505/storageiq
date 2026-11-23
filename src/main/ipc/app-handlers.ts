@@ -12,9 +12,13 @@ export interface AppHandlerDeps {
   }
   getMainWindow(): BrowserWindow | null
   runtime: { platform: string; arch: string; electronVersion: string }
+  installUpdate(): void
 }
 
-export type AppHandlers = Pick<IpcHandlerMap, 'app:get-info' | 'app:quit' | 'dialog:select-folder'>
+export type AppHandlers = Pick<
+  IpcHandlerMap,
+  'app:get-info' | 'app:quit' | 'dialog:select-folder' | 'update:install'
+>
 
 export function createAppHandlers(deps: AppHandlerDeps): AppHandlers {
   return {
@@ -32,6 +36,11 @@ export function createAppHandlers(deps: AppHandlerDeps): AppHandlers {
       handle: () => {
         deps.app.quit()
       },
+    },
+
+    'update:install': {
+      parseArgs: noArgs,
+      handle: () => deps.installUpdate(),
     },
 
     'dialog:select-folder': {

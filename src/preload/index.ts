@@ -33,6 +33,8 @@ const api: StorageIQApi = {
   onScanFailed: (listener) => subscribe(ipcRenderer, 'scan:failed', listener),
   onScanRestarted: (listener) => subscribe(ipcRenderer, 'scan:restarted', listener),
   onTreeChanged: (listener) => subscribe(ipcRenderer, 'tree:changed', listener),
+  installUpdate: () => invoke('update:install'),
+  onUpdateReady: (listener) => subscribe(ipcRenderer, 'update:ready', listener),
 }
 
 contextBridge.exposeInMainWorld('storageiq', api)

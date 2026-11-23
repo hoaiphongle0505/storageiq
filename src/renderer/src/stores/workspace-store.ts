@@ -1,5 +1,5 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
-import type { ContextMenuOutcome, StorageIQApi } from '@shared/ipc-contract'
+import type { ContextMenuOutcome, StorageIQApi, UpdateReady } from '@shared/ipc-contract'
 import type {
   DriveDetails,
   DriveInfo,
@@ -117,6 +117,8 @@ export interface WorkspaceState {
   /** The folder the treemap shows. */
   treemapRootId: NodeId | null
   banner: Banner | null
+  /** A downloaded update waiting for a restart; null when none or dismissed. */
+  updateReady: UpdateReady | null
   /** Short polite message for screen readers (copied, created, …). */
   announcement: string
   folderPickerOpen: boolean
@@ -146,6 +148,9 @@ export interface WorkspaceState {
   setTreemapDepth(depth: number): void
   setTreemapVisible(visible: boolean): void
   dismissBanner(): void
+  installUpdate(): Promise<void>
+  /** Hides the update banner for this session. */
+  dismissUpdate(): void
   quit(): Promise<void>
 }
 
@@ -319,6 +324,7 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
       treemapDepth: DEFAULT_TREEMAP_DEPTH,
       treemapRootId: null,
       banner: null,
+      updateReady: null,
       announcement: '',
       folderPickerOpen: false,
 
@@ -587,6 +593,18 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
         set({ banner: null })
       },
 
+      async installUpdate() {
+        try {
+          await api.installUpdate()
+        } catch (error) {
+          fail(error)
+        }
+      },
+
+      dismissUpdate() {
+        set({ updateReady: null })
+      },
+
       async quit() {
         await api.quit()
       },
@@ -690,6 +708,7 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
     api.onScanFailed((payload) => applyEvent({ kind: 'failed', payload })),
     api.onScanRestarted(applyRestarted),
     api.onTreeChanged(applyTreeChanged),
+    api.onUpdateReady((ready) => store.setState({ updateReady: ready })),
   ]
 
   return Object.assign(store, {

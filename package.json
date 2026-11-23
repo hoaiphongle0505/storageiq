@@ -60,6 +60,7 @@
     "zustand": "^5.1.0"
   },
   "dependencies": {
+    "electron-updater": "6.8.12",
     "koffi": "3.3.8"
   }
 }

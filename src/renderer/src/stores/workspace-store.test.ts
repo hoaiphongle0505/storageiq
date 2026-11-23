@@ -33,7 +33,7 @@ async function scanning(api = createFakeApi()) {
 }
 
 describe('createWorkspaceStore', () => {
-  it('starts empty and subscribes to the five events', () => {
+  it('starts empty and subscribes to the six events', () => {
     const api = createFakeApi()
     const store = createWorkspaceStore(api)
     expect(store.getState()).toMatchObject({
@@ -48,7 +48,7 @@ describe('createWorkspaceStore', () => {
       treemapDepth: 1,
       banner: null,
     })
-    expect(api.listenerCount()).toBe(5)
+    expect(api.listenerCount()).toBe(6)
     store.dispose()
     expect(api.listenerCount()).toBe(0)
   })
@@ -204,6 +204,42 @@ describe('a scan', () => {
       errorCount: 2,
     })
     expect(store.getState().revision).toBe(before + 1)
+  })
+})
+
+describe('updates', () => {
+  it('update:ready sets updateReady', () => {
+    const api = createFakeApi()
+    const store = createWorkspaceStore(api)
+    expect(store.getState().updateReady).toBeNull()
+    api.emitUpdateReady({ version: '0.2.0' })
+    expect(store.getState().updateReady).toEqual({ version: '0.2.0' })
+  })
+
+  it('installUpdate calls the api', async () => {
+    const api = createFakeApi()
+    const store = createWorkspaceStore(api)
+    await store.getState().installUpdate()
+    expect(api.installUpdate).toHaveBeenCalledTimes(1)
+    expect(store.getState().banner).toBeNull()
+  })
+
+  it('an install failure shows the error banner', async () => {
+    const api = createFakeApi({ installUpdate: vi.fn().mockRejectedValue(new Error('nope')) })
+    const store = createWorkspaceStore(api)
+    await store.getState().installUpdate()
+    expect(store.getState().banner).toEqual({
+      tone: 'error',
+      message: actionError(new Error('nope')),
+    })
+  })
+
+  it('dismissUpdate clears updateReady', () => {
+    const api = createFakeApi()
+    const store = createWorkspaceStore(api)
+    api.emitUpdateReady({ version: '0.2.0' })
+    store.getState().dismissUpdate()
+    expect(store.getState().updateReady).toBeNull()
   })
 })
 

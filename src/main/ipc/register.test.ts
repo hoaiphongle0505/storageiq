@@ -44,6 +44,7 @@ function createHandlers(overrides: Partial<IpcHandlerMap> = {}): IpcHandlerMap {
     'tree:expand-ids': { parseArgs: expandArgs, handle: () => [] },
     'tree:refresh': { parseArgs: scanNodeArgs, handle: () => null },
     'treemap:layout': { parseArgs: treemapArgs, handle: () => null },
+    'update:install': { parseArgs: noArgs, handle: () => undefined },
     'shell:open-in-explorer': { parseArgs: scanNodeArgs, handle: () => undefined },
     'shell:context-menu': { parseArgs: contextMenuArgs, handle: () => ({ kind: 'dismissed' }) },
     'folder:create': { parseArgs: scanNodeArgs, handle: () => ({ parentId: 'd0', name: 'x' }) },
@@ -102,6 +103,7 @@ describe('registerIpcHandlers', () => {
       'tree:node',
       'tree:refresh',
       'treemap:layout',
+      'update:install',
     ])
   })
 
@@ -122,6 +124,22 @@ describe('registerIpcHandlers', () => {
     )
     expect(parseArgs).not.toHaveBeenCalled()
     expect(handle).not.toHaveBeenCalled()
+  })
+
+  it('refuses an untrusted sender on update:install', async () => {
+    const ipc = createFakeIpc()
+    const handle = vi.fn(() => undefined)
+    registerIpcHandlers(
+      ipc,
+      createHandlers({ 'update:install': { parseArgs: noArgs, handle } }),
+      isTrusted,
+    )
+    await expect(call(ipc, 'update:install', 'https://evil.example/', [])).rejects.toThrow(
+      UntrustedSenderError,
+    )
+    expect(handle).not.toHaveBeenCalled()
+    await expect(call(ipc, 'update:install', TRUSTED, [])).resolves.toBeUndefined()
+    expect(handle).toHaveBeenCalledTimes(1)
   })
 
   it('rejects malformed arguments without running the handler', async () => {

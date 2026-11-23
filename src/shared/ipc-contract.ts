@@ -31,6 +31,11 @@ export interface AppInfo {
 /** Outcome of the native "choose a folder" dialog. */
 export type SelectFolderResult = { canceled: true } | { canceled: false; path: string }
 
+/** An update has been downloaded and installs on restart (main → renderer). */
+export interface UpdateReady {
+  version: string
+}
+
 /** What the native context menu did, so the renderer can follow up. */
 export type ContextMenuOutcome =
   | { kind: 'dismissed' }
@@ -95,6 +100,7 @@ export interface IpcContract {
   }
   'folder:create': { args: [scanId: string, nodeId: NodeId]; result: CreateFolderResult }
   'clipboard:copy-path': { args: [scanId: string, nodeId: NodeId]; result: void }
+  'update:install': { args: []; result: void }
 }
 
 export type IpcChannel = keyof IpcContract
@@ -108,6 +114,7 @@ export interface IpcEventContract {
   'scan:failed': ScanFailed
   'scan:restarted': ScanRestarted
   'tree:changed': TreeChanged
+  'update:ready': UpdateReady
 }
 
 export type IpcEventChannel = keyof IpcEventContract
@@ -176,4 +183,8 @@ export interface StorageIQApi {
   /** Main started a new scan of the same root; sent before any progress for the new scanId. */
   onScanRestarted(listener: (restarted: ScanRestarted) => void): Unsubscribe
   onTreeChanged(listener: (changed: TreeChanged) => void): Unsubscribe
+  /** Restarts the app to install the downloaded update; ignored when none is ready. */
+  installUpdate(): Promise<void>
+  /** An update finished downloading; also re-sent when the page reloads after that. */
+  onUpdateReady(listener: (ready: UpdateReady) => void): Unsubscribe
 }

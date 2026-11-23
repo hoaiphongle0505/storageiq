@@ -45,6 +45,25 @@ describe('preload bridge', () => {
     expect(listeners.get('scan:restarted')).toEqual([])
   })
 
+  it('installUpdate invokes update:install with no arguments', async () => {
+    const { ipcRenderer } = await import('electron')
+    await (exposed['installUpdate'] as unknown as () => Promise<void>)()
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('update:install')
+  })
+
+  it('onUpdateReady subscribes to update:ready and returns an unsubscribe', () => {
+    const received: unknown[] = []
+    const unsubscribe = (
+      exposed['onUpdateReady'] as unknown as (cb: (p: unknown) => void) => () => void
+    )((payload) => received.push(payload))
+    const [forward] = listeners.get('update:ready') ?? []
+    forward?.({ sender: 'leaky' }, { version: '0.2.0' })
+    expect(received).toEqual([{ version: '0.2.0' }])
+
+    unsubscribe()
+    expect(listeners.get('update:ready')).toEqual([])
+  })
+
   it('exposes copyNodePath and no free-text clipboard writer', () => {
     expect(typeof exposed['copyNodePath']).toBe('function')
     expect(exposed['writeClipboardText']).toBeUndefined()
