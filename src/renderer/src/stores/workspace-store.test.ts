@@ -736,4 +736,39 @@ describe('multi-select', () => {
     await store.getState().copyPaths(['d1'])
     expect(store.getState().announcement).toBe(PATH_COPIED)
   })
+
+  it('Ctrl+A over the root and its loaded children sends the children, not the root', async () => {
+    const outcome: ContextMenuOutcome = {
+      kind: 'shell',
+      verb: 'properties',
+      changed: false,
+      count: 2,
+      running: true,
+    }
+    const api = createFakeApi({ showContextMenu: vi.fn(async () => outcome) })
+    const { store } = await scanning(api)
+    store.getState().requestChunks([{ nodeId: 'd0', chunk: 0 }])
+    await flush()
+    await store.getState().showContextMenu(['d0', 'd1', 'd2'], 1, 2, false)
+    expect(api.showContextMenu).toHaveBeenCalledWith('scan-1', ['d1', 'd2'], 1, 2, false)
+    expect(store.getState().announcement).toBe(
+      'Windows is working on 2 items… Skipped 1 row that cannot be acted on.',
+    )
+  })
+
+  it('copyPaths with 1001 ids announces the limit and sends nothing', async () => {
+    const { api, store } = await scanning()
+    const ids = Array.from({ length: 1001 }, (_, i) => `f${i + 10}`)
+    await store.getState().copyPaths(ids)
+    expect(api.copyNodePath).not.toHaveBeenCalled()
+    expect(store.getState().announcement).toBe('Too many items selected (the limit is 1,000).')
+    expect(store.getState().banner).toBeNull()
+  })
+
+  it('when every selected row is dropped the skipped rows are announced and no menu is requested', async () => {
+    const { api, store } = await scanning()
+    await store.getState().showContextMenu(['d0', 'g0'], 1, 2, false)
+    expect(api.showContextMenu).not.toHaveBeenCalled()
+    expect(store.getState().announcement).toBe('Skipped 2 rows that cannot be acted on.')
+  })
 })
