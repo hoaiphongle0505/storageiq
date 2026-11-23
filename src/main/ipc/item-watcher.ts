@@ -63,6 +63,10 @@ export function createItemWatcher(deps: ItemWatcherDeps): ItemWatcher {
       }
       const settle = (exists: boolean): void => {
         if (stopped) return
+        if (!isCurrent()) {
+          stop()
+          return
+        }
         if (!exists) {
           stop()
           onSettled('gone')

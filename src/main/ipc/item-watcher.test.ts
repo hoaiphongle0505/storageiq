@@ -82,6 +82,27 @@ describe('item watcher', () => {
     expect(watcher.active).toBe(0)
   })
 
+  it('stays silent when the scan turns non-current while pathExists is in flight', async () => {
+    let answer: (exists: boolean) => void = () => undefined
+    const pathExists = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          answer = resolve
+        }),
+    )
+    const watcher = setup(pathExists)
+    let current = true
+    const onSettled = vi.fn()
+    watcher.watch({ key: 'k', itemPath: 'D:/a', isCurrent: () => current, onSettled })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(pathExists).toHaveBeenCalledTimes(1)
+    current = false
+    answer(false)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(onSettled).not.toHaveBeenCalled()
+    expect(watcher.active).toBe(0)
+  })
+
   it('replaces a watch with the same key', async () => {
     const watcher = setup(async () => true)
     const first = vi.fn()

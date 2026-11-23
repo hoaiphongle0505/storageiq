@@ -91,7 +91,7 @@ describe('<TreemapPane />', () => {
     const { api, workspace } = await renderPane()
     await waitFor(() => expect(fakeContext.fillText).toHaveBeenCalled())
     let release: () => void = () => undefined
-    api.getTreemap.mockImplementationOnce(
+    vi.mocked(api.getTreemap).mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           release = () => resolve(fakeTreemap('d0', 400, 200))
@@ -115,7 +115,7 @@ describe('<TreemapPane />', () => {
 
   it('shows an error state when the scanner cannot lay the folder out', async () => {
     const { api, workspace } = await renderPane()
-    api.getTreemap.mockRejectedValueOnce(new Error('scanner busy'))
+    vi.mocked(api.getTreemap).mockRejectedValueOnce(new Error('scanner busy'))
     act(() => workspace.getState().setTreemapDepth(2))
     expect(await screen.findByRole('status')).toHaveTextContent('couldn’t be drawn')
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
@@ -123,7 +123,7 @@ describe('<TreemapPane />', () => {
 
   it('ignores clicks on a layout that belongs to another folder', async () => {
     const { api, workspace, canvas } = await renderPane()
-    api.getTreemap.mockImplementationOnce(() => new Promise(() => undefined))
+    vi.mocked(api.getTreemap).mockImplementationOnce(() => new Promise(() => undefined))
     act(() => workspace.getState().select('d1'))
     await waitFor(() =>
       expect(api.getTreemap).toHaveBeenLastCalledWith('scan-1', 'd1', 'size', 1, 400, 200),
