@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { formatBytes, formatCount } from '../lib/format'
 import { ANNOUNCE_INTERVAL_MS, useThrottledAnnouncement } from '../lib/use-throttled-announcement'
 import { useAppStore } from '../stores/app-store-context'
@@ -30,6 +30,11 @@ export function StatusBar() {
           : `Scan finished: ${formatCount(totals.files)} files.`
   const announced = useThrottledAnnouncement(progressText, ANNOUNCE_INTERVAL_MS)
   const excluded = totals.errorCount
+
+  // A new scan replaces the list the dialog shows.
+  useEffect(() => {
+    if (scanning) setShowExcluded(false)
+  }, [scanning])
 
   return (
     <footer className="flex h-(--size-status-bar) items-center gap-4 border-t border-line bg-panel px-3 text-xs text-ink-muted tabular-nums">

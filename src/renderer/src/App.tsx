@@ -12,6 +12,8 @@ import { useWorkspace } from './stores/workspace-store-context'
 export const TREEMAP_DEFAULT_HEIGHT = 260
 export const TREEMAP_MIN_HEIGHT = 120
 export const TREEMAP_MAX_HEIGHT = 900
+/** Window height kept for the ribbon, the tree and the status bar. */
+const TREE_RESERVED_HEIGHT = 340
 
 /** The analyzer workspace: ribbon, column tree, treemap pane and status bar, top to bottom. */
 export function App() {
@@ -22,6 +24,19 @@ export function App() {
   const rescan = useWorkspace((s) => s.rescan)
   const [treemapHeight, setTreemapHeight] = useState(TREEMAP_DEFAULT_HEIGHT)
   const [aboutOpen, setAboutOpen] = useState(false)
+  const [windowHeight, setWindowHeight] = useState(() => window.innerHeight)
+
+  useEffect(() => {
+    const onResize = () => setWindowHeight(window.innerHeight)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  // Keep room for the ribbon, the status bar and a usable tree above the treemap.
+  const treemapMax = Math.max(
+    TREEMAP_MIN_HEIGHT,
+    Math.min(TREEMAP_MAX_HEIGHT, windowHeight - TREE_RESERVED_HEIGHT),
+  )
+  const shownHeight = Math.min(treemapHeight, treemapMax)
 
   useEffect(() => {
     void loadAppInfo()
@@ -32,6 +47,8 @@ export function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'F5') {
         event.preventDefault()
+        // A held key, an open dialog or an open menu must not start a scan.
+        if (event.repeat || document.querySelector('dialog[open], [role="menu"]') !== null) return
         void rescan()
       }
     }
@@ -48,12 +65,12 @@ export function App() {
         {treemapVisible && (
           <>
             <Splitter
-              value={treemapHeight}
+              value={shownHeight}
               min={TREEMAP_MIN_HEIGHT}
-              max={TREEMAP_MAX_HEIGHT}
+              max={treemapMax}
               onChange={setTreemapHeight}
             />
-            <TreemapPane height={treemapHeight} />
+            <TreemapPane height={shownHeight} />
           </>
         )}
       </main>

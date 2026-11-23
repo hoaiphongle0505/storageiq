@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useId, useRef } from 'react'
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
 import { Button } from './Button'
 
 /**
@@ -16,22 +16,26 @@ export function Dialog({
 }) {
   const ref = useRef<HTMLDialogElement>(null)
   const titleId = useId()
-  const returnFocus = useRef<Element | null>(null)
+  // Captured during the first render, before the dialog moves focus (and once under StrictMode).
+  const [opener] = useState<Element | null>(() => document.activeElement)
 
   useEffect(() => {
     const dialog = ref.current
     if (dialog === null) return
-    returnFocus.current = document.activeElement
     if (typeof dialog.showModal === 'function') {
       if (!dialog.open) dialog.showModal()
     } else {
       dialog.setAttribute('open', '')
     }
     return () => {
-      const previous = returnFocus.current
-      if (previous instanceof HTMLElement) previous.focus()
+      // If the opener went away, fall back to the ribbon tab that is selected.
+      const target =
+        opener instanceof HTMLElement && opener.isConnected
+          ? opener
+          : document.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+      target?.focus()
     }
-  }, [])
+  }, [opener])
 
   return (
     <dialog

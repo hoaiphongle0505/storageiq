@@ -48,6 +48,16 @@ describe('<StatusBar />', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
+  it('closes the unreadable list when a new scan starts', async () => {
+    const user = userEvent.setup()
+    const { api, workspace } = await renderBar()
+    act(() => api.emitScanDone(makeDone()))
+    await user.click(screen.getByRole('button', { name: '2 excluded' }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    await act(() => workspace.getState().startScan('D:\\'))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
   it('says items when a file is among the unreadable entries', async () => {
     const user = userEvent.setup()
     const { api } = await renderBar()

@@ -4,7 +4,7 @@ export const SPLITTER_STEP = 16
 
 /**
  * Horizontal splitter between the tree and the treemap: a focusable `separator` with a value
- * (WAI-ARIA window splitter). Drag with the pointer, or use ↑ ↓ (16 px), Home and End.
+ * (WAI-ARIA window splitter). Drag with the pointer, or use ↑ ↓ (16 px), Home (smallest) and End (largest).
  */
 export function Splitter({
   value,
@@ -27,9 +27,9 @@ export function Splitter({
         : event.key === 'ArrowDown'
           ? value - SPLITTER_STEP
           : event.key === 'Home'
-            ? max
+            ? min
             : event.key === 'End'
-              ? min
+              ? max
               : null
     if (next === null) return
     event.preventDefault()
@@ -37,6 +37,7 @@ export function Splitter({
   }
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return
     drag.current = { startY: event.clientY, startValue: value }
     event.currentTarget.setPointerCapture?.(event.pointerId)
   }
@@ -44,7 +45,7 @@ export function Splitter({
     if (drag.current === null) return
     onChange(clamp(drag.current.startValue + (drag.current.startY - event.clientY)))
   }
-  const onPointerUp = () => {
+  const endDrag = () => {
     drag.current = null
   }
 
@@ -60,8 +61,10 @@ export function Splitter({
       onKeyDown={onKeyDown}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      className="h-(--size-splitter) shrink-0 cursor-row-resize bg-line hover:bg-line-strong focus-visible:bg-accent"
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onLostPointerCapture={endDrag}
+      className="h-(--size-splitter) shrink-0 cursor-row-resize touch-none bg-line hover:bg-line-strong focus-visible:bg-accent"
     />
   )
 }

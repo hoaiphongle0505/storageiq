@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, screen } from '@testing-library/react'
+import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { App } from './App'
@@ -64,5 +64,18 @@ describe('<App />', () => {
     await user.click(screen.getByRole('tab', { name: 'File' }))
     await user.click(screen.getByRole('button', { name: 'About' }))
     expect(screen.getByRole('dialog', { name: 'About StorageIQ' })).toHaveTextContent('MIT license')
+  })
+
+  it('F5 does nothing while a key is held or a dialog is open', async () => {
+    const user = userEvent.setup()
+    const { api, workspace } = renderWithStores(<App />)
+    await act(() => workspace.getState().startScan('D:\\'))
+    act(() => api.emitScanDone(makeDone()))
+    fireEvent.keyDown(window, { key: 'F5', repeat: true })
+    expect(api.startScan).toHaveBeenCalledTimes(1)
+    await user.click(screen.getByRole('tab', { name: 'File' }))
+    await user.click(screen.getByRole('button', { name: 'About' }))
+    fireEvent.keyDown(window, { key: 'F5' })
+    expect(api.startScan).toHaveBeenCalledTimes(1)
   })
 })

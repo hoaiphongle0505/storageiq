@@ -1,6 +1,6 @@
 import { X } from 'lucide-react'
 import { type MouseEvent, useEffect, useRef, useState } from 'react'
-import type { TreemapLayout } from '@shared/tree-types'
+import type { SizeMode, TreemapLayout } from '@shared/tree-types'
 import { rowName } from '../lib/format'
 import { drawTreemap, hitTest, readTreemapColors } from '../lib/treemap-draw'
 import { useWorkspace } from '../stores/workspace-store-context'
@@ -9,6 +9,13 @@ import { LevelBar } from './LevelBar'
 interface Size {
   width: number
   height: number
+}
+
+/** A layout with the scan and Mode it was fetched for, so it is never drawn or hit with others. */
+interface Shown {
+  layout: TreemapLayout
+  scanId: string
+  mode: SizeMode
 }
 
 /**
@@ -34,17 +41,31 @@ export function TreemapPane({ height }: { height: number }) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [size, setSize] = useState<Size>({ width: 0, height: 0 })
-  const [layout, setLayout] = useState<TreemapLayout | null>(null)
+  const [shown, setShown] = useState<Shown | null>(null)
+  const [failed, setFailed] = useState(false)
   const [themeVersion, setThemeVersion] = useState(0)
 
   useEffect(() => {
     const element = wrapperRef.current
     if (element === null || typeof ResizeObserver === 'undefined') return
+    // One layout request per animation frame while the pane is being resized.
+    let frame = 0
     const observer = new ResizeObserver(([entry]) => {
-      if (entry) setSize({ width: entry.contentRect.width, height: entry.contentRect.height })
+      if (!entry) return
+      const next = {
+        width: Math.floor(entry.contentRect.width),
+        height: Math.floor(entry.contentRect.height),
+      }
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() =>
+        setSize((old) => (old.width === next.width && old.height === next.height ? old : next)),
+      )
     })
     observer.observe(element)
-    return () => observer.disconnect()
+    return () => {
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+    }
   }, [])
 
   useEffect(() => {
@@ -58,15 +79,23 @@ export function TreemapPane({ height }: { height: number }) {
   // Ask the scanner for a layout; only the newest answer is drawn.
   useEffect(() => {
     if (scanId === null || size.width < 1 || size.height < 1) {
-      setLayout(null)
+      setShown(null)
+      setFailed(false)
       return
     }
     let current = true
     fetchTreemap(size.width, size.height).then(
       (next) => {
-        if (current) setLayout(next)
+        if (!current) return
+        // The store answers null when the scanner could not lay the folder out.
+        setShown(next === null ? null : { layout: next, scanId, mode })
+        setFailed(next === null)
       },
-      () => undefined,
+      () => {
+        if (!current) return
+        setShown(null)
+        setFailed(true)
+      },
     )
     return () => {
       current = false
@@ -75,20 +104,31 @@ export function TreemapPane({ height }: { height: number }) {
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (canvas === null || layout === null) return
+    if (canvas === null || shown === null) return
+    const { layout } = shown
     const ctx = canvas.getContext('2d')
     if (ctx === null) return
     const ratio = window.devicePixelRatio || 1
     canvas.width = Math.round(layout.width * ratio)
     canvas.height = Math.round(layout.height * ratio)
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0)
-    drawTreemap(ctx, layout, { colors: readTreemapColors(canvas), selectedId, mode, unit })
-  }, [layout, selectedId, mode, unit, themeVersion])
+    drawTreemap(ctx, layout, {
+      colors: readTreemapColors(canvas),
+      selectedId,
+      mode: shown.mode,
+      unit,
+    })
+  }, [shown, selectedId, unit, themeVersion])
 
   const pointOf = (event: MouseEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
     return { x: event.clientX - rect.left, y: event.clientY - rect.top }
   }
+
+  // A layout of another folder or scan (a reply still in flight) is shown but never clicked.
+  const layout = shown?.layout ?? null
+  const clickable =
+    shown !== null && shown.scanId === scanId && shown.layout.nodeId === treemapRootId
 
   const rootRow =
     treemapRootId === null
@@ -119,6 +159,14 @@ export function TreemapPane({ height }: { height: number }) {
         </button>
       </div>
       <div ref={wrapperRef} className="relative min-h-0 flex-1">
+        {failed && (
+          <p
+            role="status"
+            className="absolute inset-0 flex items-center justify-center px-4 text-ink-muted"
+          >
+            The treemap couldn’t be drawn. Choose another folder or scan again.
+          </p>
+        )}
         {layout !== null && (
           <canvas
             ref={canvasRef}
@@ -127,11 +175,13 @@ export function TreemapPane({ height }: { height: number }) {
             className="absolute inset-0 size-full"
             style={{ width: layout.width, height: layout.height }}
             onClick={(event) => {
+              if (!clickable) return
               const { x, y } = pointOf(event)
               const hit = hitTest(layout, x, y)
               if (hit?.id) void reveal(hit.id)
             }}
             onDoubleClick={(event) => {
+              if (!clickable) return
               const { x, y } = pointOf(event)
               const hit = hitTest(layout, x, y)
               if (hit?.id && hit.kind !== 'file' && hit.kind !== 'free') void drillInto(hit.id)
