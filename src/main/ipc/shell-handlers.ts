@@ -123,7 +123,12 @@ export function createShellHandlers(deps: ShellHandlerDeps): ShellHandlers {
         key,
         itemPath: details.path,
         isCurrent,
-        onSettled: () => refreshQuietly(scanId, target),
+        // A root item that is still there after the timeout means the command was cancelled:
+        // a root refresh is a full rescan, so it is not worth it. Deeper folders refresh cheaply.
+        onSettled: (reason) => {
+          if (reason === 'timeout' && isRoot) return
+          refreshQuietly(scanId, target)
+        },
       })
       return
     }

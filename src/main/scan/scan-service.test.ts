@@ -202,13 +202,28 @@ describe('createScanService', () => {
     ])
   })
 
-  it('stays silent when an idle scanner exits', () => {
+  it('reports a scanner that exits while it holds a finished tree', () => {
     const t = setup()
     t.service.start('C:\\Data', V)
     t.child().emit({ type: 'done', payload: done('scan-1') })
-    t.child().exit(0)
+    t.child().exit(1)
 
-    expect(t.events).toEqual([['scan:done', done('scan-1')]])
+    expect(t.events).toEqual([
+      ['scan:done', done('scan-1')],
+      ['scan:failed', { scanId: 'scan-1', message: SCAN_CRASH_MESSAGE }],
+    ])
+    expect(t.service.currentScan()).toBeNull()
+  })
+
+  it('stays silent when a scanner exits and no tree is held', () => {
+    const t = setup()
+    t.service.start('C:\\Data', V)
+    t.child().emit({ type: 'done', payload: done('scan-1') })
+    t.child().exit(1)
+    t.events.length = 0
+    // The exit of an already replaced or forgotten child sends nothing more.
+    t.child().exit(1)
+    expect(t.events).toEqual([])
   })
 
   it('kills the scanner on quit and sends nothing afterwards', () => {

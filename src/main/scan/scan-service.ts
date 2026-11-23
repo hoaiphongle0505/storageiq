@@ -1,4 +1,4 @@
-import type { ScanFailed, ScanStartResult } from '@shared/scan-types'
+import { SCANNER_STOPPED_MESSAGE, type ScanFailed, type ScanStartResult } from '@shared/scan-types'
 import type {
   ScannerMessage,
   ScannerQueryKind,
@@ -49,7 +49,7 @@ export interface ScanService {
   dispose(): void
 }
 
-export const SCAN_CRASH_MESSAGE = 'The scanner process stopped unexpectedly.'
+export const SCAN_CRASH_MESSAGE = SCANNER_STOPPED_MESSAGE
 export const SCANNER_GONE_MESSAGE = 'The scanner is not running.'
 export const QUERY_TIMEOUT_MESSAGE = 'The scanner did not answer in time.'
 /** A refresh rescans a folder, so it gets the same generous limit as every other query. */
@@ -122,11 +122,16 @@ export function createScanService(deps: ScanServiceDeps): ScanService {
     forked.onExit(() => {
       if (child !== forked) return
       child = null
-      current = null // the tree lived in the process that just ended
+      const heldTree = current // the tree lived in the process that just ended
+      current = null
       rejectAll(SCAN_CRASH_MESSAGE)
-      if (disposed || activeScanId === null) return
-      const failed: ScanFailed = { scanId: activeScanId, message: SCAN_CRASH_MESSAGE }
+      if (disposed) return
+      // A running scan fails; so does a finished one whose tree was held (the renderer's rows
+      // and treemap now point at nothing), so the workspace never breaks silently.
+      const failedScanId = activeScanId ?? heldTree?.scanId ?? null
       activeScanId = null
+      if (failedScanId === null) return
+      const failed: ScanFailed = { scanId: failedScanId, message: SCAN_CRASH_MESSAGE }
       deps.sendEvent('scan:failed', failed)
     })
     child = forked

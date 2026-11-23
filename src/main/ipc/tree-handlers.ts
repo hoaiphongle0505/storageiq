@@ -68,7 +68,10 @@ export function createFolderRefresher(
       // The whole scan root is a normal scan (progress, cancel, isScanning), not a hidden refresh.
       const root = scanService.currentScan()?.root
       if (root === undefined) throw new Error(NOT_IN_SCAN_MESSAGE)
-      const started = scanService.start(root, await volumeFor(root)) // fresh free space, like scan:start
+      const volume = await volumeFor(root) // fresh free space, like scan:start
+      // The user (or another refresh) may have started a scan while we waited: never take it over.
+      if (scanService.currentScan()?.scanId !== scanId || scanService.isScanning()) return null
+      const started = scanService.start(root, volume)
       sendEvent('scan:restarted', { scanId: started.scanId, root })
       return null
     }

@@ -18,9 +18,20 @@ export function walkerScriptPath(): string {
     : script.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')
 }
 
-/** `STORAGEIQ_WALKERS=1` forces the single-thread walk; 2..8 forces that many walkers. */
+/** Main passes this argument when it forks the scanner of a packaged app. */
+export const PACKAGED_FLAG = '--storageiq-packaged'
+
+/**
+ * `STORAGEIQ_WALKERS=1` forces the single-thread walk; 2..8 forces that many walkers. Only in
+ * unpackaged runs: the scanner learns from main (`PACKAGED_FLAG`) whether this is an installed app.
+ */
 function createWalkParallel(): ScannerHostDeps['walkParallel'] {
-  const walkers = walkerCountFromEnv(process.env['STORAGEIQ_WALKERS'], defaultWalkerCount())
+  const packaged = process.argv.includes(PACKAGED_FLAG)
+  const walkers = walkerCountFromEnv(
+    process.env['STORAGEIQ_WALKERS'],
+    defaultWalkerCount(),
+    packaged,
+  )
   if (walkers === 1) return undefined
   const pool = createWalkerPool({
     walkers,

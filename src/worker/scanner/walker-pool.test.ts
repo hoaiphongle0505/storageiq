@@ -147,6 +147,12 @@ describe('walkerCount', () => {
       expect(walkerCountFromEnv(bad, 5)).toBe(5)
     }
   })
+
+  it('walkerCountFromEnv ignores the override in a packaged app', () => {
+    expect(walkerCountFromEnv('1', 5, true)).toBe(5)
+    expect(walkerCountFromEnv('4', 5, true)).toBe(5)
+    expect(walkerCountFromEnv('4', 5, false)).toBe(4)
+  })
 })
 
 describe('the walker pool', () => {
@@ -210,6 +216,22 @@ describe('the walker pool', () => {
       expect(port.jobsSeen).toBe(0)
       expect(port.terminated).toBeGreaterThanOrEqual(1)
     }
+  })
+
+  it('one worker failing at startup leaves a smaller pool with the same totals', async () => {
+    const tree = bigTree()
+    const reference = record()
+    const fs = createFakeWalkFs(ROOT, tree.root, tree)
+    await walk(ROOT, 0, reference.sink, { lister: fs, signal: new AbortController().signal })
+
+    const run = record()
+    const { pool, ports } = poolOf(tree, 4, (index) => (index === 1 ? { startupFails: true } : {}))
+    const result = await pool.walk(ROOT, 0, run.sink, new AbortController().signal)
+    expect(result.walkers).toBe(3)
+    expect(ports[1]?.jobsSeen).toBe(0)
+    expect(sorted(run.rows)).toEqual(sorted(reference.rows))
+    expect(run.totals).toEqual(reference.totals)
+    for (const port of ports) expect(port.terminated).toBeGreaterThanOrEqual(1)
   })
 
   it('an abort while workers are mid-batch stops all sink calls and exits all workers', async () => {

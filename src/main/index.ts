@@ -128,7 +128,9 @@ async function showContextMenuAt(
 }
 
 function forkScanner(): ScannerChild {
-  const child = utilityProcess.fork(scannerPath, [], { serviceName: SCANNER_SERVICE_NAME })
+  const child = utilityProcess.fork(scannerPath, app.isPackaged ? ['--storageiq-packaged'] : [], {
+    serviceName: SCANNER_SERVICE_NAME,
+  })
   return {
     postMessage: (message) => child.postMessage(message),
     onMessage: (listener) => {

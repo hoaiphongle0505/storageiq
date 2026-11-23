@@ -40,9 +40,16 @@ export function defaultWalkerCount(): number {
   return walkerCount(os.availableParallelism())
 }
 
-/** `STORAGEIQ_WALKERS`: "1".."8" is that number, anything else the fallback. */
-export function walkerCountFromEnv(value: string | undefined, fallback: number): number {
-  if (value === undefined || !/^[1-8]$/.test(value)) return fallback
+/**
+ * `STORAGEIQ_WALKERS`: "1".."8" is that number, anything else the fallback. A packaged app
+ * ignores it: the override is for the bench, support and tests, not for an installed app.
+ */
+export function walkerCountFromEnv(
+  value: string | undefined,
+  fallback: number,
+  packaged = false,
+): number {
+  if (packaged || value === undefined || !/^[1-8]$/.test(value)) return fallback
   return Number(value)
 }
 

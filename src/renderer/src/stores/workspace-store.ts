@@ -11,6 +11,7 @@ import type {
   ScanRestarted,
   ScanStartResult,
 } from '@shared/scan-types'
+import { SCANNER_STOPPED_MESSAGE } from '@shared/scan-types'
 import {
   MAX_TREEMAP_DEPTH,
   modeSortKey,
@@ -613,6 +614,12 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
 
   function applyEvent(event: ScanEvent): void {
     const { phase, scanId } = store.getState()
+    // The scanner can die after a scan ended (its tree is gone), so a failure for the current
+    // scan is accepted in any phase that holds a scan.
+    if (event.kind === 'failed' && scanId !== null && event.payload.scanId === scanId) {
+      if (phase === 'scanning' || phase === 'done' || phase === 'canceled') failScan(event.payload)
+      return
+    }
     if (phase !== 'scanning') return
     if (scanId === null) {
       early.push(event)
@@ -645,12 +652,20 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
         )
       }
     } else {
-      store.setState({
-        phase: 'failed',
-        banner: { tone: 'crash', message: SCAN_CRASH_MESSAGE },
-        revision: bumpRevision(store.getState().revision),
-      })
+      failScan(event.payload)
     }
+  }
+
+  function failScan(payload: ScanFailed): void {
+    const message =
+      payload.message !== '' && payload.message !== SCANNER_STOPPED_MESSAGE
+        ? payload.message
+        : SCAN_CRASH_MESSAGE
+    store.setState({
+      phase: 'failed',
+      banner: { tone: 'crash', message },
+      revision: bumpRevision(store.getState().revision),
+    })
   }
 
   function applyTreeChanged(changed: TreeChanged): void {
@@ -660,10 +675,14 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
       totals: { ...changed.totals, errorCount: state.totals.errorCount },
       revision: bumpRevision(state.revision),
     })
-    const root = state.target === null ? null : driveRootOf(state.target)
+    const { target, scanId } = state
+    const root = target === null ? null : driveRootOf(target)
     if (root !== null) {
       api.getDriveInfo(root).then(
-        (drive) => store.setState({ drive }),
+        (drive) => {
+          const now = store.getState()
+          if (now.target === target && now.scanId === scanId) store.setState({ drive })
+        },
         () => undefined,
       )
     }
@@ -671,7 +690,10 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
 
   /** Main restarted the scan of the root itself: adopt the new scan like a user-started one. */
   function applyRestarted(restarted: ScanRestarted): void {
-    if (store.getState().target === null) return
+    const current = store.getState()
+    if (current.target === null) return
+    // A scan the user just started is still waiting for its id: that one wins.
+    if (current.phase === 'scanning' && current.scanId === null) return
     early = []
     cancelWhenStarted = false
     generation += 1

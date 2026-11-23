@@ -169,6 +169,17 @@ describe('shell:context-menu', () => {
     expect(watcher.active).toBe(0)
   })
 
+  it('a cancelled root-level delete does not rescan the whole root when the watch times out', async () => {
+    const { handlers, deps, watcher } = setup({
+      choice: { kind: 'shell', verb: 'delete', changed: true },
+    })
+    await handlers['shell:context-menu'].handle(event, SCAN, 'd1', 0, 0, false)
+    // The item never disappears (the user cancelled the dialog): the watch ends by timeout.
+    await vi.advanceTimersByTimeAsync(ITEM_WATCH_TIMEOUT_MS + ITEM_POLL_INTERVAL_MS)
+    expect(watcher.active).toBe(0)
+    expect(deps.refreshFolder).not.toHaveBeenCalled()
+  })
+
   it('a verb that leaves the item in place still refreshes twice', async () => {
     const { handlers, deps, pathExists } = setup({
       choice: { kind: 'shell', verb: 'paste', changed: true },

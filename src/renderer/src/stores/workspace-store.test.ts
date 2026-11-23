@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ScanStartResult } from '@shared/scan-types'
+import type { DriveDetails, ScanStartResult } from '@shared/scan-types'
 import { createFakeApi, TEST_DRIVE_DETAILS, TEST_DRIVES, TEST_PLACES } from '../test/fake-api'
 import { makeDone, makeFailed, makeProgress } from '../test/scan-fixtures'
 import {
@@ -131,6 +131,36 @@ describe('a scan', () => {
     expect(store.getState().banner).toBeNull()
   })
 
+  it('shows the crash banner when the scanner dies after the scan finished', async () => {
+    const { api, store } = await scanning()
+    api.emitScanDone(makeDone())
+    expect(store.getState().phase).toBe('done')
+    api.emitScanFailed(makeFailed())
+    expect(store.getState()).toMatchObject({
+      phase: 'failed',
+      banner: { tone: 'crash', message: SCAN_CRASH_MESSAGE },
+    })
+  })
+
+  it('ignores a failure for another scan once the scan has finished', async () => {
+    const { api, store } = await scanning()
+    api.emitScanDone(makeDone())
+    api.emitScanFailed(makeFailed({ scanId: 'older-scan' }))
+    expect(store.getState().phase).toBe('done')
+  })
+
+  it('shows the failure text the scanner sent, and the generic one when it sent none', async () => {
+    const first = await scanning()
+    first.api.emitScanFailed(makeFailed({ message: 'The disk reader could not be loaded.' }))
+    expect(first.store.getState().banner).toEqual({
+      tone: 'crash',
+      message: 'The disk reader could not be loaded.',
+    })
+    const second = await scanning()
+    second.api.emitScanFailed(makeFailed({ message: '' }))
+    expect(second.store.getState().banner).toEqual({ tone: 'crash', message: SCAN_CRASH_MESSAGE })
+  })
+
   it('replays events that arrive before scan:start returns', async () => {
     const pending = deferred<ScanStartResult>()
     const api = createFakeApi({ startScan: vi.fn(() => pending.promise) })
@@ -185,6 +215,31 @@ describe('a scan', () => {
     expect(brokenStore.getState().banner).toEqual({ tone: 'error', message: FOLDER_PICKER_ERROR })
     brokenStore.getState().dismissBanner()
     expect(brokenStore.getState().banner).toBeNull()
+  })
+
+  it('drops a drive reply that arrives after the scan was replaced', async () => {
+    const stale = deferred<DriveDetails>()
+    const fresh = { ...TEST_DRIVE_DETAILS, freeBytes: 1 }
+    const getDriveInfo = vi
+      .fn<() => Promise<DriveDetails>>()
+      .mockResolvedValueOnce(TEST_DRIVE_DETAILS) // startScan
+      .mockResolvedValueOnce(TEST_DRIVE_DETAILS) // scan:done
+      .mockReturnValueOnce(stale.promise) // tree:changed
+      .mockResolvedValue(fresh) // the restart
+    const { api, store } = await scanning(createFakeApi({ getDriveInfo }))
+    api.emitScanDone(makeDone())
+    await flush()
+    api.emitTreeChanged({
+      scanId: 'scan-1',
+      nodeId: 'd1',
+      totals: { files: 9, folders: 2, bytes: 10, allocatedBytes: 4096 },
+    })
+    api.emitScanRestarted({ scanId: 'scan-2', root: 'D:\\' })
+    await flush()
+    expect(store.getState().drive).toEqual(fresh)
+    stale.resolve({ ...TEST_DRIVE_DETAILS, freeBytes: 999 })
+    await flush()
+    expect(store.getState().drive).toEqual(fresh)
   })
 
   it('updates totals when a folder is refreshed (tree:changed)', async () => {
@@ -244,6 +299,18 @@ describe('updates', () => {
 })
 
 describe('a main-initiated rescan', () => {
+  it('ignores a restart while a user-started scan is still waiting for its id', async () => {
+    const pending = deferred<ScanStartResult>()
+    const api = createFakeApi({ startScan: vi.fn(() => pending.promise) })
+    const store = createWorkspaceStore(api)
+    const starting = store.getState().startScan('D:\\')
+    api.emitScanRestarted({ scanId: 'rescan-9', root: 'D:\\' })
+    expect(store.getState().scanId).toBeNull()
+    pending.resolve({ scanId: 'scan-1' })
+    await starting
+    expect(store.getState()).toMatchObject({ scanId: 'scan-1', phase: 'scanning' })
+  })
+
   it('adopts the new scan id and ignores the old one', async () => {
     const { api, store } = await scanning()
     store.getState().select('d1')

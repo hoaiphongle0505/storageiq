@@ -209,6 +209,12 @@ describe('expandIds', () => {
     expect(expandIds(store, 'd99', 3)).toEqual([])
   })
 
+  it('copes with a folder that has hundreds of thousands of subfolders', () => {
+    const store = new TreeStore(ROOT, 4096)
+    for (let i = 0; i < 300_000; i += 1) store.folder(0, `s${i}`, 0)
+    expect(expandIds(store, 'd0', 2)).toEqual(['d0'])
+  })
+
   it('stops at MAX_EXPAND_IDS', () => {
     const store = new TreeStore(ROOT, 4096)
     for (let i = 0; i < MAX_EXPAND_IDS + 10; i += 1) {

@@ -1,5 +1,5 @@
 import type { IpcMainInvokeEvent } from 'electron'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { InvalidIpcArgumentsError } from './parse-args'
 import type { SendEvent } from './send-event'
 import { fakeTreeService, NODES, SCAN, TOTALS } from './test/fake-tree-service'
@@ -138,6 +138,31 @@ describe('refreshing the scan root', () => {
       delete NODES['g0']
     }
     expect(fake.start).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not take over a scan the user started while the volume lookup was pending', async () => {
+    const fake = fakeTreeService()
+    const events: Array<[string, unknown]> = []
+    let scanning = false
+    let current: string = SCAN
+    fake.service.isScanning = () => scanning
+    fake.service.currentScan = () => ({ scanId: current, root: 'D:\\Data' })
+    const volumeFor = vi.fn(async () => {
+      // The user presses Scan while the refresher waits for the volume details.
+      scanning = true
+      current = 'user-scan'
+      return { clusterBytes: 8192, freeBytes: 77 }
+    })
+    const refresh = createFolderRefresher(
+      fake.service,
+      (channel, payload) => {
+        events.push([channel, payload])
+      },
+      volumeFor,
+    )
+    await expect(refresh(SCAN, 'd0')).resolves.toBeNull()
+    expect(fake.start).not.toHaveBeenCalled()
+    expect(events).toEqual([])
   })
 
   it('does not rescan the root while a scan runs', async () => {

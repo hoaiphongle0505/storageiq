@@ -83,6 +83,9 @@ export interface ScanDone {
   walkers?: number
 }
 
+/** `ScanFailed.message` when the scanner process ended without saying why; the UI has its own text. */
+export const SCANNER_STOPPED_MESSAGE = 'The scanner process stopped unexpectedly.'
+
 export interface ScanFailed {
   scanId: string
   message: string

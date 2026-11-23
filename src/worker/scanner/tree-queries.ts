@@ -538,7 +538,8 @@ export function expandIds(store: TreeStore, nodeId: NodeId, levels: number): Nod
       if (!hasRows) continue
       if (ids.length >= MAX_EXPAND_IDS) return ids
       ids.push(`d${folder}`)
-      next.push(...store.childFolders(folder))
+      // A loop, not `push(...children)`: a spread of 100k+ arguments overflows the stack.
+      for (const child of store.childFolders(folder)) next.push(child)
     }
     level = next
   }
