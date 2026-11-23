@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   childrenArgs,
-  clipboardArgs,
   contextMenuArgs,
   expandArgs,
   InvalidIpcArgumentsError,
-  MAX_CLIPBOARD_TEXT,
   nodeArgs,
   noArgs,
   oneString,
@@ -132,18 +130,5 @@ describe('contextMenuArgs', () => {
     [[SCAN, 'd4', 1.5, 300, true]],
   ])('rejects %j', (args) => {
     expect(() => contextMenuArgs(args)).toThrow(InvalidIpcArgumentsError)
-  })
-})
-
-describe('clipboardArgs', () => {
-  it('accepts text up to the limit', () => {
-    expect(clipboardArgs(['C:\\Data'])).toEqual(['C:\\Data'])
-  })
-
-  it('rejects text over the limit and non-strings', () => {
-    expect(() => clipboardArgs(['x'.repeat(MAX_CLIPBOARD_TEXT + 1)])).toThrow(
-      InvalidIpcArgumentsError,
-    )
-    expect(() => clipboardArgs([5])).toThrow(InvalidIpcArgumentsError)
   })
 })

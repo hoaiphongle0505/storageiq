@@ -100,8 +100,6 @@ export function booleanArg(value: unknown, name: string): boolean {
 export const MAX_TREEMAP_SIDE = 10_000
 /** Window coordinates accepted for the context menu, in CSS px. */
 export const MAX_WINDOW_COORDINATE = 100_000
-/** Longest text `clipboard:write-text` accepts (characters). */
-export const MAX_CLIPBOARD_TEXT = 1_000_000
 
 /** `[scanId, nodeId]` */
 export function scanNodeArgs(args: readonly unknown[]): [string, NodeId] {
@@ -163,15 +161,6 @@ export function contextMenuArgs(
     intArg(args[3], 0, MAX_WINDOW_COORDINATE, 'y'),
     booleanArg(args[4], 'extended'),
   ]
-}
-
-/** `clipboard:write-text` */
-export function clipboardArgs(args: readonly unknown[]): [string] {
-  const [text] = oneString(args)
-  if (text.length > MAX_CLIPBOARD_TEXT) {
-    throw new InvalidIpcArgumentsError(`text longer than ${MAX_CLIPBOARD_TEXT} characters`)
-  }
-  return [text]
 }
 
 /** `drive:info`: a drive root like `C:\` (or `C:`). */

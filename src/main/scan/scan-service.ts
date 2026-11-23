@@ -41,6 +41,8 @@ export interface ScanService {
   cancelActive(): void
   /** The latest scan, or null before the first scan and after a scanner crash. */
   currentScan(): CurrentScan | null
+  /** Starts a new scan of the current scan's root with the same volume; null when none. */
+  rescan(): ScanStartResult | null
   /** True while the latest scan is still walking. */
   isScanning(): boolean
   /** Asks the scanner about its tree. Rejects if the scanner is gone or does not answer. */
@@ -79,6 +81,7 @@ export function createScanService(deps: ScanServiceDeps): ScanService {
   let child: ScannerChild | null = null
   let activeScanId: string | null = null
   let current: CurrentScan | null = null
+  let currentVolume: ScanVolume | null = null
   let disposed = false
   let nextRequestId = 1
   const pending = new Map<number, PendingQuery>()
@@ -136,6 +139,7 @@ export function createScanService(deps: ScanServiceDeps): ScanService {
       const scanId = deps.createScanId()
       activeScanId = scanId
       current = { scanId, root }
+      currentVolume = volume
       scanner.postMessage({ type: 'start', scanId, root, volume })
       return { scanId }
     },
@@ -149,6 +153,11 @@ export function createScanService(deps: ScanServiceDeps): ScanService {
     },
 
     currentScan: () => current,
+
+    rescan() {
+      if (current === null || currentVolume === null) return null
+      return this.start(current.root, currentVolume)
+    },
 
     isScanning: () => activeScanId !== null,
 
@@ -167,7 +176,13 @@ export function createScanService(deps: ScanServiceDeps): ScanService {
           reject,
           clearTimer,
         })
-        scanner.postMessage({ type: 'query', requestId, query })
+        try {
+          scanner.postMessage({ type: 'query', requestId, query })
+        } catch (error) {
+          pending.delete(requestId)
+          clearTimer()
+          reject(error instanceof Error ? error : new Error(String(error)))
+        }
       })
     },
 

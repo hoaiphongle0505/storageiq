@@ -27,7 +27,7 @@ const api: StorageIQApi = {
   showContextMenu: (scanId, nodeId, x, y, extended) =>
     invoke('shell:context-menu', scanId, nodeId, x, y, extended),
   createFolder: (scanId, nodeId) => invoke('folder:create', scanId, nodeId),
-  writeClipboardText: (text) => invoke('clipboard:write-text', text),
+  copyNodePath: (scanId, nodeId) => invoke('clipboard:copy-path', scanId, nodeId),
   onScanProgress: (listener) => subscribe(ipcRenderer, 'scan:progress', listener),
   onScanDone: (listener) => subscribe(ipcRenderer, 'scan:done', listener),
   onScanFailed: (listener) => subscribe(ipcRenderer, 'scan:failed', listener),

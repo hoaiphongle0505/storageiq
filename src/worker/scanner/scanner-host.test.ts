@@ -6,6 +6,7 @@ import {
   createScannerHost,
   parseScannerRequest,
   REFRESH_BUSY_MESSAGE,
+  ROOT_REFRESH_MESSAGE,
   SNAPSHOT_INTERVAL_MS,
 } from './scanner-host'
 import {
@@ -255,6 +256,70 @@ describe('createScannerHost', () => {
       bytes: 5405,
       allocatedBytes: 5 * 4096,
     })
+  })
+
+  it('stops a running refresh when a new scan starts and never touches the new tree', async () => {
+    let gateOn = false
+    let release: () => void = () => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const opened: string[] = []
+    const t = setup({
+      beforeOpendir: async (dirPath) => {
+        opened.push(dirPath)
+        if (gateOn && dirPath === path.join(ROOT, 'Photos')) await gate
+      },
+    })
+    t.host.handle({ type: 'start', scanId: 's1', root: ROOT, volume: VOLUME })
+    await t.host.idle()
+    const photosId = (
+      (await t.query({
+        kind: 'children',
+        scanId: 's1',
+        nodeId: 'd0',
+        sortKey: 'name',
+        sortDir: 'asc',
+        offset: 0,
+        limit: 10,
+      })) as { rows: Array<{ id: string; name: string }> }
+    ).rows.find((row) => row.name === 'Photos')?.id as string
+
+    gateOn = true
+    const refresh = t.query({ kind: 'refresh', scanId: 's1', nodeId: photosId })
+    await vi.waitFor(() => expect(opened.filter((p) => p.endsWith('Photos'))).toHaveLength(2))
+    const oldStore = t.host.currentStore()
+    t.host.handle({ type: 'start', scanId: 's2', root: ROOT, volume: VOLUME })
+    expect(t.host.currentStore()).not.toBe(oldStore)
+    gateOn = false
+    release()
+
+    await expect(refresh).resolves.toBeNull()
+    await t.host.idle()
+    expect(await t.query({ kind: 'totals', scanId: 's2' })).toEqual({
+      files: 4,
+      folders: 2,
+      bytes: 605,
+      allocatedBytes: 4 * 4096,
+    })
+  })
+
+  it('answers a queued refresh of a superseded scan with nothing', async () => {
+    const t = setup()
+    t.host.handle({ type: 'start', scanId: 's1', root: ROOT, volume: VOLUME })
+    await t.host.idle()
+    t.host.handle({ type: 'start', scanId: 's2', root: ROOT, volume: VOLUME })
+    await expect(t.query({ kind: 'refresh', scanId: 's1', nodeId: 'd1' })).resolves.toBeNull()
+    await t.host.idle()
+  })
+
+  it('refuses to refresh the scan root; the root is rescanned as a normal scan', async () => {
+    const t = setup()
+    t.host.handle({ type: 'start', scanId: 's1', root: ROOT, volume: VOLUME })
+    await t.host.idle()
+    await expect(t.query({ kind: 'refresh', scanId: 's1', nodeId: 'd0' })).rejects.toThrow(
+      ROOT_REFRESH_MESSAGE,
+    )
   })
 
   it('refuses to refresh while the same scan is running', async () => {

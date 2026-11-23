@@ -1,9 +1,9 @@
 import path from 'node:path'
 import type { ContextMenuOutcome, CreateFolderResult } from '@shared/ipc-contract'
-import type { NodeId, TreeNodeDetails } from '@shared/tree-types'
+import { type NodeId, ROOT_NODE_ID, type TreeNodeDetails } from '@shared/tree-types'
 import type { ShellMenuChoice } from '../shell-menu/context-menu'
 import { nextNewFolderName } from '../shell-menu/menu-commands'
-import { clipboardArgs, contextMenuArgs, scanNodeArgs } from './parse-args'
+import { contextMenuArgs, scanNodeArgs } from './parse-args'
 import type { IpcHandlerMap } from './register'
 import {
   folderIdOf,
@@ -15,7 +15,7 @@ import {
 
 export type ShellHandlers = Pick<
   IpcHandlerMap,
-  'shell:open-in-explorer' | 'shell:context-menu' | 'folder:create' | 'clipboard:write-text'
+  'shell:open-in-explorer' | 'shell:context-menu' | 'folder:create' | 'clipboard:copy-path'
 >
 
 /** A shell command may finish after InvokeCommand returns (a delete with a progress dialog). */
@@ -73,7 +73,8 @@ export function createShellHandlers(deps: ShellHandlerDeps): ShellHandlers {
       deps.refreshFolder(scanId, target).catch(() => undefined)
     }
     refresh()
-    deps.later(refresh, SECOND_REFRESH_DELAY_MS)
+    // A root rescan is a full scan: never queue a second full pass.
+    if (target !== ROOT_NODE_ID) deps.later(refresh, SECOND_REFRESH_DELAY_MS)
   }
 
   return {
@@ -119,10 +120,10 @@ export function createShellHandlers(deps: ShellHandlerDeps): ShellHandlers {
         createFolder(scanId, await resolveScanNode(scanService, scanId, nodeId)),
     },
 
-    'clipboard:write-text': {
-      parseArgs: clipboardArgs,
-      handle: (_event, text) => {
-        deps.writeClipboard(text)
+    'clipboard:copy-path': {
+      parseArgs: scanNodeArgs,
+      handle: async (_event, scanId, nodeId) => {
+        deps.writeClipboard((await resolveScanNode(scanService, scanId, nodeId)).path)
       },
     },
   }

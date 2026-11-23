@@ -53,10 +53,12 @@ export const NODES: Record<string, TreeNodeDetails> = {
 /** A scan service whose scanner answers from `NODES`. */
 export function fakeTreeService(options: { scanning?: boolean; current?: string | null } = {}) {
   const queries: ScannerQuery[] = []
+  const rescan = vi.fn(() => ({ scanId: 'rescan-1' }))
   const service: TreeScanService = {
     currentScan: () =>
       options.current === null ? null : { scanId: options.current ?? SCAN, root: 'D:\\Data' },
     isScanning: () => options.scanning ?? false,
+    rescan,
     query: vi.fn(async (query: ScannerQuery) => {
       queries.push(query)
       switch (query.kind) {
@@ -72,5 +74,5 @@ export function fakeTreeService(options: { scanning?: boolean; current?: string 
       }
     }) as TreeScanService['query'],
   }
-  return { service, queries }
+  return { service, queries, rescan }
 }

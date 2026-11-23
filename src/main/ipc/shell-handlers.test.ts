@@ -117,7 +117,18 @@ describe('shell:context-menu', () => {
     await expect(
       Promise.resolve(handlers['shell:context-menu'].handle(event, SCAN, 'd1', 0, 0, false)),
     ).resolves.toEqual({ kind: 'shell', verb: 'delete', changed: true })
+    // The parent is the scan root: one rescan, no delayed second full pass.
+    expect(deps.refreshFolder).toHaveBeenCalledTimes(1)
     expect(deps.refreshFolder).toHaveBeenCalledWith(SCAN, 'd0')
+    expect(timers).toEqual([])
+  })
+
+  it('rescans a non-root parent folder now and again shortly after', async () => {
+    const { handlers, deps, timers } = setup({
+      choice: { kind: 'shell', verb: 'delete', changed: true },
+    })
+    await handlers['shell:context-menu'].handle(event, SCAN, 'f7', 0, 0, false)
+    expect(deps.refreshFolder).toHaveBeenCalledWith(SCAN, 'd1')
     expect(timers.map((timer) => timer.ms)).toEqual([SECOND_REFRESH_DELAY_MS])
     timers[0]?.callback()
     expect(deps.refreshFolder).toHaveBeenCalledTimes(2)
@@ -158,11 +169,24 @@ describe('folder:create', () => {
   })
 })
 
-describe('clipboard:write-text', () => {
-  it('writes the text through main’s clipboard', () => {
+describe('clipboard:copy-path', () => {
+  it('copies the path the scanner holds for the node, never renderer text', async () => {
     const { handlers, deps } = setup()
-    handlers['clipboard:write-text'].handle(event, 'D:\\Data')
-    expect(deps.writeClipboard).toHaveBeenCalledWith('D:\\Data')
-    expect(() => handlers['clipboard:write-text'].parseArgs([{}])).toThrow(InvalidIpcArgumentsError)
+    await handlers['clipboard:copy-path'].handle(event, SCAN, 'f7')
+    expect(deps.writeClipboard).toHaveBeenCalledWith('D:\\Data\\Photos\\a.jpg')
+    expect(() => handlers['clipboard:copy-path'].parseArgs(['D:\\Data'])).toThrow(
+      InvalidIpcArgumentsError,
+    )
+    expect(() => handlers['clipboard:copy-path'].parseArgs([SCAN, 'C:\\Windows'])).toThrow(
+      InvalidIpcArgumentsError,
+    )
+  })
+
+  it('refuses a node of another scan', async () => {
+    const { handlers, deps } = setup()
+    await expect(
+      Promise.resolve().then(() => handlers['clipboard:copy-path'].handle(event, 'other', 'd1')),
+    ).rejects.toThrow(NOT_IN_SCAN_MESSAGE)
+    expect(deps.writeClipboard).not.toHaveBeenCalled()
   })
 })

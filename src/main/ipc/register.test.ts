@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest'
 import type { AppInfo } from '@shared/ipc-contract'
 import {
   childrenArgs,
-  clipboardArgs,
   contextMenuArgs,
   expandArgs,
   InvalidIpcArgumentsError,
@@ -48,7 +47,7 @@ function createHandlers(overrides: Partial<IpcHandlerMap> = {}): IpcHandlerMap {
     'shell:open-in-explorer': { parseArgs: scanNodeArgs, handle: () => undefined },
     'shell:context-menu': { parseArgs: contextMenuArgs, handle: () => ({ kind: 'dismissed' }) },
     'folder:create': { parseArgs: scanNodeArgs, handle: () => ({ parentId: 'd0', name: 'x' }) },
-    'clipboard:write-text': { parseArgs: clipboardArgs, handle: () => undefined },
+    'clipboard:copy-path': { parseArgs: scanNodeArgs, handle: () => undefined },
     ...overrides,
   }
 }
@@ -88,7 +87,7 @@ describe('registerIpcHandlers', () => {
     expect([...ipc.listeners.keys()].sort()).toEqual([
       'app:get-info',
       'app:quit',
-      'clipboard:write-text',
+      'clipboard:copy-path',
       'dialog:select-folder',
       'drive:info',
       'drives:list',

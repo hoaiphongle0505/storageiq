@@ -1,4 +1,4 @@
-import type { NodeId, TreeNodeDetails } from '@shared/tree-types'
+import { type NodeId, ROOT_NODE_ID, type TreeNodeDetails } from '@shared/tree-types'
 import type { ScanService } from '../scan/scan-service'
 import { childrenArgs, expandArgs, nodeArgs, scanNodeArgs, treemapArgs } from './parse-args'
 import type { IpcHandlerMap } from './register'
@@ -12,7 +12,7 @@ export type TreeHandlers = Pick<
 export const NOT_IN_SCAN_MESSAGE = 'That item is not part of the current scan.'
 export const SCAN_RUNNING_MESSAGE = 'Wait for the scan to finish, then try again.'
 
-export type TreeScanService = Pick<ScanService, 'query' | 'currentScan' | 'isScanning'>
+export type TreeScanService = Pick<ScanService, 'query' | 'currentScan' | 'isScanning' | 'rescan'>
 
 /**
  * Looks a node up in the current scan. Used before any action that touches the disk or the
@@ -54,6 +54,19 @@ export function createFolderRefresher(
   return async (scanId, nodeId) => {
     if (scanService.currentScan()?.scanId !== scanId) throw new Error(NOT_IN_SCAN_MESSAGE)
     if (scanService.isScanning()) throw new Error(SCAN_RUNNING_MESSAGE)
+    const target = await scanService.query({
+      kind: 'node',
+      scanId,
+      nodeId,
+      sortKey: 'size',
+      sortDir: 'desc',
+    })
+    if (target === null) return null
+    if (folderIdOf(target) === ROOT_NODE_ID) {
+      // The whole scan root is a normal scan (progress, cancel, isScanning), not a hidden refresh.
+      scanService.rescan()
+      return null
+    }
     const details = await scanService.query({ kind: 'refresh', scanId, nodeId })
     if (details === null) return null
     const totals = await scanService.query({ kind: 'totals', scanId })

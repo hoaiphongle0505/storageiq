@@ -92,7 +92,7 @@ export interface IpcContract {
     result: ContextMenuOutcome
   }
   'folder:create': { args: [scanId: string, nodeId: NodeId]; result: CreateFolderResult }
-  'clipboard:write-text': { args: [text: string]; result: void }
+  'clipboard:copy-path': { args: [scanId: string, nodeId: NodeId]; result: void }
 }
 
 export type IpcChannel = keyof IpcContract
@@ -165,7 +165,8 @@ export interface StorageIQApi {
   ): Promise<ContextMenuOutcome>
   /** Creates "New folder" (or "New folder (2)", …) in the row's folder and rescans that folder. */
   createFolder(scanId: string, nodeId: NodeId): Promise<CreateFolderResult>
-  writeClipboardText(text: string): Promise<void>
+  /** Copies the path of a row of the current scan to the clipboard (main resolves the path). */
+  copyNodePath(scanId: string, nodeId: NodeId): Promise<void>
   onScanProgress(listener: (progress: ScanProgress) => void): Unsubscribe
   onScanDone(listener: (done: ScanDone) => void): Unsubscribe
   onScanFailed(listener: (failed: ScanFailed) => void): Unsubscribe

@@ -21,6 +21,7 @@ import { walk, type WalkFs } from './walk'
 
 export const SNAPSHOT_INTERVAL_MS = 250
 export const REFRESH_BUSY_MESSAGE = 'A scan is running; refresh it when the scan ends.'
+export const ROOT_REFRESH_MESSAGE = 'The scan root is rescanned with a new scan, not refreshed.'
 
 export interface ScannerHostDeps {
   fs: WalkFs
@@ -134,6 +135,8 @@ export function createScannerHost(deps: ScannerHostDeps): ScannerHost {
   let storeScanId: string | null = null
   /** Refreshes run one after another, never during a scan of the same tree. */
   let refreshes: Promise<unknown> = Promise.resolve()
+  /** The refresh walking right now; a new scan aborts it so it never outlives its tree. */
+  let refreshController: AbortController | null = null
 
   const run = async (
     scanId: string,
@@ -174,16 +177,23 @@ export function createScannerHost(deps: ScannerHostDeps): ScannerHost {
   ): Promise<ScannerQueryResults['refresh']> => {
     if (store === null || sorter === null || storeScanId !== scanId) return null
     if (current !== null && current.scanId === scanId) throw new Error(REFRESH_BUSY_MESSAGE)
+    // Tree and sorter are captured together, so a superseded refresh never mixes them.
     const tree = store
+    const treeSorter = sorter
     const ref = resolveNode(tree, nodeId)
     if (ref === null) return null
     const folder = folderOf(tree, ref)
-    tree.resetFolder(folder)
-    await walk(tree.folderPath(folder), folder, tree, {
-      fs: deps.fs,
-      signal: new AbortController().signal,
-    })
-    return nodeDetails(tree, sorter, `d${folder}`, 'size', 'desc')
+    if (folder === 0) throw new Error(ROOT_REFRESH_MESSAGE)
+    const controller = new AbortController()
+    refreshController = controller
+    try {
+      tree.resetFolder(folder)
+      await walk(tree.folderPath(folder), folder, tree, { fs: deps.fs, signal: controller.signal })
+    } finally {
+      if (refreshController === controller) refreshController = null
+    }
+    if (controller.signal.aborted) return null
+    return nodeDetails(tree, treeSorter, `d${folder}`, 'size', 'desc')
   }
 
   const answer = async (query: ScannerQuery): Promise<unknown> => {
@@ -244,6 +254,7 @@ export function createScannerHost(deps: ScannerHostDeps): ScannerHost {
         return
       }
       current?.controller.abort() // a new start supersedes the running scan
+      refreshController?.abort() // and any refresh still walking the old tree
       // The previous tree is dropped now, so two full trees are never held at once.
       store = new TreeStore(request.root, request.volume.clusterBytes, request.volume.freeBytes)
       sorter = new ChildSorter(store)

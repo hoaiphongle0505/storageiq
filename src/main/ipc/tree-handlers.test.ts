@@ -117,6 +117,35 @@ describe('folderIdOf', () => {
   })
 })
 
+describe('refreshing the scan root', () => {
+  it('starts a normal scan of the root instead of a hidden refresh', async () => {
+    const { refreshFolder, rescan, queries, events } = setup()
+    await expect(refreshFolder(SCAN, 'd0')).resolves.toBeNull()
+    expect(rescan).toHaveBeenCalledTimes(1)
+    expect(queries.some((query) => query.kind === 'refresh')).toBe(false)
+    expect(events).toEqual([])
+  })
+
+  it('treats a file or "[N files]" row directly under the root the same way', async () => {
+    const fake = fakeTreeService()
+    const refresh = createFolderRefresher(fake.service, () => undefined)
+    // g0 is the root's own "[N files]" row; it maps to folder d0.
+    NODES['g0'] = { ...NODES['g1']!, row: { ...NODES['g1']!.row, id: 'g0', parentId: 'd0' } }
+    try {
+      await refresh(SCAN, 'g0')
+    } finally {
+      delete NODES['g0']
+    }
+    expect(fake.rescan).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not rescan the root while a scan runs', async () => {
+    const { refreshFolder, rescan } = setup({ scanning: true })
+    await expect(refreshFolder(SCAN, 'd0')).rejects.toThrow(SCAN_RUNNING_MESSAGE)
+    expect(rescan).not.toHaveBeenCalled()
+  })
+})
+
 describe('createFolderRefresher', () => {
   it('sends nothing when the folder no longer exists', async () => {
     const { refreshFolder, events } = setup()
