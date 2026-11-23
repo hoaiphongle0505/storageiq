@@ -279,6 +279,8 @@ export function TreeGrid() {
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    // Keys pressed on the header buttons bubble up here; they belong to the buttons.
+    if (event.target !== event.currentTarget) return
     if (model.count === 0) return
     const row = selectedLine?.row ?? null
     const pageRows = Math.max(1, Math.floor(viewport / TREE_ROW_HEIGHT) - 1)

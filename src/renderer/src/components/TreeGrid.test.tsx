@@ -139,11 +139,39 @@ describe('<TreeGrid />', () => {
     expect(api.createFolder).toHaveBeenCalledWith('scan-1', 'd2')
   })
 
+  it('lets keyboard users sort from a header without opening Explorer or moving the selection', async () => {
+    const user = userEvent.setup()
+    const { api, workspace } = await renderTree()
+    const selectedBefore = workspace.getState().selectedId
+    screen.getByRole('button', { name: /^Name/ }).focus()
+    await user.keyboard('{Enter}')
+    await waitFor(() =>
+      expect(api.getChildren).toHaveBeenLastCalledWith('scan-1', 'd0', 'name', 'asc', 0, 200),
+    )
+    expect(api.openInExplorer).not.toHaveBeenCalled()
+    await user.keyboard('{ArrowDown}{End}{Home}')
+    expect(workspace.getState().selectedId).toBe(selectedBefore)
+  })
+
   it('expands with a click on the row twice and toggles with the chevron', async () => {
     const user = userEvent.setup()
     await renderTree()
     await user.dblClick(screen.getByRole('row', { name: /Videos/ }))
     expect(await screen.findByRole('row', { name: /movie|\[1 file\]/ })).toBeInTheDocument()
+    await user.dblClick(screen.getByRole('row', { name: /Videos/ }))
+    await waitFor(() =>
+      expect(screen.queryByRole('row', { name: /Clips/ })).not.toBeInTheDocument(),
+    )
+    const videos = () => screen.getByRole('row', { name: /Videos/ })
+    const chevron = () => videos().querySelector('svg.lucide-chevron-right') as SVGElement
+    await user.click(chevron())
+    expect(await screen.findByRole('row', { name: /Clips/ })).toBeInTheDocument()
+    expect(videos()).toHaveAttribute('aria-expanded', 'true')
+    await user.click(chevron())
+    await waitFor(() =>
+      expect(screen.queryByRole('row', { name: /Clips/ })).not.toBeInTheDocument(),
+    )
+    expect(videos()).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('refreshes the visible rows on every scanner update', async () => {
