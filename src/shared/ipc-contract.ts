@@ -1,6 +1,24 @@
-import type { DriveInfo, ScanDone, ScanFailed, ScanProgress, ScanStartResult } from './scan-types'
+import type {
+  DriveDetails,
+  DriveInfo,
+  Places,
+  ScanDone,
+  ScanFailed,
+  ScanProgress,
+  ScanStartResult,
+} from './scan-types'
+import type {
+  NodeId,
+  SizeMode,
+  SortDir,
+  SortKey,
+  TreeChanged,
+  TreemapLayout,
+  TreeNodeDetails,
+  TreePage,
+} from './tree-types'
 
-/** Metadata about the running application, shown in the status bar. */
+/** Metadata about the running application, shown in the status bar and the About box. */
 export interface AppInfo {
   name: string
   version: string
@@ -12,16 +30,69 @@ export interface AppInfo {
 /** Outcome of the native "choose a folder" dialog. */
 export type SelectFolderResult = { canceled: true } | { canceled: false; path: string }
 
+/** What the native context menu did, so the renderer can follow up. */
+export type ContextMenuOutcome =
+  | { kind: 'dismissed' }
+  | { kind: 'refreshed'; nodeId: NodeId }
+  | { kind: 'copied' }
+  | { kind: 'opened' }
+  | { kind: 'created'; nodeId: NodeId; name: string }
+  | { kind: 'shell'; verb: string | null; changed: boolean }
+
+/** `folder:create` result: the folder that now holds the new one, and the new folder's name. */
+export interface CreateFolderResult {
+  parentId: NodeId
+  name: string
+}
+
 /**
  * Single source of truth for every renderer → main request.
  * Each channel maps to its argument tuple and its resolved result.
  */
 export interface IpcContract {
   'drives:list': { args: []; result: DriveInfo[] }
+  'drive:info': { args: [root: string]; result: DriveDetails | null }
+  'places:list': { args: []; result: Places }
   'app:get-info': { args: []; result: AppInfo }
+  'app:quit': { args: []; result: void }
   'dialog:select-folder': { args: []; result: SelectFolderResult }
   'scan:start': { args: [path: string]; result: ScanStartResult }
   'scan:cancel': { args: [scanId: string]; result: void }
+  'tree:children': {
+    args: [
+      scanId: string,
+      nodeId: NodeId,
+      sortKey: SortKey,
+      sortDir: SortDir,
+      offset: number,
+      limit: number,
+    ]
+    result: TreePage | null
+  }
+  'tree:node': {
+    args: [scanId: string, nodeId: NodeId, sortKey: SortKey, sortDir: SortDir]
+    result: TreeNodeDetails | null
+  }
+  'tree:expand-ids': { args: [scanId: string, nodeId: NodeId, levels: number]; result: NodeId[] }
+  'tree:refresh': { args: [scanId: string, nodeId: NodeId]; result: TreeNodeDetails | null }
+  'treemap:layout': {
+    args: [
+      scanId: string,
+      nodeId: NodeId,
+      mode: SizeMode,
+      depth: number,
+      width: number,
+      height: number,
+    ]
+    result: TreemapLayout | null
+  }
+  'shell:open-in-explorer': { args: [scanId: string, nodeId: NodeId]; result: void }
+  'shell:context-menu': {
+    args: [scanId: string, nodeId: NodeId, x: number, y: number, extended: boolean]
+    result: ContextMenuOutcome
+  }
+  'folder:create': { args: [scanId: string, nodeId: NodeId]; result: CreateFolderResult }
+  'clipboard:write-text': { args: [text: string]; result: void }
 }
 
 export type IpcChannel = keyof IpcContract
@@ -33,6 +104,7 @@ export interface IpcEventContract {
   'scan:progress': ScanProgress
   'scan:done': ScanDone
   'scan:failed': ScanFailed
+  'tree:changed': TreeChanged
 }
 
 export type IpcEventChannel = keyof IpcEventContract
@@ -44,14 +116,58 @@ export type Unsubscribe = () => void
 /** The API the preload script exposes to the renderer as `window.storageiq`. */
 export interface StorageIQApi {
   getAppInfo(): Promise<AppInfo>
+  quit(): Promise<void>
   selectFolder(): Promise<SelectFolderResult>
   /** Fixed and removable drives with label and space (network and optical drives are left out). */
   listDrives(): Promise<DriveInfo[]>
+  /** Space, cluster size and file system of the drive holding `root`; null when unreadable. */
+  getDriveInfo(root: string): Promise<DriveDetails | null>
+  /** Documents, OneDrive folders and the recently scanned paths. */
+  listPlaces(): Promise<Places>
   /** Starts scanning `path` (an absolute local folder); a running scan is superseded. */
   startScan(path: string): Promise<ScanStartResult>
   /** Stops the scan; unknown or finished IDs are ignored. */
   cancelScan(scanId: string): Promise<void>
+  getChildren(
+    scanId: string,
+    nodeId: NodeId,
+    sortKey: SortKey,
+    sortDir: SortDir,
+    offset: number,
+    limit: number,
+  ): Promise<TreePage | null>
+  getNode(
+    scanId: string,
+    nodeId: NodeId,
+    sortKey: SortKey,
+    sortDir: SortDir,
+  ): Promise<TreeNodeDetails | null>
+  /** Folders to expand so `levels` levels below `nodeId` are visible (capped by the scanner). */
+  getExpandIds(scanId: string, nodeId: NodeId, levels: number): Promise<NodeId[]>
+  /** Rescans one folder of the current scan and updates its totals and its ancestors. */
+  refreshFolder(scanId: string, nodeId: NodeId): Promise<TreeNodeDetails | null>
+  getTreemap(
+    scanId: string,
+    nodeId: NodeId,
+    mode: SizeMode,
+    depth: number,
+    width: number,
+    height: number,
+  ): Promise<TreemapLayout | null>
+  openInExplorer(scanId: string, nodeId: NodeId): Promise<void>
+  /** Shows the Windows Explorer context menu for a row at window coordinates (CSS px). */
+  showContextMenu(
+    scanId: string,
+    nodeId: NodeId,
+    x: number,
+    y: number,
+    extended: boolean,
+  ): Promise<ContextMenuOutcome>
+  /** Creates "New folder" (or "New folder (2)", …) in the row's folder and rescans that folder. */
+  createFolder(scanId: string, nodeId: NodeId): Promise<CreateFolderResult>
+  writeClipboardText(text: string): Promise<void>
   onScanProgress(listener: (progress: ScanProgress) => void): Unsubscribe
   onScanDone(listener: (done: ScanDone) => void): Unsubscribe
   onScanFailed(listener: (failed: ScanFailed) => void): Unsubscribe
+  onTreeChanged(listener: (changed: TreeChanged) => void): Unsubscribe
 }

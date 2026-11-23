@@ -1,11 +1,28 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { DriveInfo, ScanDone, ScanFailed } from '@shared/scan-types'
-import { runSelfTest, SELF_TEST_EXIT, type SelfTestDeps } from './self-test'
+import type { TreeRow } from '@shared/tree-types'
+import { runSelfTest, SELF_TEST_EXIT, type SelfTestDeps, type SelfTestScan } from './self-test'
 
 const DRIVES: DriveInfo[] = [
   { root: 'C:\\', label: 'Local Disk', kind: 'fixed', totalBytes: 100, freeBytes: 40 },
 ]
 const NATIVE = 'C:\\App\\resources\\app.asar.unpacked\\koffi.node'
+const MENU = ['StorageIQ', 'New folder', '', 'Open', 'Copy', 'Cut', 'Delete', 'Properties']
+
+function row(name: string, kind: TreeRow['kind']): TreeRow {
+  return {
+    id: kind === 'folder' ? 'd1' : 'g0',
+    parentId: 'd0',
+    kind,
+    name,
+    size: 1,
+    allocated: 4096,
+    files: 1,
+    folders: 0,
+    modifiedMs: 0,
+    childCount: 1,
+  }
+}
 
 function scanDone(overrides: Partial<ScanDone> = {}): ScanDone {
   return {
@@ -14,30 +31,18 @@ function scanDone(overrides: Partial<ScanDone> = {}): ScanDone {
     files: 3,
     folders: 1,
     bytes: 900,
+    allocatedBytes: 12_288,
     elapsedMs: 20,
-    topFolders: [
-      {
-        kind: 'folder',
-        name: 'app.asar.unpacked',
-        path: 'C:\\App\\resources\\app.asar.unpacked',
-        bytes: 600,
-        files: 2,
-        folders: 0,
-      },
-      {
-        kind: 'everything-else',
-        name: 'Everything else',
-        path: 'C:\\App\\resources',
-        bytes: 300,
-        files: 1,
-        folders: 0,
-      },
-    ],
     errors: [],
     errorCount: 0,
     ...overrides,
   }
 }
+
+const completed = (
+  done = scanDone(),
+  rootChildren = [row('app.asar.unpacked', 'folder'), row('', 'files')],
+): SelfTestScan => ({ done, rootChildren })
 
 function setup(overrides: Partial<SelfTestDeps> = {}) {
   const lines: string[] = []
@@ -46,7 +51,8 @@ function setup(overrides: Partial<SelfTestDeps> = {}) {
     unpackedNativeModule: NATIVE,
     fileExists: vi.fn(() => true),
     scanRoot: 'C:\\App\\resources',
-    scanOnce: vi.fn(async (): Promise<ScanDone | ScanFailed> => scanDone()),
+    scanOnce: vi.fn(async () => completed()),
+    probeShellMenu: vi.fn(async () => MENU),
     log: (line) => {
       lines.push(line)
     },
@@ -56,12 +62,14 @@ function setup(overrides: Partial<SelfTestDeps> = {}) {
 }
 
 describe('runSelfTest', () => {
-  it('passes when koffi lists drives from the unpacked module and the scanner completes', async () => {
+  it('passes when koffi lists drives, builds the shell menu and the scanner completes', async () => {
     const { deps, lines } = setup()
     expect(await runSelfTest(deps)).toBe(SELF_TEST_EXIT.ok)
     expect(deps.fileExists).toHaveBeenCalledWith(NATIVE)
     expect(deps.scanOnce).toHaveBeenCalledWith('C:\\App\\resources')
+    expect(deps.probeShellMenu).toHaveBeenCalledWith('C:\\App\\resources')
     expect(lines).toContain('drives: C:\\')
+    expect(lines).toContain('shell menu: 7 items')
   })
 
   it('fails when koffi cannot list drives', async () => {
@@ -85,31 +93,33 @@ describe('runSelfTest', () => {
     expect(deps.fileExists).not.toHaveBeenCalled()
   })
 
+  it('fails when the shell menu cannot be built', async () => {
+    const { deps } = setup({ probeShellMenu: vi.fn().mockRejectedValue(new Error('E_FAIL')) })
+    expect(await runSelfTest(deps)).toBe(SELF_TEST_EXIT.shellMenuFailed)
+  })
+
+  it('fails when the shell menu has only StorageIQ’s own items', async () => {
+    const { deps } = setup({ probeShellMenu: vi.fn(async () => ['StorageIQ', 'New folder', '']) })
+    expect(await runSelfTest(deps)).toBe(SELF_TEST_EXIT.shellMenuFailed)
+  })
+
   it('fails when the scanner process fails', async () => {
     const failed: ScanFailed = { scanId: 'self-test', message: 'crashed' }
-    const { deps } = setup({ scanOnce: vi.fn(async () => failed) })
+    const { deps } = setup({ scanOnce: vi.fn(async () => ({ failed })) })
     expect(await runSelfTest(deps)).toBe(SELF_TEST_EXIT.scanFailed)
   })
 
   it('fails when the scan does not complete', async () => {
-    const { deps } = setup({ scanOnce: vi.fn(async () => scanDone({ status: 'canceled' })) })
+    const { deps } = setup({
+      scanOnce: vi.fn(async () => completed(scanDone({ status: 'canceled' }))),
+    })
     expect(await runSelfTest(deps)).toBe(SELF_TEST_EXIT.scanFailed)
   })
 
   it('fails when the scanner walked into app.asar instead of counting it as a file', async () => {
-    const done = scanDone({
-      topFolders: [
-        {
-          kind: 'folder',
-          name: 'app.asar',
-          path: 'C:\\App\\resources\\app.asar',
-          bytes: 1,
-          files: 1,
-          folders: 0,
-        },
-      ],
+    const { deps } = setup({
+      scanOnce: vi.fn(async () => completed(scanDone(), [row('app.asar', 'folder')])),
     })
-    const { deps } = setup({ scanOnce: vi.fn(async () => done) })
     expect(await runSelfTest(deps)).toBe(SELF_TEST_EXIT.asarEntered)
   })
 })

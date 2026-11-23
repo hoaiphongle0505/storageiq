@@ -35,6 +35,7 @@ function fakeApi(drives: Record<string, FakeDrive>) {
       const label = drives[root]?.label
       return label === undefined ? '' : label
     },
+    getVolumeDetails: () => ({ clusterBytes: 4096, fileSystem: 'NTFS' }),
     statfs,
   }
   return { api, statfs }

@@ -3,7 +3,7 @@ import { noArgs } from './parse-args'
 import type { IpcHandlerMap } from './register'
 
 export interface AppHandlerDeps {
-  app: { getName(): string; getVersion(): string }
+  app: { getName(): string; getVersion(): string; quit(): void }
   dialog: {
     showOpenDialog(
       window: BrowserWindow,
@@ -14,7 +14,7 @@ export interface AppHandlerDeps {
   runtime: { platform: string; arch: string; electronVersion: string }
 }
 
-export type AppHandlers = Pick<IpcHandlerMap, 'app:get-info' | 'dialog:select-folder'>
+export type AppHandlers = Pick<IpcHandlerMap, 'app:get-info' | 'app:quit' | 'dialog:select-folder'>
 
 export function createAppHandlers(deps: AppHandlerDeps): AppHandlers {
   return {
@@ -25,6 +25,13 @@ export function createAppHandlers(deps: AppHandlerDeps): AppHandlers {
         version: deps.app.getVersion(),
         ...deps.runtime,
       }),
+    },
+
+    'app:quit': {
+      parseArgs: noArgs,
+      handle: () => {
+        deps.app.quit()
+      },
     },
 
     'dialog:select-folder': {

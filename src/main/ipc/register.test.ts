@@ -1,7 +1,18 @@
 import type { IpcMainInvokeEvent } from 'electron'
 import { describe, expect, it, vi } from 'vitest'
 import type { AppInfo } from '@shared/ipc-contract'
-import { InvalidIpcArgumentsError, noArgs, oneString } from './parse-args'
+import {
+  childrenArgs,
+  clipboardArgs,
+  contextMenuArgs,
+  expandArgs,
+  InvalidIpcArgumentsError,
+  nodeArgs,
+  noArgs,
+  oneString,
+  scanNodeArgs,
+  treemapArgs,
+} from './parse-args'
 import {
   type IpcHandlerMap,
   type IpcRegistrar,
@@ -22,10 +33,22 @@ const appInfo: AppInfo = {
 function createHandlers(overrides: Partial<IpcHandlerMap> = {}): IpcHandlerMap {
   return {
     'app:get-info': { parseArgs: noArgs, handle: () => appInfo },
+    'app:quit': { parseArgs: noArgs, handle: () => undefined },
     'dialog:select-folder': { parseArgs: noArgs, handle: () => ({ canceled: true }) },
     'drives:list': { parseArgs: noArgs, handle: () => [] },
+    'drive:info': { parseArgs: oneString, handle: () => null },
+    'places:list': { parseArgs: noArgs, handle: () => ({ places: [], recent: [] }) },
     'scan:start': { parseArgs: oneString, handle: () => ({ scanId: 'scan-1' }) },
     'scan:cancel': { parseArgs: oneString, handle: () => undefined },
+    'tree:children': { parseArgs: childrenArgs, handle: () => null },
+    'tree:node': { parseArgs: nodeArgs, handle: () => null },
+    'tree:expand-ids': { parseArgs: expandArgs, handle: () => [] },
+    'tree:refresh': { parseArgs: scanNodeArgs, handle: () => null },
+    'treemap:layout': { parseArgs: treemapArgs, handle: () => null },
+    'shell:open-in-explorer': { parseArgs: scanNodeArgs, handle: () => undefined },
+    'shell:context-menu': { parseArgs: contextMenuArgs, handle: () => ({ kind: 'dismissed' }) },
+    'folder:create': { parseArgs: scanNodeArgs, handle: () => ({ parentId: 'd0', name: 'x' }) },
+    'clipboard:write-text': { parseArgs: clipboardArgs, handle: () => undefined },
     ...overrides,
   }
 }
@@ -64,10 +87,22 @@ describe('registerIpcHandlers', () => {
     registerIpcHandlers(ipc, createHandlers(), isTrusted)
     expect([...ipc.listeners.keys()].sort()).toEqual([
       'app:get-info',
+      'app:quit',
+      'clipboard:write-text',
       'dialog:select-folder',
+      'drive:info',
       'drives:list',
+      'folder:create',
+      'places:list',
       'scan:cancel',
       'scan:start',
+      'shell:context-menu',
+      'shell:open-in-explorer',
+      'tree:children',
+      'tree:expand-ids',
+      'tree:node',
+      'tree:refresh',
+      'treemap:layout',
     ])
   })
 
