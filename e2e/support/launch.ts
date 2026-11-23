@@ -2,12 +2,16 @@ import path from 'node:path'
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 
 // ELECTRON_RUN_AS_NODE makes Electron behave as plain Node, so it must not leak into the launch.
-export const launchEnv: Record<string, string> = Object.fromEntries(
-  Object.entries(process.env).filter(
-    (entry): entry is [string, string] =>
-      entry[1] !== undefined && entry[0] !== 'ELECTRON_RUN_AS_NODE',
+// STORAGEIQ_TEST_HOOKS exposes the test-only Explorer-menu probe in main (unpackaged runs only).
+export const launchEnv: Record<string, string> = {
+  ...Object.fromEntries(
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] =>
+        entry[1] !== undefined && entry[0] !== 'ELECTRON_RUN_AS_NODE',
+    ),
   ),
-)
+  STORAGEIQ_TEST_HOOKS: '1',
+}
 
 const captureHook = path.join(__dirname, 'capture-console.cjs')
 

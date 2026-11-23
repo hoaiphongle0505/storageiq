@@ -2,17 +2,44 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import os from 'node:os'
 import path from 'node:path'
 
+/** Expected values of one tree row, before cluster rounding is applied. */
+export interface ExpectedRow {
+  name: string
+  /** Sizes of the files below the row, to compute the allocated size for any cluster size. */
+  fileSizes: number[]
+  files: number
+  folders: number
+}
+
 export interface ScanFixture {
   /** The folder to scan. */
   root: string
-  expected: { files: number; folders: number; bytes: number; topFolderNames: string[] }
+  expected: {
+    files: number
+    folders: number
+    bytes: number
+    /** The 12 top-level folders, largest first. */
+    folders12: ExpectedRow[]
+    /** The "[N files]" row of the root: root-file.txt and the junction (0 bytes). */
+    rootFiles: ExpectedRow
+    rootFileSizes: number[]
+  }
   remove(): void
 }
 
+export const sum = (values: number[]) => values.reduce((total, value) => total + value, 0)
+
+/** `ceil(size / cluster) * cluster` per file; 0-byte entries take 0 (spec §4). */
+export function allocated(fileSizes: number[], clusterBytes: number): number {
+  return sum(
+    fileSizes.map((size) => (size === 0 ? 0 : Math.ceil(size / clusterBytes) * clusterBytes)),
+  )
+}
+
 /**
- * 12 top-level folders of different sizes (so the list shows 10 plus "Everything else"), each
- * with a nested folder; one file directly in the root; and a junction to a folder outside the
- * root, which must be counted as one 0-byte entry and never entered.
+ * 12 top-level folders of different sizes, each with a nested folder; one file directly in the
+ * root; and a junction to a folder outside the root, which must be counted as one 0-byte entry
+ * and never entered.
  */
 export function createScanFixture(): ScanFixture {
   const base = mkdtempSync(path.join(os.tmpdir(), 'storageiq-e2e-'))
@@ -22,38 +49,34 @@ export function createScanFixture(): ScanFixture {
   mkdirSync(outside)
   writeFileSync(path.join(outside, 'not-counted.bin'), Buffer.alloc(50_000))
 
-  let files = 0
-  let folders = 0
-  let bytes = 0
-  const tops: Array<{ name: string; bytes: number }> = []
+  const tops: ExpectedRow[] = []
   for (let i = 1; i <= 12; i += 1) {
     const name = `folder-${String(i).padStart(2, '0')}`
     const folder = path.join(root, name)
     const nested = path.join(folder, 'nested')
     mkdirSync(nested, { recursive: true })
-    folders += 2
     const size = i * 1000
     for (let f = 0; f < 3; f += 1)
       writeFileSync(path.join(folder, `file-${f}.bin`), Buffer.alloc(size))
     for (let f = 0; f < 2; f += 1)
       writeFileSync(path.join(nested, `file-${f}.bin`), Buffer.alloc(size))
-    files += 5
-    bytes += size * 5
-    tops.push({ name, bytes: size * 5 })
+    tops.push({ name, fileSizes: Array(5).fill(size) as number[], files: 5, folders: 1 })
   }
   writeFileSync(path.join(root, 'root-file.txt'), Buffer.alloc(777))
-  files += 1
-  bytes += 777
   symlinkSync(outside, path.join(root, 'link-to-outside'), 'junction')
-  files += 1 // the junction: one 0-byte entry
+  const rootFiles: ExpectedRow = { name: '[2 files]', fileSizes: [777, 0], files: 2, folders: 0 }
 
-  const topFolderNames = [...tops]
-    .sort((a, b) => b.bytes - a.bytes)
-    .slice(0, 10)
-    .map((top) => top.name)
+  const rootFileSizes = [...tops.flatMap((top) => top.fileSizes), ...rootFiles.fileSizes]
   return {
     root,
-    expected: { files, folders, bytes, topFolderNames }, // 62 files, 24 folders, 390,777 bytes
+    expected: {
+      files: rootFileSizes.length, // 62
+      folders: tops.length * 2, // 24
+      bytes: sum(rootFileSizes), // 390,777
+      folders12: [...tops].sort((a, b) => sum(b.fileSizes) - sum(a.fileSizes)),
+      rootFiles,
+      rootFileSizes,
+    },
     remove: () => rmSync(base, { recursive: true, force: true }),
   }
 }

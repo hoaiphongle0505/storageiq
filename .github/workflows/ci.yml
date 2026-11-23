@@ -25,9 +25,13 @@ jobs:
 
       - run: npm ci
       - run: npm run format:check
+      - name: Design tokens are up to date (design/tokens.css from design/tokens.json)
+        run: node scripts/build-tokens.mjs --check
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      - name: Performance limits, 1M generated files (hard limits; writes metrics/perf.json)
+        run: npm run test:perf
 
       - name: Build
         run: npx electron-vite build
@@ -38,7 +42,7 @@ jobs:
       - name: Package installer
         run: npx electron-builder --win --x64 --publish never
 
-      - name: Packaged app self-test (koffi from app.asar.unpacked, scanner process)
+      - name: Packaged app self-test (koffi from app.asar.unpacked, Explorer menu, scanner)
         run: npm run test:packaged
 
       - name: Collect metrics (report only)

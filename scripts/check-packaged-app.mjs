@@ -1,6 +1,7 @@
 // Runs the packaged app with --self-test: koffi must load from app.asar.unpacked, at least one
-// drive must be listed, and the scanner utilityProcess must complete a scan of the resources
-// folder without walking into app.asar. Exit code 0 means pass (codes: src/main/self-test.ts).
+// drive must be listed, the Explorer context menu must build through COM, and the scanner
+// utilityProcess must complete a scan of the resources folder without walking into app.asar.
+// Exit code 0 means pass (codes: src/main/self-test.ts).
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -26,4 +27,6 @@ if (result.status !== 0) {
   console.error(`Packaged self-test failed with exit code ${result.status}.`)
   process.exit(1)
 }
-console.log('Packaged self-test passed: koffi loaded from app.asar.unpacked; the scanner ran.')
+console.log(
+  'Packaged self-test passed: koffi loaded from app.asar.unpacked; the Explorer menu built; the scanner ran.',
+)

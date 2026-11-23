@@ -2,8 +2,9 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
 import { createLargeFixture } from './support/fixture'
 import { launchApp } from './support/launch'
+import { openSelectMenu, ribbonButton, scanFolder } from './support/workspace'
 
-// Report-only CI metrics (roadmap carry-over 7). Never gating; skipped unless asked for.
+// Report-only CI metrics. Never gating; skipped unless asked for.
 test.skip(process.env['STORAGEIQ_METRICS'] !== '1', 'Set STORAGEIQ_METRICS=1 to collect metrics')
 
 test('collects idle RAM, scan time for about 20,000 files and cancel latency', async () => {
@@ -17,32 +18,18 @@ test('collects idle RAM, scan time for about 20,000 files and cancel latency', a
       electronApp.getAppMetrics().reduce((sum, metric) => sum + metric.memory.workingSetSize, 0),
     )
 
-    await app.evaluate(({ dialog }, folder) => {
-      dialog.showOpenDialog = (async () => ({
-        canceled: false,
-        filePaths: [folder],
-      })) as typeof dialog.showOpenDialog
-    }, fixture.root)
     let startedAt = Date.now()
-    await page.getByRole('button', { name: 'Choose folder…' }).click()
-    await expect(page.getByRole('heading', { level: 1, name: 'Scan complete' })).toBeVisible({
-      timeout: 240_000,
-    })
+    await scanFolder(app, page, fixture.root)
     const scanWallMs = Date.now() - startedAt
 
-    await page.getByRole('button', { name: 'Choose another location' }).click()
     const systemDrive = process.env['SystemDrive'] ?? 'C:'
-    await page
-      .getByRole('list', { name: 'Drives' })
-      .getByRole('button', { name: new RegExp(`\\(${systemDrive}\\)`) })
-      .click()
-    await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible()
+    const menu = await openSelectMenu(page)
+    await menu.getByRole('menuitem', { name: new RegExp(`\\(${systemDrive}\\)`) }).click()
+    await expect(ribbonButton(page, 'Stop')).not.toHaveAttribute('aria-disabled', 'true')
     await page.waitForTimeout(1_000)
     startedAt = Date.now()
-    await page.getByRole('button', { name: 'Cancel' }).click()
-    await expect(
-      page.getByRole('heading', { level: 1, name: 'Scan canceled — partial results' }),
-    ).toBeVisible()
+    await ribbonButton(page, 'Stop').click()
+    await expect(ribbonButton(page, 'Stop')).toHaveAttribute('aria-disabled', 'true')
     const cancelMs = Date.now() - startedAt
 
     mkdirSync('metrics', { recursive: true })

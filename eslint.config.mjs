@@ -13,6 +13,7 @@ export default defineConfig(
       'playwright-report/**',
       'test-results/**',
       'metrics/**',
+      'screenshots/**',
     ],
   },
   js.configs.recommended,

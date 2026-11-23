@@ -2,7 +2,7 @@
 
 Living document owned by the technical lead. Update it whenever a phase completes: tick tasks, record decisions, and name the next phase.
 
-**Current phase:** Phase 2b — Honest Totals (next)
+**Current phase:** Phase 3 — Analyzer Workspace
 **Last updated:** 2026-11-19
 
 ---
@@ -108,18 +108,17 @@ StorageIQ/
 
 ## Roadmap
 
-| #   | Phase                        | Status                                                                                                                                                        | Exit criterion                                                                                                                                                                                          |
-| --- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Project Foundation           | **Done** (automated gates green; owner's manual UI and installer check pending) — [plan](superpowers/plans/2026-11-18-phase-1-project-foundation.md)          | Secure app shell launches, picks a folder through typed IPC, all checks green in CI, NSIS installer builds                                                                                              |
-| 2a  | Core Scanner                 | **Done** (automated gates green; final whole-branch review and owner's manual checks pending) — [plan](superpowers/plans/2026-11-19-phase-2a-core-scanner.md) | Scans a real drive in a utilityProcess; progress plus a largest-folders snapshot about every 250 ms; cancel; unreadable folders listed; removable drives listed; CI reports installer size and idle RAM |
-| 2b  | Honest Totals                | **Next**                                                                                                                                                      | Online-only (cloud) files excluded from on-disk size and never downloaded; hardlinks counted once; reconciliation line vs. Windows' used space; FindFirstFileExW speed measured                         |
-| 3   | Tree View                    | Not started                                                                                                                                                   | Virtualized, keyboard-navigable, size-sorted tree that grows during the scan; "Open in Explorer"; 1M entries at 60 fps                                                                                  |
-| 4   | Largest Files & Explanations | Not started                                                                                                                                                   | Largest-files list; plain-language labels for about 30 well-known space hogs in the tree and the list; "Copy as CSV" — **MVP complete**                                                                 |
-| 5   | Treemap                      | Not started                                                                                                                                                   | Squarified treemap as a secondary view, with drill-down synced to the tree                                                                                                                              |
-| 6   | Duplicate Finder             | Not started                                                                                                                                                   | Size → partial hash → full hash; cancelable; never deduplicates hardlinks                                                                                                                               |
-| 7   | History (light)              | Not started                                                                                                                                                   | SQLite remembers the last scan of each drive; shows "+X GB since last time"                                                                                                                             |
-| 8   | Export                       | Not started                                                                                                                                                   | CSV and XLSX export of the tree and the largest files                                                                                                                                                   |
-| 9   | AI Features                  | Not started                                                                                                                                                   | Explanations beyond the fixed dictionary; local-vs-cloud decision recorded first                                                                                                                        |
+Roadmap v3, approved 2026-11-19 ([spec](superpowers/specs/2026-11-19-phase-3-workspace-design.md) §2). It supersedes the phase order of roadmap v2; the Phase 2a scanner, IPC and drive code stay.
+
+| #   | Phase              | Status                                                                      | Exit criterion                                                                                                                                                  |
+| --- | ------------------ | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Foundation         | **Done**                                                                    | Secure app shell, typed IPC, tests, installer, CI                                                                                                               |
+| 2a  | Core scanner       | **Done** (merged in PR #1)                                                  | Scans a drive in a utilityProcess with live progress, cancel and unreadable folders listed                                                                      |
+| 3   | Analyzer workspace | **In progress** — [plan](superpowers/plans/2026-11-19-phase-3-workspace.md) | Ribbon, Select menu, virtualized column tree, file-type treemap with legend (Level 0–5, hideable), Explorer context menu, status bar; 1M-file perf limits in CI |
+| 4   | Side views         | Not started                                                                 | Top files, file types, file age                                                                                                                                 |
+| 5   | Charts and export  | Not started                                                                 | Pie and bar charts; CSV and Excel export                                                                                                                        |
+| 6   | Actions            | Not started                                                                 | Delete to Recycle Bin with confirmation, search — **MVP complete; first GitHub release**                                                                        |
+| 7+  | Post-MVP           | Not started                                                                 | Honest totals (cloud-only files, hardlinks, real size of locked system files, reconciliation), duplicates, scan history, plain-language explanations, AI        |
 
 ### Phase 1 — Project Foundation (task checklist)
 
@@ -200,6 +199,40 @@ Deviations from the plan (made after reviews, approved by the owner):
 - The Dismiss button grew to a 24×24 px target (WCAG 2.5.8).
 - CI runs Node 24 (the Node inside Electron 45) so tests match the runtime; `engines.node` stays `>= 22`.
 - Electron fuses are set in `electron-builder.yml` (no `runAsNode`, no Node CLI/inspect flags, ASAR integrity, load only from ASAR, cookie encryption).
+
+### Phase 3 — Analyzer Workspace (task checklist)
+
+- [x] T1 Design system: `design/tokens.json` → `tokens.css` → Tailwind, `components.md`, contrast report (0 AA failures), Lucide icons
+- [x] T2 Columnar tree store in the scanner (folders and files, allocated size from the cluster size), 1M-file perf test
+- [x] T3 Scanner queries: children pages and sort, node details, expand levels, squarified treemap, folder refresh
+- [x] T4 Main and preload: `drive:info`, `places:list`, tree and treemap channels, open in Explorer, clipboard, new folder, `app:quit`
+- [x] T5 Workspace store, Ribbon and Select menu
+- [x] T6 Virtualized column tree (treegrid)
+- [x] T7 Native Explorer context menu (koffi COM) with StorageIQ's items
+- [x] T8 Treemap pane (Level 0–5, hide/show), splitter, status bar, workspace shell
+- [x] T8a Stale rows after changes outside the app: folder watcher and calm "no longer exists" message
+- [x] T8b/8d Parallel directory walk (walker pool) and a faster scanner
+- [x] T8c Strata look: pill ribbon, file-type treemap with legend and cushion shading, calm banner
+- [x] T9 2a screens removed, workspace E2E, CI perf report, docs
+- [x] T10 All-users installer option and auto-update from GitHub Releases ([RELEASING.md](RELEASING.md))
+- [ ] Owner checks pending: manual Explorer-menu and keyboard checks, High Contrast, installer and auto-update N→N+1, full C: scan timing; SignPath code signing (not set up yet)
+
+### Phase 3 — Outcome
+
+Automated gates, 2026-11-23, on the development machine (Windows 11):
+
+- Unit tests: 56 files, 597 passed, 1 skipped. Perf test (`npm run test:perf`): 2 passed. End-to-end: 23 passed, 3 skipped (metrics and the two screenshot runs, which are opt-in). Packaged self-test: koffi from app.asar.unpacked, Explorer menu built (24 items), scanner ran on 7 walkers.
+- `npm run typecheck` (node and web), `npm run lint`, `npm run format:check` and `node scripts/build-tokens.mjs --check` are green.
+- Report-only metrics: renderer bundle 708.5 kB, installer 116.4 MB, idle RAM 384 MB (all processes), 20,000 generated files scanned in 2.9 s, cancel on the system drive 248 ms. 1M-file tree store: 73.4 MB (77 B/file), first page 6.4 ms, treemap layout 35.0 ms (limits 300 MB, 100 ms, 100 ms).
+- Scan speed: about 100–130 s for 1.9 million files on the development machine (measured during the walker-pool work); no other speed figure is claimed.
+
+Deviations from the plan: the Phase 3 addendum added stale-row handling (T8a), the parallel walker pool (T8b/8d), the Strata look with a file-type treemap and legend (T8c), and the all-users installer with auto-update (T10). Code signing with SignPath is not set up yet. Checks that need a person at the desktop (native Explorer menu, keyboard, High Contrast, installer and update runs, full C: scan timing) are still open.
+
+Decisions recorded with the plan:
+
+- `lucide-react` 1.69.0 is the renderer's icon set (dev dependency, bundled by Vite).
+- The right-click menu is the real Windows Explorer menu, built from main with koffi (`SHParseDisplayName`, `SHBindToParent`, `IShellFolder::GetUIObjectOf`, `IContextMenu`/`2`/`3`, `TrackPopupMenuEx`, `InvokeCommand`). Explorer's own commands, including Delete, therefore work from StorageIQ; StorageIQ's own code still never deletes (Phase 6).
+- Tree and treemap requests name rows by scanner ids (`d…`, `g…`, `f…`); main resolves every path that reaches the shell or the clipboard from the scanner's tree, never from the renderer.
 
 ### Release checklist (before first public release, not tied to a phase)
 

@@ -1,0 +1,276 @@
+import { existsSync } from 'node:fs'
+import path from 'node:path'
+import { type ElectronApplication, expect, type Page, test } from '@playwright/test'
+import { SCANNER_SERVICE_NAME } from '../src/shared/scanner-protocol'
+import { allocated, createScanFixture, type ScanFixture, sum } from './support/fixture'
+import { consoleErrors, launchApp } from './support/launch'
+import {
+  cellBytes,
+  cellTexts,
+  count,
+  driveDetails,
+  openSelectMenu,
+  ribbonButton,
+  scanFolder,
+  treegrid,
+  treeRow,
+} from './support/workspace'
+
+let app: ElectronApplication | undefined
+let page: Page
+let fixture: ScanFixture | undefined
+
+const systemDrive = process.env['SystemDrive'] ?? 'C:'
+
+test.beforeEach(async () => {
+  const launched = await launchApp()
+  app = launched.app
+  page = launched.page
+})
+
+test.afterEach(async () => {
+  await app?.close()
+  app = undefined
+  fixture?.remove()
+  fixture = undefined
+})
+
+async function scanFixture(): Promise<{ fixture: ScanFixture; cluster: number }> {
+  fixture = createScanFixture()
+  const details = await driveDetails(page, `${fixture.root.slice(0, 2)}\\`)
+  expect(details).not.toBeNull()
+  await scanFolder(app!, page, fixture.root)
+  return { fixture, cluster: details!.clusterBytes }
+}
+
+function scannerPid(): Promise<number | undefined> {
+  return app!.evaluate(
+    ({ app: electronApp }, name) =>
+      electronApp.getAppMetrics().find((metric) => metric.name === name)?.pid,
+    SCANNER_SERVICE_NAME,
+  )
+}
+
+function isAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function startSystemDriveScan(): Promise<void> {
+  const menu = await openSelectMenu(page)
+  await menu.getByRole('menuitem', { name: new RegExp(`\\(${systemDrive}\\)`) }).click()
+  await expect(ribbonButton(page, 'Stop')).not.toHaveAttribute('aria-disabled', 'true')
+  await expect.poll(scannerPid).toBeDefined()
+}
+
+test('opens on the empty workspace', async () => {
+  await expect(page.getByRole('tab', { name: 'Home' })).toHaveAttribute('aria-selected', 'true')
+  await expect(treegrid(page)).toContainText('Choose a drive or folder from Select')
+  await expect(
+    page.getByRole('toolbar', { name: 'Treemap levels' }).getByRole('button'),
+  ).toHaveCount(6)
+  expect(await consoleErrors(app!)).toEqual([])
+})
+
+test('the Select menu lists the system drive', async () => {
+  const menu = await openSelectMenu(page)
+  await expect(menu.getByRole('group', { name: 'Drives' })).toContainText(`(${systemDrive})`)
+  await expect(menu.getByRole('menuitem', { name: 'Choose a folder…' })).toBeVisible()
+})
+
+test('every column of the tree matches the generated fixture exactly', async () => {
+  const { fixture: f, cluster } = await scanFixture()
+  const root = treeRow(page, f.root)
+  expect(await cellBytes(root, 1)).toBe(f.expected.bytes)
+  expect(await cellBytes(root, 2)).toBe(allocated(f.expected.rootFileSizes, cluster))
+  const rootCells = await cellTexts(root)
+  expect(rootCells.slice(3, 6)).toEqual([
+    count.format(f.expected.files),
+    count.format(f.expected.folders),
+    '100.0%',
+  ])
+
+  for (const expected of f.expected.folders12) {
+    const row = treeRow(page, expected.name)
+    expect(await cellBytes(row, 1)).toBe(sum(expected.fileSizes))
+    expect(await cellBytes(row, 2)).toBe(allocated(expected.fileSizes, cluster))
+    const cells = await cellTexts(row)
+    expect(cells[3]).toBe(count.format(expected.files))
+    expect(cells[4]).toBe(count.format(expected.folders))
+    const share = (sum(expected.fileSizes) / f.expected.bytes) * 100
+    expect(cells[5]).toBe(share < 0.05 ? '<0.1%' : `${share.toFixed(1)}%`)
+    expect(cells[6]).toMatch(/^\d{1,2}\/\d{1,2}\/\d{4}$/)
+  }
+  const files = treeRow(page, f.expected.rootFiles.name)
+  expect(await cellBytes(files, 1)).toBe(777)
+  expect(await cellBytes(files, 2)).toBe(allocated(f.expected.rootFiles.fileSizes, cluster))
+  expect((await cellTexts(files))[3]).toBe('2')
+
+  await expect(page.getByRole('contentinfo')).toContainText(
+    `${count.format(f.expected.files)} files found`,
+  )
+  await expect(page.getByRole('contentinfo')).toContainText('0 excluded')
+  await expect(page.getByRole('contentinfo')).toContainText(
+    `${count.format(cluster)} bytes per cluster`,
+  )
+  expect(await consoleErrors(app!)).toEqual([])
+})
+
+test('sorts by a column and reverses on a second click', async () => {
+  await scanFixture()
+  const names = async () =>
+    (
+      await treegrid(page)
+        .locator('[role="row"] > [role="gridcell"]:first-child span[title]')
+        .allTextContents()
+    ).slice(1, 4)
+  expect(await names()).toEqual(['folder-12', 'folder-11', 'folder-10'])
+  await treegrid(page).getByRole('button', { name: /^Name/ }).click()
+  await expect.poll(names).toEqual(['[2 files]', 'folder-01', 'folder-02'])
+  await treegrid(page).getByRole('button', { name: /^Name/ }).click()
+  await expect.poll(names).toEqual(['folder-12', 'folder-11', 'folder-10'])
+  await expect(treegrid(page).getByRole('columnheader', { name: /Name/ })).toHaveAttribute(
+    'aria-sort',
+    'descending',
+  )
+})
+
+test('expands and moves with the keyboard, and copies the selected path', async () => {
+  const { fixture: f } = await scanFixture()
+  await treegrid(page).focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(treeRow(page, 'folder-12')).toHaveAttribute('aria-selected', 'true')
+  await page.keyboard.press('ArrowRight')
+  await expect(treeRow(page, 'nested')).toHaveAttribute('aria-level', '3')
+  // Children are sorted by size: "[3 files]" (36,000 bytes) comes before "nested" (24,000).
+  await page.keyboard.press('ArrowRight')
+  await expect(treeRow(page, '[3 files]')).toHaveAttribute('aria-selected', 'true')
+  await page.keyboard.press('ArrowDown')
+  await expect(treeRow(page, 'nested')).toHaveAttribute('aria-selected', 'true')
+  // Ctrl+C goes through copyNodePath: main resolves the path from the scan and writes it.
+  await page.keyboard.press('Control+c')
+  await expect
+    .poll(() => app!.evaluate(({ clipboard }) => clipboard.readText()))
+    .toBe(path.join(f.root, 'folder-12', 'nested'))
+  await page.keyboard.press('ArrowLeft')
+  await expect(treeRow(page, 'folder-12')).toHaveAttribute('aria-selected', 'true')
+  await page.keyboard.press('ArrowLeft')
+  await expect(treeRow(page, 'nested')).toHaveCount(0)
+})
+
+test('a treemap click selects the matching tree row; a double-click drills in', async () => {
+  await scanFixture()
+  const canvas = page.getByRole('img', { name: /^Treemap of/ })
+  await expect(canvas).toBeVisible()
+  // Squarify places the largest child (folder-12) first, at the top-left corner; at Level 1
+  // the point (10, 10) is in its label strip, above its nested blocks.
+  await canvas.click({ position: { x: 10, y: 10 } })
+  await expect(treeRow(page, 'folder-12')).toHaveAttribute('aria-selected', 'true')
+  await canvas.dblclick({ position: { x: 10, y: 10 } })
+  await expect(canvas).toHaveAccessibleName(/^Treemap of folder-12/)
+  await page
+    .getByRole('toolbar', { name: 'Treemap levels' })
+    .getByRole('button', { name: 'Level 0' })
+    .click()
+  await expect(
+    page.getByRole('toolbar', { name: 'Treemap levels' }).getByRole('button', { name: 'Level 0' }),
+  ).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('the treemap legend names the file types with their shares after a scan', async () => {
+  await scanFixture()
+  const legend = page.getByRole('list', { name: 'File types in this folder' })
+  await expect(legend).toBeVisible()
+  const items = legend.getByRole('listitem')
+  await expect.poll(() => items.count()).toBeGreaterThan(0)
+  // The file-type items carry text: a category name and its share.
+  await expect(legend).toContainText(/\d+(\.\d)?%/)
+  for (const text of await items.allTextContents()) expect(text.trim()).not.toBe('')
+})
+
+test('hides the treemap with × and shows it from the View tab', async () => {
+  await page.getByRole('button', { name: 'Hide treemap' }).click()
+  await expect(page.getByRole('region', { name: 'Treemap' })).toHaveCount(0)
+  await page.getByRole('tab', { name: 'View' }).click()
+  await ribbonButton(page, 'Treemap').click()
+  await expect(page.getByRole('region', { name: 'Treemap' })).toBeVisible()
+})
+
+test('the Explorer context menu holds StorageIQ’s items and the shell’s items', async () => {
+  const { fixture: f } = await scanFixture()
+  const labels = await app!.evaluate(async (_electron, target) => {
+    const probe = (
+      globalThis as unknown as {
+        __storageiqProbeShellMenu: (path: string) => Promise<string[]>
+      }
+    ).__storageiqProbeShellMenu
+    return probe(target)
+  }, f.root)
+  expect(labels.slice(0, 3)).toEqual(['&StorageIQ', 'New &folder\tCtrl+N', ''])
+  const shellItems = labels.slice(3).filter((label) => label !== '')
+  expect(shellItems.length).toBeGreaterThan(5)
+})
+
+test('New folder creates "New folder" and the tree shows it', async () => {
+  const { fixture: f } = await scanFixture()
+  await treeRow(page, 'folder-01').click()
+  await treegrid(page).focus()
+  await page.keyboard.press('Control+n')
+  await treeRow(page, 'folder-01').dblclick()
+  await expect(treeRow(page, 'New folder')).toBeVisible()
+  await expect(treeRow(page, 'folder-01').getByRole('gridcell').nth(4)).toHaveText('2')
+  expect(existsSync(path.join(f.root, 'folder-01', 'New folder'))).toBe(true)
+})
+
+test('the tree and the status bar update while a scan runs, and Stop ends it quickly', async () => {
+  await startSystemDriveScan()
+  const footer = page.getByRole('contentinfo')
+  const filesFound = async () =>
+    Number(
+      (/([\d,]+) files found/.exec((await footer.textContent()) ?? '')?.[1] ?? '0').replace(
+        /,/g,
+        '',
+      ),
+    )
+  await expect.poll(filesFound).toBeGreaterThan(0)
+  const first = await filesFound()
+  await expect.poll(filesFound, { timeout: 10_000 }).toBeGreaterThan(first)
+  await expect(treegrid(page).getByRole('row').nth(1)).toBeVisible()
+  await expect(footer).toContainText('bytes per cluster')
+
+  const clickedAt = Date.now()
+  await ribbonButton(page, 'Stop').click()
+  await expect(ribbonButton(page, 'Stop')).toHaveAttribute('aria-disabled', 'true')
+  expect(Date.now() - clickedAt).toBeLessThan(2_000)
+})
+
+test('shows the crash banner when the scanner process dies, and Retry scans again', async () => {
+  await startSystemDriveScan()
+  const pid = await scannerPid()
+  expect(pid).toBeDefined()
+  process.kill(pid!)
+  await expect(page.getByRole('alert')).toContainText(
+    'The scan stopped unexpectedly. You can try again.',
+  )
+  await page.getByRole('alert').getByRole('button', { name: 'Retry' }).click()
+  await expect(ribbonButton(page, 'Stop')).not.toHaveAttribute('aria-disabled', 'true')
+})
+
+test('quitting during a scan leaves no scanner process behind', async () => {
+  await startSystemDriveScan()
+  const pid = await scannerPid()
+  expect(pid).toBeDefined()
+  await app!.close()
+  app = undefined
+  await expect.poll(() => isAlive(pid!), { timeout: 5_000 }).toBe(false)
+})
+
+test('a scanned folder appears under "Recently scanned"', async () => {
+  const { fixture: f } = await scanFixture()
+  const menu = await openSelectMenu(page)
+  await expect(menu.getByRole('group', { name: 'Recently scanned' })).toContainText(f.root)
+})

@@ -2,7 +2,7 @@
 
 A free, open-source disk space analyzer for Windows. StorageIQ shows where your disk space went, and explains it in plain words. It scans a drive or folder and shows which folders and files use the most space, so you can decide what to clean up.
 
-> **Status:** early development. Phase 2a (Core Scanner) has passed its automated gates; the final review and manual checks are still pending. It lets you scan a drive or folder, see live progress, the largest folders and any folders that couldn’t be read. Phase 2b (Honest Totals) is next. See the [roadmap](docs/ROADMAP.md).
+> **Status:** early development. Phase 3 (Analyzer Workspace) turns the scanner into a full workspace in the Strata look (light and dark): a ribbon with a Select menu (drives, Documents, OneDrive, recent scans, any folder), a virtualized column tree (size, allocated size, files, folders, share of the parent, last modified), a treemap pane with levels 0–5 that colours files by type and names the types in a legend, the Windows Explorer context menu on every row, and a status bar with free space and cluster size. Scans walk folders in parallel (about 100–130 s for 1.9 million files on the development machine). The installer offers a per-user or an all-users install, and installed copies update themselves from GitHub Releases ([how to release](docs/RELEASING.md)); code signing through SignPath is pending. Next: side views (top files, file types, file age). See the [roadmap](docs/ROADMAP.md).
 
 ## Requirements
 
@@ -22,6 +22,8 @@ npm run format:check
 npm run build        # production build into out/
 npm run dist         # build the Windows installer into release/<version>/
 npm run test:packaged # run the packaged app's self-test (after npm run dist)
+npm run tokens       # regenerate design/tokens.css from design/tokens.json
+npm run test:perf    # 1M-file tree-store limits
 npm run metrics      # print report-only metrics (bundle, installer, RAM, scan time)
 ```
 
@@ -35,13 +37,14 @@ Installers are currently unsigned, so Windows SmartScreen will warn on first run
 
 ## Architecture
 
-- `src/main`: Electron main process (window, security policy, IPC handlers)
-- `src/worker`: the scanner utilityProcess (directory walk, folder tree, largest folders)
+- `src/main`: Electron main process (window, security policy, IPC handlers, drive and volume details through koffi, the Explorer context menu through COM, auto-update)
+- `src/worker`: the scanner utilityProcess (parallel directory walk, columnar tree store, tree pages, file-type categories, treemap layout, folder refresh)
 - `src/preload`: the only bridge to the renderer (`window.storageiq`)
-- `src/renderer`: React UI (Tailwind, Zustand)
+- `src/renderer`: React UI (Tailwind, Zustand, Lucide icons): ribbon, column tree, treemap with legend, status bar
 - `src/shared`: types shared by every process, including the IPC contract
+- `design`: design tokens (`tokens.json` → `tokens.css`), component specs and the contrast report
 
-Security baseline: context isolation, sandboxed renderer, no Node integration, strict CSP, blocked navigation and pop-ups, and a sender check on every IPC call. Read [docs/ROADMAP.md](docs/ROADMAP.md) for the architecture decisions.
+Security baseline: context isolation, sandboxed renderer, no Node integration, strict CSP, blocked navigation and pop-ups, a sender check and argument validation on every IPC call, and shell actions only on paths from the current scan. Read [docs/ROADMAP.md](docs/ROADMAP.md) for the architecture decisions and [docs/RELEASING.md](docs/RELEASING.md) for releases and updates.
 
 ## License
 
