@@ -3,50 +3,66 @@ import { act, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { App } from './App'
+import { EMPTY_TREE_TEXT } from './components/TreeGrid'
+import { SCAN_CRASH_MESSAGE } from './stores/workspace-store'
 import { TEST_APP_INFO } from './test/fake-api'
 import { renderWithStores } from './test/render'
 import { makeDone, makeFailed, makeProgress } from './test/scan-fixtures'
 
 describe('<App />', () => {
-  it('opens on the pick-location screen and shows the version from main', async () => {
+  it('opens on the empty workspace: ribbon, column tree, treemap pane and status bar', async () => {
     renderWithStores(<App />)
-    expect(
-      screen.getByRole('heading', { level: 1, name: 'See what’s filling your disk' }),
-    ).toBeInTheDocument()
-    expect(screen.getByText('No folder selected')).toBeInTheDocument()
+    expect(screen.getByRole('tablist', { name: 'Ribbon' })).toBeInTheDocument()
+    expect(screen.getByRole('treegrid', { name: 'Folder tree' })).toBeInTheDocument()
+    expect(screen.getByText(EMPTY_TREE_TEXT)).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Treemap' })).toBeInTheDocument()
+    expect(screen.getByRole('separator', { name: 'Resize treemap' })).toBeInTheDocument()
     expect(await screen.findByText(`StorageIQ ${TEST_APP_INFO.version}`)).toBeInTheDocument()
   })
 
-  it('goes from a drive to the scanning screen to the result', async () => {
+  it('scans a drive picked from Select and fills the tree as the scan runs', async () => {
     const user = userEvent.setup()
     const { api } = renderWithStores(<App />)
-
-    await user.click(await screen.findByRole('button', { name: /^Local Disk \(C:\)/ }))
-    expect(await screen.findByRole('heading', { level: 1, name: 'Scanning' })).toBeInTheDocument()
-
+    await user.click(screen.getByRole('button', { name: /^Select/ }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Local Disk (C:)' }))
+    expect(api.startScan).toHaveBeenCalledWith('C:\\')
+    expect(await screen.findByRole('row', { name: /Videos/ })).toBeInTheDocument()
     act(() => api.emitScanProgress(makeProgress()))
+    expect(screen.getByRole('contentinfo')).toHaveTextContent('420 files found')
     act(() => api.emitScanDone(makeDone()))
-
-    expect(screen.getByRole('heading', { level: 1, name: 'Scan complete' })).toBeInTheDocument()
-    expect(screen.getByRole('contentinfo')).toHaveTextContent('C:\\')
+    expect(screen.getByRole('contentinfo')).toHaveTextContent('1,014 files found')
   })
 
-  it('shows the crash screen when the scanner fails, and Retry scans again', async () => {
+  it('shows the crash banner, and Retry scans again', async () => {
     const user = userEvent.setup()
-    const { api } = renderWithStores(<App />)
-
-    await user.click(await screen.findByRole('button', { name: /^Local Disk \(C:\)/ }))
-    await screen.findByRole('heading', { level: 1, name: 'Scanning' })
+    const { api, workspace } = renderWithStores(<App />)
+    await act(() => workspace.getState().startScan('D:\\'))
     act(() => api.emitScanFailed(makeFailed()))
-
-    expect(
-      screen.getByRole('heading', {
-        level: 1,
-        name: 'The scan stopped unexpectedly. You can try again.',
-      }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent(SCAN_CRASH_MESSAGE)
     await user.click(screen.getByRole('button', { name: 'Retry' }))
     expect(api.startScan).toHaveBeenCalledTimes(2)
-    expect(await screen.findByRole('heading', { level: 1, name: 'Scanning' })).toBeInTheDocument()
+  })
+
+  it('hides the treemap and its splitter, and shows them again from View', async () => {
+    const user = userEvent.setup()
+    renderWithStores(<App />)
+    await user.click(screen.getByRole('button', { name: 'Hide treemap' }))
+    expect(screen.queryByRole('region', { name: 'Treemap' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('separator')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: 'View' }))
+    await user.click(screen.getByRole('button', { name: 'Treemap' }))
+    expect(screen.getByRole('region', { name: 'Treemap' })).toBeInTheDocument()
+  })
+
+  it('F5 scans the same location again; About opens from File', async () => {
+    const user = userEvent.setup()
+    const { api, workspace } = renderWithStores(<App />)
+    await act(() => workspace.getState().startScan('D:\\'))
+    act(() => api.emitScanDone(makeDone()))
+    await user.keyboard('{F5}')
+    expect(api.startScan).toHaveBeenCalledTimes(2)
+    await user.click(screen.getByRole('tab', { name: 'File' }))
+    await user.click(screen.getByRole('button', { name: 'About' }))
+    expect(screen.getByRole('dialog', { name: 'About StorageIQ' })).toHaveTextContent('MIT license')
   })
 })

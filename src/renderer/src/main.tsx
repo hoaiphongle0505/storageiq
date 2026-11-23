@@ -3,8 +3,8 @@ import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import { createAppStore } from './stores/app-store'
 import { AppStoreProvider } from './stores/app-store-context'
-import { createScanStore } from './stores/scan-store'
-import { ScanStoreProvider } from './stores/scan-store-context'
+import { createWorkspaceStore } from './stores/workspace-store'
+import { WorkspaceStoreProvider } from './stores/workspace-store-context'
 import './styles/global.css'
 
 const container = document.getElementById('root')
@@ -17,14 +17,14 @@ if (window.storageiq === undefined) {
 }
 
 const appStore = createAppStore(window.storageiq)
-const scanStore = createScanStore(window.storageiq)
+const workspaceStore = createWorkspaceStore(window.storageiq)
 
 createRoot(container).render(
   <StrictMode>
     <AppStoreProvider store={appStore}>
-      <ScanStoreProvider store={scanStore}>
+      <WorkspaceStoreProvider store={workspaceStore}>
         <App />
-      </ScanStoreProvider>
+      </WorkspaceStoreProvider>
     </AppStoreProvider>
   </StrictMode>,
 )
