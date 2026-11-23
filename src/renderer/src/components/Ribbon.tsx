@@ -1,0 +1,301 @@
+import {
+  ChevronDown,
+  FileStack,
+  FolderOpen,
+  FolderPlus,
+  HardDrive,
+  Info,
+  ListTree,
+  LogOut,
+  PanelBottom,
+  Percent,
+  RefreshCw,
+  Scale,
+  Square,
+} from 'lucide-react'
+import { type ReactNode, useId, useRef, useState } from 'react'
+import type { SizeMode } from '@shared/tree-types'
+import { SIZE_UNITS, type SizeUnit } from '../lib/format'
+import { useFocusgroupFallback } from '../lib/use-focusgroup'
+import { EXPAND_ALL_LEVELS } from '../stores/workspace-store'
+import { useWorkspace } from '../stores/workspace-store-context'
+import { MenuButton } from './MenuButton'
+import { RIBBON_BUTTON_CLASS, RIBBON_SMALL_CLASS, RibbonButton } from './RibbonButton'
+import { SelectMenu } from './SelectMenu'
+
+export type RibbonTab = 'file' | 'home' | 'scan' | 'view'
+
+const TABS: Array<{ id: RibbonTab; label: string }> = [
+  { id: 'file', label: 'File' },
+  { id: 'home', label: 'Home' },
+  { id: 'scan', label: 'Scan' },
+  { id: 'view', label: 'View' },
+]
+
+const MODES: Array<{ mode: SizeMode; label: string; icon: typeof Scale; title: string }> = [
+  { mode: 'size', label: 'Size', icon: Scale, title: 'Rank and draw by file size' },
+  {
+    mode: 'allocated',
+    label: 'Allocated',
+    icon: HardDrive,
+    title: 'Rank and draw by space taken on disk (whole clusters)',
+  },
+  {
+    mode: 'files',
+    label: 'File count',
+    icon: FileStack,
+    title: 'Rank and draw by number of files',
+  },
+  {
+    mode: 'percent',
+    label: 'Percent',
+    icon: Percent,
+    title: 'Show each item’s share of its folder',
+  },
+]
+
+const UNIT_LABELS: Record<SizeUnit, string> = { auto: 'Auto', gb: 'GB', mb: 'MB', kb: 'KB' }
+
+function Group({ label, children }: { label: string; children: ReactNode }) {
+  const captionId = useId()
+  return (
+    <div
+      role="group"
+      aria-labelledby={captionId}
+      className="flex h-full flex-col justify-between border-r border-line px-1.5 last:border-r-0"
+    >
+      <div className="flex items-start gap-0.5">{children}</div>
+      <span id={captionId} className="pb-0.5 text-center text-xs text-ink-muted">
+        {label}
+      </span>
+    </div>
+  )
+}
+
+/** The window's command ribbon: tabs File, Home, Scan and View over a toolbar of groups. */
+export function Ribbon({ onAbout }: { onAbout(): void }) {
+  const [tab, setTab] = useState<RibbonTab>('home')
+  const tablistRef = useRef<HTMLDivElement>(null)
+  const toolbarRef = useRef<HTMLDivElement>(null)
+  const baseId = useId()
+  useFocusgroupFallback(tablistRef, 'tablist', tab)
+  useFocusgroupFallback(toolbarRef, 'toolbar', tab)
+
+  const phase = useWorkspace((s) => s.phase)
+  const target = useWorkspace((s) => s.target)
+  const selectedId = useWorkspace((s) => s.selectedId)
+  const mode = useWorkspace((s) => s.mode)
+  const unit = useWorkspace((s) => s.unit)
+  const treemapVisible = useWorkspace((s) => s.treemapVisible)
+  const stopScan = useWorkspace((s) => s.stopScan)
+  const rescan = useWorkspace((s) => s.rescan)
+  const setMode = useWorkspace((s) => s.setMode)
+  const setUnit = useWorkspace((s) => s.setUnit)
+  const expandLevels = useWorkspace((s) => s.expandLevels)
+  const openInExplorer = useWorkspace((s) => s.openInExplorer)
+  const createFolder = useWorkspace((s) => s.createFolder)
+  const setTreemapVisible = useWorkspace((s) => s.setTreemapVisible)
+  const quit = useWorkspace((s) => s.quit)
+
+  const scanning = phase === 'scanning'
+  const hasTree = phase !== 'empty' && phase !== 'failed'
+
+  const scanGroup = (
+    <Group label="Scan">
+      <SelectMenu />
+      <RibbonButton
+        label="Stop"
+        icon={Square}
+        disabled={!scanning}
+        title="Stop the running scan"
+        onClick={() => void stopScan()}
+      />
+      <RibbonButton
+        label="Refresh"
+        icon={RefreshCw}
+        disabled={scanning || target === null}
+        title="Scan the same location again (F5)"
+        onClick={() => void rescan()}
+      />
+    </Group>
+  )
+
+  const expandMenu = (
+    <MenuButton
+      menuLabel="Expand the tree"
+      disabled={!hasTree}
+      className={RIBBON_BUTTON_CLASS}
+      title="Show more levels of the folder tree"
+      sections={[
+        {
+          id: 'levels',
+          entries: [
+            ...[1, 2, 3, 4, 5].map((levels) => ({
+              id: `level-${levels}`,
+              label: levels === 1 ? '1 level' : `${levels} levels`,
+              onSelect: () => void expandLevels(levels),
+            })),
+            {
+              id: 'all',
+              label: 'All levels',
+              onSelect: () => void expandLevels(EXPAND_ALL_LEVELS),
+            },
+          ],
+        },
+      ]}
+    >
+      <ListTree aria-hidden="true" className="size-6" />
+      <span className="flex items-center gap-0.5">
+        Expand
+        <ChevronDown aria-hidden="true" className="size-3" />
+      </span>
+    </MenuButton>
+  )
+
+  const modeGroup = (
+    <Group label="Mode">
+      {MODES.map((entry) => (
+        <RibbonButton
+          key={entry.mode}
+          label={entry.label}
+          icon={entry.icon}
+          title={entry.title}
+          pressed={mode === entry.mode}
+          onClick={() => setMode(entry.mode)}
+        />
+      ))}
+    </Group>
+  )
+
+  const unitGroup = (
+    <Group label="Unit">
+      <div className="grid grid-cols-2 gap-0.5 pt-1">
+        {SIZE_UNITS.map((value) => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={unit === value}
+            title={
+              value === 'auto' ? 'Pick a unit for each size' : `Show sizes in ${UNIT_LABELS[value]}`
+            }
+            onClick={() => setUnit(value)}
+            className={RIBBON_SMALL_CLASS}
+          >
+            {UNIT_LABELS[value]}
+          </button>
+        ))}
+      </div>
+    </Group>
+  )
+
+  const folderGroup = (
+    <Group label="Folder">
+      {expandMenu}
+      <RibbonButton
+        label="Open in Explorer"
+        icon={FolderOpen}
+        disabled={!hasTree || selectedId === null}
+        title="Open the selected item in File Explorer (Enter)"
+        onClick={() => {
+          if (selectedId !== null) void openInExplorer(selectedId)
+        }}
+      />
+      <RibbonButton
+        label="New folder"
+        icon={FolderPlus}
+        disabled={!hasTree || scanning || selectedId === null}
+        title="Create a folder in the selected folder (Ctrl+N)"
+        onClick={() => {
+          if (selectedId !== null) void createFolder(selectedId)
+        }}
+      />
+    </Group>
+  )
+
+  const panels: Record<RibbonTab, ReactNode> = {
+    file: (
+      <Group label="App">
+        <RibbonButton label="About" icon={Info} title="About StorageIQ" onClick={onAbout} />
+        <RibbonButton
+          label="Exit"
+          icon={LogOut}
+          title="Close StorageIQ"
+          onClick={() => void quit()}
+        />
+      </Group>
+    ),
+    home: (
+      <>
+        {scanGroup}
+        {modeGroup}
+        {unitGroup}
+        {folderGroup}
+      </>
+    ),
+    scan: (
+      <>
+        {scanGroup}
+        <Group label="Tree">{expandMenu}</Group>
+      </>
+    ),
+    view: (
+      <>
+        {modeGroup}
+        {unitGroup}
+        <Group label="Treemap">
+          <RibbonButton
+            label="Treemap"
+            icon={PanelBottom}
+            pressed={treemapVisible}
+            title="Show or hide the treemap"
+            onClick={() => setTreemapVisible(!treemapVisible)}
+          />
+        </Group>
+      </>
+    ),
+  }
+
+  const active = TABS.find((entry) => entry.id === tab) ?? { id: 'home', label: 'Home' }
+
+  return (
+    <header className="border-b border-line bg-panel">
+      <div
+        ref={tablistRef}
+        role="tablist"
+        aria-label="Ribbon"
+        focusgroup="tablist nomemory"
+        className="flex h-(--size-tab-strip) items-end gap-0.5 px-1"
+      >
+        {TABS.map((entry) => (
+          <button
+            key={entry.id}
+            id={`${baseId}-${entry.id}`}
+            type="button"
+            role="tab"
+            aria-selected={tab === entry.id}
+            onClick={() => setTab(entry.id)}
+            onFocus={() => setTab(entry.id)}
+            className="min-h-6 rounded-t-control px-3 text-sm text-ink hover:bg-row-hover aria-selected:bg-sunken aria-selected:font-semibold"
+          >
+            {entry.label}
+          </button>
+        ))}
+      </div>
+      <div
+        role="tabpanel"
+        aria-labelledby={`${baseId}-${active.id}`}
+        className="h-(--size-ribbon-body) bg-sunken px-1 py-1"
+      >
+        <div
+          ref={toolbarRef}
+          role="toolbar"
+          aria-label={`${active.label} commands`}
+          focusgroup="toolbar wrap"
+          className="flex h-full items-stretch"
+        >
+          {panels[tab]}
+        </div>
+      </div>
+    </header>
+  )
+}
