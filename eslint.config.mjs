@@ -39,7 +39,7 @@ export default defineConfig(
     languageOptions: { globals: globals.node },
   },
   {
-    files: ['e2e/support/capture-console.cjs'],
+    files: ['e2e/support/capture-console.cjs', 'scripts/**/*.cjs'],
     languageOptions: { sourceType: 'commonjs', globals: globals.node },
     rules: { '@typescript-eslint/no-require-imports': 'off' },
   },

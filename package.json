@@ -28,7 +28,8 @@
     "bench:walk": "node scripts/bench-walk.mjs",
     "test:packaged": "node scripts/check-packaged-app.mjs",
     "metrics": "node scripts/report-metrics.mjs",
-    "tokens": "node scripts/build-tokens.mjs"
+    "tokens": "node scripts/build-tokens.mjs",
+    "notices": "node scripts/build-notices.cjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

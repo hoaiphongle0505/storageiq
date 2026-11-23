@@ -10,6 +10,14 @@ files:
   - out/**/*
   - package.json
   - '!**/*.map'
+  - '!out/THIRD_PARTY_NOTICES.txt'
+
+# scripts/build-notices.cjs writes out/THIRD_PARTY_NOTICES.txt (the licences of the runtime
+# dependencies) before every pack; it ships next to the executable, outside the asar.
+beforePack: scripts/build-notices.cjs
+extraResources:
+  - from: out/THIRD_PARTY_NOTICES.txt
+    to: THIRD_PARTY_NOTICES.txt
 
 asar: true
 
@@ -53,10 +61,11 @@ nsis:
 asarUnpack:
   - node_modules/koffi/**
   - node_modules/@koromix/koffi-win32-x64/**
-  # The walker worker threads load out/main/walker.js (and the chunks it requires) from the
-  # unpacked tree, so neither the script nor its require('koffi') relies on asar patching in a thread.
+  # The walker worker threads load out/main/walker.js from the unpacked tree, so neither the
+  # script nor its koffi import relies on asar patching in a thread. electron.vite.config.ts builds
+  # walker.js as a self-contained bundle (no shared chunks), so nothing else leaves the asar: the
+  # app and scanner code stay covered by the asar integrity check. Never add out/main/chunks here.
   - out/main/walker.js
-  - out/main/chunks/**
 
 # koffi ships prebuilt, ABI-stable Node-API binaries: nothing needs rebuilding for Electron.
 npmRebuild: false

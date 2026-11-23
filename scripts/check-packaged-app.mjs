@@ -3,13 +3,29 @@
 // utilityProcess must complete a scan of the resources folder without walking into app.asar.
 // Exit code 0 means pass (codes: src/main/self-test.ts).
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
 const { version, productName } = JSON.parse(readFileSync('package.json', 'utf8'))
 const exe = path.resolve('release', version, 'win-unpacked', `${productName}.exe`)
 if (!existsSync(exe)) {
   console.error(`Packaged app not found at ${exe}. Run "npm run dist" first.`)
+  process.exit(1)
+}
+
+// The licences of the shipped dependencies sit next to the executable, and nothing but the walker
+// script leaves the asar from out/main (shared chunks there would escape the integrity check).
+const resources = path.join(path.dirname(exe), 'resources')
+if (!existsSync(path.join(resources, 'THIRD_PARTY_NOTICES.txt'))) {
+  console.error('resources/THIRD_PARTY_NOTICES.txt is missing from the packaged app.')
+  process.exit(1)
+}
+const unpackedMain = path.join(resources, 'app.asar.unpacked', 'out', 'main')
+const unpackedFiles = existsSync(unpackedMain) ? readdirSync(unpackedMain) : []
+if (unpackedFiles.join() !== 'walker.js') {
+  console.error(
+    `out/main in app.asar.unpacked must hold only walker.js, found: ${unpackedFiles.join(', ') || 'nothing'}`,
+  )
   process.exit(1)
 }
 
