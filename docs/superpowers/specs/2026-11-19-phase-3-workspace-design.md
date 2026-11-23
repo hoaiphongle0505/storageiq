@@ -78,7 +78,7 @@ Light and dark themes follow Windows. The whole app is keyboard-operable, and WC
   - New components: Ribbon, SelectMenu, TreeGrid (virtualized), TreemapCanvas, LevelBar and StatusBar.
   - The 2a pick, scanning and result screens are removed. The crash screen becomes a banner.
 - **Design system** (design system):
-  - internal research notes, `tokens.css`, the Tailwind mapping and `components.md` are measured from the reference for structure only: density, row height, column widths, spacing.
+  - `design/tokens.json`, `tokens.css`, the Tailwind mapping and `components.md` are measured from the reference for structure only: density, row height, column widths, spacing.
   - StorageIQ keeps its own palette and fonts.
   - The contrast report must have zero AA failures.
 
