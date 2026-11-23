@@ -15,12 +15,12 @@ describe('createScanTree', () => {
 
   it('bubbles file sizes and counts up to every ancestor', () => {
     const tree = createScanTree(ROOT)
-    const photos = tree.folder(tree.root, 'Photos')
-    const year = tree.folder(photos, '2024')
-    tree.file(year, 300)
-    tree.file(year, 200)
-    tree.file(photos, 50)
-    tree.file(tree.root, 5)
+    const photos = tree.folder(tree.root, 'Photos', 0)
+    const year = tree.folder(photos, '2024', 0)
+    tree.file(year, 300, 'a.jpg', 0)
+    tree.file(year, 200, 'b.jpg', 0)
+    tree.file(photos, 50, 'c.jpg', 0)
+    tree.file(tree.root, 5, 'notes.txt', 0)
 
     expect(year).toMatchObject({ bytes: 500, files: 2, folders: 0 })
     expect(photos).toMatchObject({ bytes: 550, files: 3, folders: 1 })
@@ -31,7 +31,7 @@ describe('createScanTree', () => {
 
   it('builds full paths from folder names', () => {
     const tree = createScanTree(ROOT)
-    const year = tree.folder(tree.folder(tree.root, 'Photos'), '2024')
+    const year = tree.folder(tree.folder(tree.root, 'Photos', 0), '2024', 0)
     expect(tree.pathOf(year)).toBe(path.join(ROOT, 'Photos', '2024'))
     expect(tree.pathOf(tree.root)).toBe(ROOT)
   })

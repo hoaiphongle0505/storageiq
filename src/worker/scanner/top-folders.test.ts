@@ -8,8 +8,8 @@ const ROOT = 'C:\\Data'
 /** One child folder per entry, each holding one file of the given size. */
 function treeWith(children: Array<[string, number]>, rootFileBytes?: number) {
   const tree = createScanTree(ROOT)
-  for (const [name, bytes] of children) tree.file(tree.folder(tree.root, name), bytes)
-  if (rootFileBytes !== undefined) tree.file(tree.root, rootFileBytes)
+  for (const [name, bytes] of children) tree.file(tree.folder(tree.root, name, 0), bytes, 'f', 0)
+  if (rootFileBytes !== undefined) tree.file(tree.root, rootFileBytes, 'f', 0)
   return tree
 }
 
@@ -58,7 +58,7 @@ describe('topFolders', () => {
     const tree = treeWith(children, 7)
     const first = tree.root.children.find((node) => node.name === 'c01')
     if (!first) throw new Error('c01 missing')
-    tree.folder(first, 'nested')
+    tree.folder(first, 'nested', 0)
 
     const rows = topFolders(tree)
 

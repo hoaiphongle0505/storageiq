@@ -3,14 +3,14 @@ import type { WalkDirent, WalkFs, WalkStats } from '../walk'
 
 export type FakeNode =
   | { type: 'dir'; children: Record<string, FakeNode> }
-  | { type: 'file'; size: number }
+  | { type: 'file'; size: number; mtimeMs: number }
   | { type: 'link' }
 
 export const dir = (children: Record<string, FakeNode> = {}): FakeNode => ({
   type: 'dir',
   children,
 })
-export const file = (size: number): FakeNode => ({ type: 'file', size })
+export const file = (size: number, mtimeMs = 0): FakeNode => ({ type: 'file', size, mtimeMs })
 /** A symlink or junction. Its `lstat` size is deliberately non-zero: the walk must count 0 bytes. */
 export const link = (): FakeNode => ({ type: 'link' })
 
@@ -43,15 +43,18 @@ export function createFakeWalkFs(
   root: FakeNode,
   options: FakeWalkFsOptions = {},
 ): FakeWalkFs {
-  const nodes = new Map<string, FakeNode>()
-  const index = (nodePath: string, node: FakeNode): void => {
-    nodes.set(nodePath, node)
-    if (node.type !== 'dir') return
-    for (const [name, child] of Object.entries(node.children)) {
-      index(path.join(nodePath, name), child)
-    }
+  // Entries are looked up from `root` on every call, so a test can change the tree between scans.
+  const nodes = {
+    get(nodePath: string): FakeNode | undefined {
+      const relative = path.relative(rootPath, nodePath)
+      if (relative.startsWith('..') || path.isAbsolute(relative)) return undefined
+      let node: FakeNode | undefined = root
+      for (const name of relative === '' ? [] : relative.split(path.sep)) {
+        node = node?.type === 'dir' ? node.children[name] : undefined
+      }
+      return node
+    },
   }
-  index(rootPath, root)
 
   const opendirCalls: string[] = []
   let listing = 0
@@ -106,6 +109,7 @@ export function createFakeWalkFs(
       if (node === undefined) throw codeError('ENOENT')
       return {
         size: node.type === 'file' ? node.size : node.type === 'link' ? 42 : 0,
+        mtimeMs: node.type === 'file' ? node.mtimeMs : 0,
         isDirectory: () => node.type === 'dir',
         isSymbolicLink: () => node.type === 'link',
       }

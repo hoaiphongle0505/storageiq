@@ -14,6 +14,8 @@ export interface WalkDirent {
 
 export interface WalkStats {
   size: number
+  /** Last modification time in ms since the epoch. */
+  mtimeMs: number
   isDirectory(): boolean
   isSymbolicLink(): boolean
 }
@@ -35,9 +37,12 @@ export const nodeWalkFs: WalkFs = {
 /** Receives everything the walk finds. `D` is the sink's own handle for a folder. */
 export interface WalkSink<D> {
   /** A real folder (not a link) was found inside `parent`; returns its handle. */
-  folder(parent: D, name: string): D
-  /** A file, link or other non-folder entry inside `parent`. Links count with 0 bytes. */
-  file(parent: D, bytes: number): void
+  folder(parent: D, name: string, modifiedMs: number): D
+  /**
+   * A file, link or other non-folder entry inside `parent`. Links count with 0 bytes.
+   * `modifiedMs` is 0 when `lstat` failed.
+   */
+  file(parent: D, bytes: number, name: string, modifiedMs: number): void
   /** `path` could not be listed or inspected; the walk continues. */
   error(path: string, code: string, kind: ScanErrorKind): void
   /** The walk started listing `path`. */
@@ -103,7 +108,7 @@ export function walk<D>(
             // Windows refuses lstat on locked system files (pagefile.sys, hiberfil.sys,
             // swapfile.sys, DumpStack.log.tmp). They are still files, so count them, at 0
             // bytes. Phase 2b will read their real size through koffi (FindFirstFileExW).
-            if (!isFolder) sink.file(handle, 0)
+            if (!isFolder) sink.file(handle, 0, name, 0)
             return null
           }
         }),
@@ -112,11 +117,15 @@ export function walk<D>(
         if (result === null) continue
         const { stats } = result
         if (stats.isSymbolicLink()) {
-          sink.file(handle, 0) // symlinks and junctions are counted, never entered
+          // symlinks and junctions are counted, never entered
+          sink.file(handle, 0, result.name, stats.mtimeMs)
         } else if (stats.isDirectory()) {
-          queue.push({ path: result.entryPath, handle: sink.folder(handle, result.name) })
+          queue.push({
+            path: result.entryPath,
+            handle: sink.folder(handle, result.name, stats.mtimeMs),
+          })
         } else {
-          sink.file(handle, stats.size)
+          sink.file(handle, stats.size, result.name, stats.mtimeMs)
         }
       }
       pump()
