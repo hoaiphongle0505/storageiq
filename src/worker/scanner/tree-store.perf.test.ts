@@ -82,10 +82,18 @@ describe('tree store performance (1M files)', () => {
       times.push(performance.now() - started)
     }
     const treemapMs = times.sort((a, b) => a - b)[1] ?? Infinity
-    expect(rects).toBeGreaterThan(100)
+    // Level 1 nests the 100 top folders' 10,000 subfolders under them, so this is the full load.
+    expect(rects).toBeGreaterThanOrEqual(10_000)
 
     const bytesPerFile = (memoryMb * 1024 * 1024) / PERF_LIMITS.files
-    const report = { files: PERF_LIMITS.files, memoryMb, bytesPerFile, firstPageMs, treemapMs }
+    const report = {
+      files: PERF_LIMITS.files,
+      memoryMb,
+      bytesPerFile,
+      firstPageMs,
+      treemapMs,
+      treemapRects: rects,
+    }
     mkdirSync('metrics', { recursive: true })
     writeFileSync('metrics/perf.json', JSON.stringify(report, null, 2))
     console.log(`[perf] ${JSON.stringify(report)}`)
@@ -96,5 +104,26 @@ describe('tree store performance (1M files)', () => {
     )
     expect(firstPageMs).toBeLessThanOrEqual(PERF_LIMITS.maxFirstPageMs)
     expect(treemapMs).toBeLessThanOrEqual(PERF_LIMITS.maxTreemapMs)
+  }, 60_000)
+
+  it('gives the first page of a flat folder of 200,000 files inside the first-page limit', () => {
+    collect()
+    const store = new TreeStore('C:\\', 4096, null)
+    const flatFolder = store.folder(0, 'Flat folder', 1_700_000_000_000)
+    for (let i = 0; i < 200_000; i += 1) {
+      // Only 50 distinct sizes, so most rows tie and the order falls to the name, then the id.
+      store.file(flatFolder, (i % 50) * 4096, flat(`file-${i}.dat`), 1_700_000_000_000)
+    }
+    // Build garbage is collected before the clock starts, so a GC pause is not timed as sort work.
+    collect()
+    const sorter = new ChildSorter(store)
+    const started = performance.now()
+    // The files sit under the folder's "[N files]" row (`g`), which is where the 200,000 rows are.
+    const page = childrenPage(store, sorter, `g${flatFolder}`, 'size', 'desc', 0, 200)
+    const firstPageMs = performance.now() - started
+    expect(page?.total).toBe(200_000)
+    expect(page?.rows).toHaveLength(200)
+    console.log(`[perf] ${JSON.stringify({ flatFolderFiles: 200_000, firstPageMs })}`)
+    expect(firstPageMs).toBeLessThanOrEqual(PERF_LIMITS.maxFirstPageMs)
   }, 60_000)
 })

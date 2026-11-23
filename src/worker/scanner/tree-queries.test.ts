@@ -3,12 +3,15 @@ import { describe, expect, it } from 'vitest'
 import {
   ChildSorter,
   childrenPage,
+  childRefs,
   compareRows,
   expandIds,
   MAX_EXPAND_IDS,
   nodeDetails,
   resolveNode,
+  rowOf,
 } from './tree-queries'
+import type { SortDir, SortKey } from '@shared/tree-types'
 import { TreeStore } from './tree-store'
 
 const ROOT = 'C:\\Data'
@@ -213,5 +216,163 @@ describe('expandIds', () => {
       store.file(folder, 1, 'x', 0)
     }
     expect(expandIds(store, 'd0', 2)).toHaveLength(MAX_EXPAND_IDS)
+  })
+})
+
+describe('compareRows id tie-break', () => {
+  it('orders equal names by id in both directions', () => {
+    const base = {
+      parentId: null,
+      kind: 'folder' as const,
+      allocated: 0,
+      files: 0,
+      folders: 0,
+      modifiedMs: 0,
+      childCount: 0,
+      size: 5,
+      name: 'same',
+    }
+    const low = { ...base, id: 'd1' }
+    const high = { ...base, id: 'd2' }
+    expect(compareRows(low, high, 'name', 'asc')).toBeLessThan(0)
+    expect(compareRows(low, high, 'name', 'desc')).toBeLessThan(0)
+    expect(compareRows(high, low, 'size', 'desc')).toBeGreaterThan(0)
+  })
+})
+
+describe('ChildSorter cache', () => {
+  it('reuses the order while the store is unchanged and rebuilds it after a change', () => {
+    const { store, sorter, music } = sample()
+    const ref = { kind: 'folder' as const, index: 0 }
+    const first = sorter.sorted(ref, 'size', 'desc')
+    expect(sorter.sorted(ref, 'size', 'desc')).toBe(first)
+    store.file(music, 1, 'again.mp3', 1)
+    expect(sorter.sorted(ref, 'size', 'desc')).not.toBe(first)
+  })
+
+  it('keeps 64 orders and drops the oldest one after that', () => {
+    const store = new TreeStore(ROOT, 1024)
+    for (let i = 1; i <= 65; i += 1) store.folder(0, `F${i}`, 0)
+    const sorter = new ChildSorter(store)
+    const ref = (index: number) => ({ kind: 'folder' as const, index })
+    const cached = new Map<number, unknown>()
+    for (let i = 1; i <= 64; i += 1) cached.set(i, sorter.sorted(ref(i), 'name', 'asc'))
+    expect(sorter.sorted(ref(1), 'name', 'asc')).toBe(cached.get(1))
+
+    sorter.sorted(ref(65), 'name', 'asc')
+    expect(sorter.sorted(ref(2), 'name', 'asc')).toBe(cached.get(2))
+    expect(sorter.sorted(ref(1), 'name', 'asc')).not.toBe(cached.get(1))
+  })
+})
+
+describe('large folders in chunks', () => {
+  function bigFolder(count: number) {
+    const store = new TreeStore(ROOT, 1)
+    const folder = store.folder(0, 'Many', 0)
+    for (let i = 0; i < count; i += 1) {
+      // Many ties: 37 sizes for the whole folder, so names and ids decide most positions.
+      store.file(folder, i % 37, `item-${(i * 7919) % count}.dat`, 0)
+    }
+    return { store, sorter: new ChildSorter(store), folder }
+  }
+
+  it.each(['asc', 'desc'] as const)(
+    'orders 5,000 children and pages into the middle (%s)',
+    (dir) => {
+      const { store, sorter, folder } = bigFolder(5000)
+      // A page holds at most MAX_PAGE_ROWS (1000) rows, so read the folder in pages.
+      const all = []
+      for (let offset = 0; offset < 5000; offset += 1000) {
+        all.push(
+          ...(childrenPage(store, sorter, `g${folder}`, 'size', dir, offset, 1000)?.rows ?? []),
+        )
+      }
+      expect(all).toHaveLength(5000)
+      for (let i = 1; i < all.length; i += 1) {
+        expect(compareRows(all[i - 1]!, all[i]!, 'size', dir)).toBeLessThan(0)
+      }
+      const middle = childrenPage(store, sorter, `g${folder}`, 'size', dir, 3000, 10)
+      expect(middle?.rows.map((row) => row.id)).toEqual(all.slice(3000, 3010).map((row) => row.id))
+    },
+  )
+
+  it('orders values too large to pack with a position', () => {
+    const store = new TreeStore(ROOT, 1)
+    store.file(0, 10_000_000_000, 'huge.bin', 0)
+    store.file(0, 5, 'small.bin', 0)
+    const sorter = new ChildSorter(store)
+    expect(
+      childrenPage(store, sorter, 'g0', 'size', 'desc', 0, 10)?.rows.map((r) => r.name),
+    ).toEqual(['huge.bin', 'small.bin'])
+    expect(
+      childrenPage(store, sorter, 'g0', 'size', 'asc', 0, 10)?.rows.map((r) => r.name),
+    ).toEqual(['small.bin', 'huge.bin'])
+  })
+})
+
+describe('lazy ordering of a huge folder', () => {
+  /** The order from scratch: every row built, then sorted with `compareRows`. */
+  function reference(store: TreeStore, folder: number, key: SortKey, dir: SortDir) {
+    const ref = { kind: 'files' as const, index: folder }
+    return childRefs(store, ref)
+      .map((child) => rowOf(store, child))
+      .sort((a, b) => compareRows(a, b, key, dir))
+      .map((row) => row.id)
+  }
+
+  const ids = (
+    store: TreeStore,
+    sorter: ChildSorter,
+    folder: number,
+    key: SortKey,
+    dir: SortDir,
+  ) => {
+    return (offset: number, limit: number) =>
+      childrenPage(store, sorter, `g${folder}`, key, dir, offset, limit)?.rows.map((r) => r.id)
+  }
+
+  it.each(['asc', 'desc'] as const)(
+    'gives the same rows as a full sort when pages are read out of order (%s)',
+    (dir) => {
+      // Three sizes, so each run of equal values has 4,000 rows and a first page orders only a few.
+      const store = new TreeStore(ROOT, 1)
+      const folder = store.folder(0, 'Many', 0)
+      for (let i = 0; i < 12_000; i += 1) {
+        store.file(folder, (i % 3) * 100, `item-${(i * 7919) % 12_000}.dat`, 0)
+      }
+      const expected = reference(store, folder, 'size', dir)
+      const read = ids(store, new ChildSorter(store), folder, 'size', dir)
+      expect(read(0, 200)).toEqual(expected.slice(0, 200))
+      expect(read(150, 100)).toEqual(expected.slice(150, 250))
+      expect(read(7900, 300)).toEqual(expected.slice(7900, 8200))
+      expect(read(0, 1000)).toEqual(expected.slice(0, 1000))
+      expect(read(11_500, 1000)).toEqual(expected.slice(11_500))
+    },
+  )
+
+  it('pages a name order the same way', () => {
+    const store = new TreeStore(ROOT, 1)
+    const folder = store.folder(0, 'Many', 0)
+    for (let i = 0; i < 6000; i += 1) store.file(folder, i, `n${(i * 31) % 6000}.txt`, 0)
+    for (const dir of ['asc', 'desc'] as const) {
+      const expected = reference(store, folder, 'name', dir)
+      const read = ids(store, new ChildSorter(store), folder, 'name', dir)
+      expect(read(0, 100)).toEqual(expected.slice(0, 100))
+      expect(read(4000, 50)).toEqual(expected.slice(4000, 4050))
+    }
+  })
+
+  it('finds the top rows when the sampled boundary is too high', () => {
+    // Every 9th file is large, so a sample taken every 9th row sees only large files and the
+    // first boundary it guesses holds too few rows; the order must still be right.
+    const store = new TreeStore(ROOT, 1)
+    const folder = store.folder(0, 'Skewed', 0)
+    for (let i = 0; i < 20_000; i += 1) {
+      store.file(folder, i % 9 === 0 ? 1_000_000 + i : 0, `s${i}.dat`, 0)
+    }
+    const expected = reference(store, folder, 'size', 'desc')
+    const read = ids(store, new ChildSorter(store), folder, 'size', 'desc')
+    expect(read(0, 100)).toEqual(expected.slice(0, 100))
+    expect(read(2200, 100)).toEqual(expected.slice(2200, 2300))
   })
 })

@@ -121,10 +121,27 @@ function itemsOf(store: TreeStore, ref: NodeRef, mode: SizeMode): Item[] {
   return items
 }
 
+/** A list of blocks to lay out inside `box`; `level` is the nesting level of the blocks. */
+interface Job {
+  items: Item[]
+  box: Box
+  level: number
+}
+
+/** The area a block's children fill: below its label strip, inside a 2 px inset. */
+function insetBox(cell: Box): Box {
+  return {
+    x: cell.x + TREEMAP_INSET,
+    y: cell.y + TREEMAP_HEADER,
+    w: cell.w - TREEMAP_INSET * 2,
+    h: cell.h - TREEMAP_HEADER - TREEMAP_INSET,
+  }
+}
+
 /**
  * Treemap of `nodeId`'s children sized by the Mode value, nested `depth` levels deep
  * (0 = children only). At the scanned drive root in Size or Allocated mode, a "Free space"
- * block sits beside the root's own block.
+ * block sits beside the root's own block; the root's block is not a level of its own.
  */
 export function treemapLayout(
   store: TreeStore,
@@ -138,14 +155,17 @@ export function treemapLayout(
   if (ref === null) return null
   const maxDepth = Math.max(0, Math.min(depth, MAX_TREEMAP_DEPTH))
   const rects: TreemapRect[] = []
+  // Breadth first: every block of one level is laid out before any block of the next, so the
+  // rectangle cap can only cut the deepest blocks, never a large shallow one.
+  const jobs: Job[] = []
 
-  const place = (items: Item[], box: Box, level: number): void => {
+  const place = (job: Job): void => {
     const boxes = squarify(
-      items.map((item) => item.value),
-      box,
+      job.items.map((item) => item.value),
+      job.box,
     )
     boxes.forEach((cell, index) => {
-      const item = items[index]
+      const item = job.items[index]
       if (item === undefined || rects.length >= MAX_TREEMAP_RECTS) return
       if (cell.w * cell.h < MIN_RECT_AREA) return
       const rect: TreemapRect = {
@@ -154,7 +174,7 @@ export function treemapLayout(
         name: item.name,
         value: item.value,
         files: item.files,
-        depth: level,
+        depth: job.level,
         x: cell.x,
         y: cell.y,
         w: cell.w,
@@ -164,7 +184,7 @@ export function treemapLayout(
       rects.push(rect)
       const canNest =
         item.ref !== null &&
-        level < maxDepth &&
+        job.level < maxDepth &&
         item.kind !== 'file' &&
         cell.w >= MIN_NESTED_SIDE &&
         cell.h >= MIN_NESTED_SIDE + TREEMAP_HEADER
@@ -172,16 +192,7 @@ export function treemapLayout(
       const children = itemsOf(store, item.ref, mode)
       if (children.length === 0) return
       rect.nested = true
-      place(
-        children,
-        {
-          x: cell.x + TREEMAP_INSET,
-          y: cell.y + TREEMAP_HEADER,
-          w: cell.w - TREEMAP_INSET * 2,
-          h: cell.h - TREEMAP_HEADER - TREEMAP_INSET,
-        },
-        level + 1,
-      )
+      jobs.push({ items: children, box: insetBox(cell), level: job.level + 1 })
     })
   }
 
@@ -207,7 +218,6 @@ export function treemapLayout(
     ]
     const top = candidates.filter((item) => item.value > 0)
     top.sort((a, b) => b.value - a.value)
-    // The root's own block nests its children one level further than the requested depth.
     const boxes = squarify(
       top.map((item) => item.value),
       full,
@@ -242,26 +252,23 @@ export function treemapLayout(
         y: cell.y,
         w: cell.w,
         h: cell.h,
-        nested: true,
+        nested: false,
       }
       rects.push(rootRect)
-      if (cell.w < MIN_NESTED_SIDE || cell.h < MIN_NESTED_SIDE + TREEMAP_HEADER) {
-        rootRect.nested = false
-        return
-      }
-      place(
-        itemsOf(store, ref, mode),
-        {
-          x: cell.x + TREEMAP_INSET,
-          y: cell.y + TREEMAP_HEADER,
-          w: cell.w - TREEMAP_INSET * 2,
-          h: cell.h - TREEMAP_HEADER - TREEMAP_INSET,
-        },
-        1,
-      )
+      if (cell.w < MIN_NESTED_SIDE || cell.h < MIN_NESTED_SIDE + TREEMAP_HEADER) return
+      const children = itemsOf(store, ref, mode)
+      if (children.length === 0) return
+      rootRect.nested = true
+      // The root's children start at level 0, so Level n nests n levels under the root's block.
+      jobs.push({ items: children, box: insetBox(cell), level: 0 })
     })
   } else {
-    place(itemsOf(store, ref, mode), full, 0)
+    jobs.push({ items: itemsOf(store, ref, mode), box: full, level: 0 })
+  }
+
+  for (let next = 0; next < jobs.length && rects.length < MAX_TREEMAP_RECTS; next += 1) {
+    const job = jobs[next]
+    if (job !== undefined) place(job)
   }
   return { nodeId, width, height, rects }
 }

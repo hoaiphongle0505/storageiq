@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { MAX_TREEMAP_DEPTH } from '@shared/tree-types'
 import { TreeStore } from './tree-store'
-import { type Box, squarify, TREEMAP_HEADER, treemapLayout } from './treemap'
+import { type Box, MAX_TREEMAP_RECTS, squarify, TREEMAP_HEADER, treemapLayout } from './treemap'
 
 const area = (box: Box) => box.w * box.h
 
@@ -110,7 +111,10 @@ describe('treemapLayout', () => {
     const free = sized?.rects.find((r) => r.kind === 'free')
     expect(free).toMatchObject({ id: null, name: 'Free space', value: 1_000_000, depth: 0 })
     expect(sized?.rects.find((r) => r.id === 'd0')).toMatchObject({ depth: 0, nested: true })
-    expect(sized?.rects.filter((r) => r.depth === 1).length).toBeGreaterThan(0)
+    // The drive root's own block does not use a level: Level 0 keeps its children flat.
+    expect(sized?.rects.filter((r) => r.depth === 1).length).toBe(0)
+    const oneLevel = treemapLayout(store, 'd0', 'allocated', 1, 400, 200)
+    expect(oneLevel?.rects.filter((r) => r.depth === 1).length).toBeGreaterThan(0)
 
     const counted = treemapLayout(store, 'd0', 'files', 0, 400, 200)
     expect(counted?.rects.some((r) => r.kind === 'free')).toBe(false)
@@ -129,5 +133,52 @@ describe('treemapLayout', () => {
     const store = new TreeStore('C:\\', 4096)
     expect(treemapLayout(store, 'd9', 'size', 0, 100, 100)).toBeNull()
     expect(treemapLayout(store, 'd0', 'size', 0, 100, 100)?.rects).toEqual([])
+  })
+})
+
+describe('treemapLayout limits', () => {
+  it('drops blocks under 4 px² and leaves out zero-size children', () => {
+    const store = new TreeStore('C:\\', 1)
+    store.file(store.folder(0, 'Big', 0), 1_000_000, 'big.bin', 0)
+    store.file(store.folder(0, 'Tiny', 0), 1, 'tiny.bin', 0)
+    store.folder(0, 'Empty', 0)
+    const layout = treemapLayout(store, 'd0', 'size', 0, 100, 100)
+    expect(layout?.rects.map((r) => r.name)).toEqual(['Big'])
+  })
+
+  it('lays out nothing in a box with no area', () => {
+    const { store } = sample()
+    expect(treemapLayout(store, 'd0', 'size', 0, 0, 200)?.rects).toEqual([])
+    expect(treemapLayout(store, 'd0', 'size', 0, 200, 0)?.rects).toEqual([])
+  })
+
+  it('clamps the depth to MAX_TREEMAP_DEPTH and treats a negative depth as 0', () => {
+    const store = new TreeStore('C:\\', 1)
+    let parent = 0
+    for (let i = 0; i < MAX_TREEMAP_DEPTH + 2; i += 1) {
+      parent = store.folder(parent, `L${i}`, 0)
+      store.file(parent, 1000, `f${i}.bin`, 0)
+    }
+    const deep = treemapLayout(store, 'd0', 'size', 99, 1000, 1000)
+    expect(Math.max(...(deep?.rects.map((r) => r.depth) ?? []))).toBe(MAX_TREEMAP_DEPTH)
+    const flat = treemapLayout(store, 'd0', 'size', -3, 1000, 1000)
+    expect(flat?.rects.every((r) => r.depth === 0 && !r.nested)).toBe(true)
+  })
+
+  it('caps the rectangles and keeps large shallow blocks under the cap', () => {
+    const store = new TreeStore('C:\\', 1)
+    const big = store.folder(0, 'Big', 0)
+    for (let i = 0; i < 30_000; i += 1) store.file(big, 2, `b${i}.bin`, 0)
+    const small = store.folder(0, 'Small', 0)
+    store.file(small, 40_000, 's.bin', 0)
+
+    // Depth 2: Big's files group (depth 1) holds the 30,000 files (depth 2).
+    const layout = treemapLayout(store, 'd0', 'size', 2, 1000, 1000)
+    const rects = layout?.rects ?? []
+    expect(rects).toHaveLength(MAX_TREEMAP_RECTS)
+    expect(rects.some((r) => r.id === `d${small}` && r.depth === 0)).toBe(true)
+    const firstDeep = rects.findIndex((r) => r.depth === 1)
+    expect(firstDeep).toBeGreaterThan(0)
+    expect(rects.slice(0, firstDeep).every((r) => r.depth === 0)).toBe(true)
   })
 })
