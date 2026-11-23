@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ScanStartResult } from '@shared/scan-types'
 import { createFakeApi, TEST_DRIVE_DETAILS, TEST_DRIVES, TEST_PLACES } from '../test/fake-api'
 import { makeDone, makeFailed, makeProgress } from '../test/scan-fixtures'
@@ -11,6 +11,7 @@ import {
   GONE_MESSAGE,
   NETWORK_PATH_ERROR,
   PATH_COPIED,
+  REVISION_THROTTLE_MS,
   SCAN_CRASH_MESSAGE,
   START_SCAN_ERROR,
 } from './workspace-store'
@@ -383,5 +384,90 @@ describe('helpers', () => {
     expect(driveRootOf('d:\\Photos')).toBe('D:\\')
     expect(driveRootOf('\\\\srv\\x')).toBeNull()
     expect(actionError('x')).toBe('StorageIQ couldn’t do that.')
+  })
+})
+
+describe('the revision throttle while scanning', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  async function timed() {
+    vi.useFakeTimers()
+    const api = createFakeApi()
+    const store = createWorkspaceStore(api)
+    await store.getState().startScan('D:\\')
+    return { api, store }
+  }
+
+  it('progress events reload at most once per second while scanning', async () => {
+    const { api, store } = await timed()
+    const before = store.getState().revision
+    for (let i = 1; i <= 10; i += 1) {
+      api.emitScanProgress(makeProgress({ files: i * 100 }))
+      expect(store.getState().totals.files).toBe(i * 100)
+      vi.advanceTimersByTime(100)
+    }
+    expect(store.getState().revision - before).toBe(2) // the leading bump plus one trailing
+  })
+
+  it('the first progress event bumps the revision at once', async () => {
+    const { api, store } = await timed()
+    const before = store.getState().revision
+    api.emitScanProgress(makeProgress())
+    expect(store.getState().revision).toBe(before + 1)
+  })
+
+  it('schedules at most one trailing bump for events inside the window', async () => {
+    const { api, store } = await timed()
+    const before = store.getState().revision
+    api.emitScanProgress(makeProgress({ files: 1 }))
+    vi.advanceTimersByTime(100)
+    api.emitScanProgress(makeProgress({ files: 2 }))
+    api.emitScanProgress(makeProgress({ files: 3 }))
+    expect(store.getState().revision).toBe(before + 1)
+    vi.advanceTimersByTime(REVISION_THROTTLE_MS - 100)
+    expect(store.getState().revision).toBe(before + 2)
+    vi.advanceTimersByTime(5_000)
+    expect(store.getState().revision).toBe(before + 2)
+  })
+
+  it('done bumps the revision immediately and cancels the trailing bump', async () => {
+    const { api, store } = await timed()
+    const before = store.getState().revision
+    api.emitScanProgress(makeProgress({ files: 1 }))
+    vi.advanceTimersByTime(100)
+    api.emitScanProgress(makeProgress({ files: 2 })) // pending trailing bump
+    api.emitScanDone(makeDone())
+    expect(store.getState().revision).toBe(before + 2)
+    vi.advanceTimersByTime(5_000)
+    expect(store.getState().revision).toBe(before + 2)
+  })
+
+  it('tree:changed bumps immediately while a trailing timer is pending, and no extra bump follows', async () => {
+    const { api, store } = await timed()
+    api.emitScanProgress(makeProgress({ files: 1 }))
+    vi.advanceTimersByTime(100)
+    api.emitScanProgress(makeProgress({ files: 2 })) // pending trailing bump
+    const before = store.getState().revision
+    api.emitTreeChanged({
+      scanId: 'scan-1',
+      nodeId: 'd0',
+      totals: { files: 5, folders: 1, bytes: 5, allocatedBytes: 4096 },
+    })
+    expect(store.getState().revision).toBe(before + 1)
+    vi.advanceTimersByTime(5_000)
+    expect(store.getState().revision).toBe(before + 1)
+  })
+
+  it('dispose clears the pending timer', async () => {
+    const { api, store } = await timed()
+    api.emitScanProgress(makeProgress({ files: 1 }))
+    vi.advanceTimersByTime(100)
+    api.emitScanProgress(makeProgress({ files: 2 })) // pending trailing bump
+    const before = store.getState().revision
+    store.dispose()
+    vi.advanceTimersByTime(5_000)
+    expect(store.getState().revision).toBe(before)
   })
 })

@@ -57,6 +57,9 @@ export const GONE_MESSAGE = 'That item no longer exists. The list was refreshed.
 export const EXPAND_ALL_LEVELS = 64
 export const DEFAULT_TREEMAP_DEPTH = 1
 
+/** While scanning, progress events bump the tree revision at most this often (ms). */
+export const REVISION_THROTTLE_MS = 1000
+
 const EMPTY_TOTALS: ScanTotals = {
   files: 0,
   folders: 0,
@@ -171,6 +174,43 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
   const inFlight = new Set<string>()
   /** Changes whenever the lists are thrown away (new scan, new sort); stale replies are dropped. */
   let generation = 0
+
+  /** Pending trailing revision bump while a scan reports progress. */
+  let revisionTimer: ReturnType<typeof setTimeout> | null = null
+  let lastProgressBumpAt = Number.NEGATIVE_INFINITY
+
+  const clearRevisionTimer = () => {
+    if (revisionTimer !== null) clearTimeout(revisionTimer)
+    revisionTimer = null
+  }
+
+  /** An immediate bump: cancels any pending trailing bump and restarts the progress window. */
+  const bumpRevision = (current: number): number => {
+    clearRevisionTimer()
+    lastProgressBumpAt = Number.NEGATIVE_INFINITY
+    return current + 1
+  }
+
+  /**
+   * Progress events reload the tree and treemap through `revision`; at most once per
+   * `REVISION_THROTTLE_MS`: the first event at once, then one trailing bump per window.
+   */
+  const throttledBump = () => {
+    const now = Date.now()
+    const wait = lastProgressBumpAt + REVISION_THROTTLE_MS - now
+    if (wait <= 0) {
+      clearRevisionTimer()
+      lastProgressBumpAt = now
+      store.setState({ revision: store.getState().revision + 1 })
+    } else if (revisionTimer === null) {
+      revisionTimer = setTimeout(() => {
+        revisionTimer = null
+        if (store.getState().phase !== 'scanning') return
+        lastProgressBumpAt = Date.now()
+        store.setState({ revision: store.getState().revision + 1 })
+      }, wait)
+    }
+  }
 
   const store = createStore<WorkspaceState>()((set, get) => {
     const fail = (error: unknown) => set({ banner: { tone: 'error', message: actionError(error) } })
@@ -330,7 +370,7 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
           scrollTarget: null,
           treemapRootId: ROOT_NODE_ID,
           banner: null,
-          revision: get().revision + 1,
+          revision: bumpRevision(get().revision),
         })
         loadDrive(target)
         let started: ScanStartResult
@@ -380,7 +420,7 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
         set({ mode })
         if (byMode) {
           resetTree()
-          set({ revision: get().revision + 1 })
+          set({ revision: bumpRevision(get().revision) })
         }
       },
 
@@ -399,7 +439,7 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
             ? 'asc'
             : 'desc'
         resetTree()
-        set({ sortColumn: column, sortDir: dir, revision: get().revision + 1 })
+        set({ sortColumn: column, sortDir: dir, revision: bumpRevision(get().revision) })
       },
 
       setExpanded(id, open) {
@@ -561,15 +601,12 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
       return
     }
     if (event.payload.scanId !== scanId) return
-    const revision = store.getState().revision + 1
     if (event.kind === 'progress') {
       const { files, folders, bytes, allocatedBytes, errorCount, elapsedMs } = event.payload
-      store.setState({
-        totals: { files, folders, bytes, allocatedBytes, errorCount },
-        elapsedMs,
-        revision,
-      })
+      store.setState({ totals: { files, folders, bytes, allocatedBytes, errorCount }, elapsedMs })
+      throttledBump()
     } else if (event.kind === 'done') {
+      const revision = bumpRevision(store.getState().revision)
       const { files, folders, bytes, allocatedBytes, errorCount, elapsedMs, errors, status } =
         event.payload
       store.setState({
@@ -590,7 +627,11 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
         )
       }
     } else {
-      store.setState({ phase: 'failed', banner: { tone: 'crash', message: SCAN_CRASH_MESSAGE } })
+      store.setState({
+        phase: 'failed',
+        banner: { tone: 'crash', message: SCAN_CRASH_MESSAGE },
+        revision: bumpRevision(store.getState().revision),
+      })
     }
   }
 
@@ -599,7 +640,7 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
     if (changed.scanId !== state.scanId) return
     store.setState({
       totals: { ...changed.totals, errorCount: state.totals.errorCount },
-      revision: state.revision + 1,
+      revision: bumpRevision(state.revision),
     })
     const root = state.target === null ? null : driveRootOf(state.target)
     if (root !== null) {
@@ -630,7 +671,7 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
       scrollTarget: null,
       treemapRootId: ROOT_NODE_ID,
       banner: null,
-      revision: store.getState().revision + 1,
+      revision: bumpRevision(store.getState().revision),
     })
     const root = driveRootOf(restarted.root)
     if (root !== null) {
@@ -653,6 +694,7 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
 
   return Object.assign(store, {
     dispose() {
+      clearRevisionTimer()
       for (const unsubscribe of unsubscribers) unsubscribe()
     },
   })

@@ -1,37 +1,30 @@
-import { promises as fsp } from 'node:fs'
 import path from 'node:path'
 import type { ScanErrorKind } from '@shared/scan-types'
 
-/**
- * One directory entry. `isDirectory()` comes from the directory listing itself (no handle is
- * opened), so it is known even when `lstat` later fails. For entries `lstat` can read, the
- * walk trusts `lstat` for the type.
- */
-export interface WalkDirent {
+/** One directory entry as the directory listing reports it (no file is opened). */
+export interface ListedEntry {
   name: string
-  isDirectory(): boolean
+  isDirectory: boolean
+  /** symlink or junction: counted at 0 bytes, never entered */
+  isLink: boolean
+  size: number
+  modifiedMs: number
 }
 
-export interface WalkStats {
-  size: number
-  /** Last modification time in ms since the epoch. */
-  mtimeMs: number
-  isDirectory(): boolean
-  isSymbolicLink(): boolean
+export interface DirectoryListing {
+  entries: ListedEntry[]
+  /** Node-style code when the listing failed (completely or part-way); null when complete */
+  errorCode: string | null
 }
 
 /**
- * The only file-system calls the scanner makes. There is deliberately no way to open or read a
- * file, so the scan can never download a cloud placeholder or touch file contents.
+ * The only file-system call the scanner makes. There is deliberately no way to open or read a
+ * file, so the scan can never download a cloud placeholder or touch file contents. It never
+ * rejects for file-system errors (they come back in `errorCode`); it may reject only for a
+ * programming error.
  */
-export interface WalkFs {
-  opendir(dirPath: string): Promise<AsyncIterable<WalkDirent>>
-  lstat(entryPath: string): Promise<WalkStats>
-}
-
-export const nodeWalkFs: WalkFs = {
-  opendir: (dirPath) => fsp.opendir(dirPath, { bufferSize: 128 }),
-  lstat: (entryPath) => fsp.lstat(entryPath),
+export interface DirectoryLister {
+  list(dirPath: string): Promise<DirectoryListing>
 }
 
 /** Receives everything the walk finds. `D` is the sink's own handle for a folder. */
@@ -40,25 +33,31 @@ export interface WalkSink<D> {
   folder(parent: D, name: string, modifiedMs: number): D
   /**
    * A file, link or other non-folder entry inside `parent`. Links count with 0 bytes.
-   * `modifiedMs` is 0 when `lstat` failed.
+   * `modifiedMs` is 0 when the listing has no time.
    */
   file(parent: D, bytes: number, name: string, modifiedMs: number): void
-  /** `path` could not be listed or inspected; the walk continues. */
+  /** `path` could not be listed (completely); the walk continues. */
   error(path: string, code: string, kind: ScanErrorKind): void
   /** The walk started listing `path`. */
   visiting(path: string): void
 }
 
 export interface WalkOptions {
-  fs: WalkFs
+  lister: DirectoryLister
   signal: AbortSignal
   /** Directories listed at the same time; capped at `MAX_DIRECTORIES_IN_FLIGHT`. */
   concurrency?: number
 }
 
-export const MAX_DIRECTORIES_IN_FLIGHT = 16
-/** Entries of one directory inspected with `lstat` at the same time. */
-const LSTAT_BATCH_SIZE = 64
+/**
+ * Directories listed at once. Only the directory opens overlap (the listing itself is a
+ * synchronous loop), so a higher value mostly adds memory. Measured on `C:\Program Files`
+ * with `scripts/bench-walk.mjs`: 4 / 8 / 16 in flight gave roughly 15-37k / 10-25k / 17-29k files/s over four
+ * runs each, so the differences are inside the run-to-run noise (about +-50%); 8 is the default.
+ */
+export const MAX_DIRECTORIES_IN_FLIGHT = 8
+/** Entries handled between two abort checks, so an abort in a huge folder returns promptly. */
+const ABORT_CHUNK = 4096
 
 export function errorCode(error: unknown): string {
   if (
@@ -75,8 +74,8 @@ export function errorCode(error: unknown): string {
 /**
  * Walks `rootPath` with at most `concurrency` directories in flight. It never follows symlinks
  * or junctions, never opens file contents, and stops starting work as soon as `signal` aborts
- * (a listing in progress stops at its next entry). Resolves when all started work has settled;
- * rejects only if the sink throws.
+ * (a listing being handled stops at its next chunk of entries). Resolves when all started work
+ * has settled; rejects only if the sink throws.
  */
 export function walk<D>(
   rootPath: string,
@@ -84,7 +83,7 @@ export function walk<D>(
   sink: WalkSink<D>,
   options: WalkOptions,
 ): Promise<void> {
-  const { fs, signal } = options
+  const { lister, signal } = options
   const limit = Math.max(
     1,
     Math.min(options.concurrency ?? MAX_DIRECTORIES_IN_FLIGHT, MAX_DIRECTORIES_IN_FLIGHT),
@@ -95,66 +94,30 @@ export function walk<D>(
   return new Promise<void>((resolve, reject) => {
     let failed = false
 
-    const inspect = async (dirPath: string, handle: D, entries: WalkDirent[]): Promise<void> => {
-      const results = await Promise.all(
-        entries.map(async (entry) => {
-          const { name } = entry
-          const entryPath = path.join(dirPath, name)
-          try {
-            return { name, entryPath, stats: await fs.lstat(entryPath) }
-          } catch (error) {
-            const isFolder = entry.isDirectory() // a method call: a real Dirent needs its own `this`
-            sink.error(entryPath, errorCode(error), isFolder ? 'folder' : 'file')
-            // Windows refuses lstat on locked system files (pagefile.sys, hiberfil.sys,
-            // swapfile.sys, DumpStack.log.tmp). They are still files, so count them, at 0
-            // bytes. Phase 2b will read their real size through koffi (FindFirstFileExW).
-            if (!isFolder) sink.file(handle, 0, name, 0)
-            return null
-          }
-        }),
-      )
-      for (const result of results) {
-        if (result === null) continue
-        const { stats } = result
-        if (stats.isSymbolicLink()) {
-          // symlinks and junctions are counted, never entered
-          sink.file(handle, 0, result.name, stats.mtimeMs)
-        } else if (stats.isDirectory()) {
-          queue.push({
-            path: result.entryPath,
-            handle: sink.folder(handle, result.name, stats.mtimeMs),
-          })
-        } else {
-          sink.file(handle, stats.size, result.name, stats.mtimeMs)
-        }
-      }
-      pump()
-    }
-
     const listDirectory = async (dirPath: string, handle: D): Promise<void> => {
       sink.visiting(dirPath)
-      let entries: AsyncIterable<WalkDirent>
-      try {
-        entries = await fs.opendir(dirPath)
-      } catch (error) {
-        sink.error(dirPath, errorCode(error), 'folder')
-        return
-      }
-      let batch: WalkDirent[] = []
-      try {
-        for await (const entry of entries) {
-          if (signal.aborted) break
-          batch.push(entry)
-          if (batch.length >= LSTAT_BATCH_SIZE) {
-            const entriesToInspect = batch
-            batch = []
-            await inspect(dirPath, handle, entriesToInspect)
+      const listing = await lister.list(dirPath)
+      if (listing.errorCode !== null) sink.error(dirPath, listing.errorCode, 'folder')
+      const { entries } = listing
+      for (let start = 0; start < entries.length; start += ABORT_CHUNK) {
+        if (signal.aborted) return
+        const end = Math.min(start + ABORT_CHUNK, entries.length)
+        for (let i = start; i < end; i += 1) {
+          const entry = entries[i]
+          if (entry === undefined) continue
+          if (entry.isLink) {
+            // symlinks and junctions are counted, never entered (even when they are folders)
+            sink.file(handle, 0, entry.name, entry.modifiedMs)
+          } else if (entry.isDirectory) {
+            queue.push({
+              path: path.join(dirPath, entry.name),
+              handle: sink.folder(handle, entry.name, entry.modifiedMs),
+            })
+          } else {
+            sink.file(handle, entry.size, entry.name, entry.modifiedMs)
           }
         }
-      } catch (error) {
-        sink.error(dirPath, errorCode(error), 'folder')
       }
-      if (!signal.aborted && batch.length > 0) await inspect(dirPath, handle, batch)
     }
 
     const pump = (): void => {

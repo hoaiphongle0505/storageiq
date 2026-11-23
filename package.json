@@ -25,6 +25,7 @@
     "test:perf": "vitest run --config vitest.perf.config.mts",
     "test:e2e": "electron-vite build && playwright test",
     "dist": "npm run build && electron-builder --win --x64 --publish never",
+    "bench:walk": "node scripts/bench-walk.mjs",
     "test:packaged": "node scripts/check-packaged-app.mjs",
     "metrics": "node scripts/report-metrics.mjs",
     "tokens": "node scripts/build-tokens.mjs"

@@ -1,4 +1,4 @@
-import type { ScanDone, ScanProgress } from './scan-types'
+import type { ScanDone, ScanFailed, ScanProgress } from './scan-types'
 import type {
   NodeId,
   SizeMode,
@@ -72,5 +72,6 @@ export type ScannerRequest =
 export type ScannerMessage =
   | { type: 'progress'; payload: ScanProgress }
   | { type: 'done'; payload: ScanDone }
+  | { type: 'failed'; payload: ScanFailed }
   | { type: 'reply'; requestId: number; ok: true; result: unknown }
   | { type: 'reply'; requestId: number; ok: false; message: string }

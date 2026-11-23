@@ -30,13 +30,13 @@ function tree(): Record<string, FakeNode> {
 
 function setup(options: FakeWalkFsOptions = {}, children: Record<string, FakeNode> = tree()) {
   const root = dir(children)
-  const fs = createFakeWalkFs(ROOT, root, options)
+  const lister = createFakeWalkFs(ROOT, root, options)
   const posted: ScannerMessage[] = []
   let tick: (() => void) | null = null
   let intervalMs = 0
   let clock = 1_000
   const host = createScannerHost({
-    fs,
+    lister,
     post: (message) => {
       posted.push(message)
     },
@@ -158,27 +158,13 @@ describe('createScannerHost', () => {
     expect(await t.query({ kind: 'totals', scanId: 's1' })).toBeNull()
   })
 
-  it('counts a locked file at 0 bytes and reports it as a file', async () => {
-    const notes = path.join(ROOT, 'notes.txt')
-    const t = setup({ lstatErrors: { [notes]: 'EPERM' } })
-    t.host.handle({ type: 'start', scanId: 's1', root: ROOT, volume: VOLUME })
-    await t.host.idle()
-
-    expect(t.done()[0]).toMatchObject({
-      files: 4,
-      bytes: 600,
-      errors: [{ path: notes, kind: 'file', reason: 'access-denied', code: 'EPERM' }],
-      errorCount: 1,
-    })
-  })
-
   it('answers tree queries for the current scan, during and after it', async () => {
     let release: () => void = () => undefined
     const gate = new Promise<void>((resolve) => {
       release = resolve
     })
     const t = setup({
-      beforeOpendir: async (dirPath) => {
+      beforeList: async (dirPath) => {
         if (dirPath === path.join(ROOT, 'Music')) await gate
       },
     })
@@ -266,7 +252,7 @@ describe('createScannerHost', () => {
     })
     const opened: string[] = []
     const t = setup({
-      beforeOpendir: async (dirPath) => {
+      beforeList: async (dirPath) => {
         opened.push(dirPath)
         if (gateOn && dirPath === path.join(ROOT, 'Photos')) await gate
       },
@@ -327,7 +313,7 @@ describe('createScannerHost', () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve
     })
-    const t = setup({ beforeOpendir: () => gate })
+    const t = setup({ beforeList: () => gate })
     t.host.handle({ type: 'start', scanId: 's1', root: ROOT, volume: VOLUME })
     await expect(t.query({ kind: 'refresh', scanId: 's1', nodeId: 'd0' })).rejects.toThrow(
       REFRESH_BUSY_MESSAGE,

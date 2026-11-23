@@ -17,14 +17,14 @@ import {
 } from './tree-queries'
 import { TreeStore } from './tree-store'
 import { treemapLayout } from './treemap'
-import { walk, type WalkFs } from './walk'
+import { walk, type DirectoryLister } from './walk'
 
 export const SNAPSHOT_INTERVAL_MS = 250
 export const REFRESH_BUSY_MESSAGE = 'A scan is running; refresh it when the scan ends.'
 export const ROOT_REFRESH_MESSAGE = 'The scan root is rescanned with a new scan, not refreshed.'
 
 export interface ScannerHostDeps {
-  fs: WalkFs
+  lister: DirectoryLister
   post(message: ScannerMessage): void
   now(): number
   /** Calls `tick` every `intervalMs` until the returned function is called. */
@@ -158,7 +158,7 @@ export function createScannerHost(deps: ScannerHostDeps): ScannerHost {
       deps.post({ type: 'progress', payload: progress })
     }, SNAPSHOT_INTERVAL_MS)
     try {
-      await walk(rootPath, 0, tree, { fs: deps.fs, signal })
+      await walk(rootPath, 0, tree, { lister: deps.lister, signal })
     } finally {
       stopTicker()
     }
@@ -188,7 +188,10 @@ export function createScannerHost(deps: ScannerHostDeps): ScannerHost {
     refreshController = controller
     try {
       tree.resetFolder(folder)
-      await walk(tree.folderPath(folder), folder, tree, { fs: deps.fs, signal: controller.signal })
+      await walk(tree.folderPath(folder), folder, tree, {
+        lister: deps.lister,
+        signal: controller.signal,
+      })
     } finally {
       if (refreshController === controller) refreshController = null
     }

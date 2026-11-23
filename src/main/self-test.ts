@@ -12,6 +12,7 @@ export const SELF_TEST_EXIT = {
   shellMenuFailed: 13,
   scanFailed: 20,
   asarEntered: 21,
+  walkEmpty: 22,
 } as const
 
 /** A real Explorer menu has Open, Copy, Properties and more; fewer items means COM failed. */
@@ -78,6 +79,15 @@ export async function runSelfTest(deps: SelfTestDeps): Promise<number> {
   if (result.rootChildren.some((row) => row.kind === 'folder' && row.name === 'app.asar')) {
     deps.log('scan: walked into app.asar instead of counting it as a file')
     return SELF_TEST_EXIT.asarEntered
+  }
+  // The listing must report real sizes: a walk that found nothing, or only zero-byte files,
+  // means the disk reader (koffi in the scanner process) is not working.
+  const hasBytes = result.rootChildren.some(
+    (row) => (row.kind === 'file' || row.kind === 'files') && row.size > 0,
+  )
+  if (result.done.files === 0 || !hasBytes) {
+    deps.log(`scan: the walk found no file with a size (${result.done.files} files)`)
+    return SELF_TEST_EXIT.walkEmpty
   }
   deps.log(`scan: ${result.done.files} files, ${result.done.folders} folders`)
   return SELF_TEST_EXIT.ok

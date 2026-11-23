@@ -178,6 +178,16 @@ describe('createScanService', () => {
     expect(t.events).toEqual([['scan:done', done('scan-1', 'canceled')]])
   })
 
+  it('relays a failed message of the active scan as scan:failed and ends the scan', () => {
+    const t = setup()
+    t.service.start('C:\\Data', V)
+    const failed = { scanId: 'scan-1', message: 'The disk reader could not be loaded.' }
+    t.child().emit({ type: 'failed', payload: failed })
+    t.child().emit({ type: 'done', payload: done('scan-1') })
+
+    expect(t.events).toEqual([['scan:failed', failed]])
+  })
+
   it('turns an unexpected exit during a scan into scan:failed and forks anew next time', () => {
     const t = setup()
     t.service.start('C:\\Data', V)

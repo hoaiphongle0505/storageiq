@@ -122,4 +122,16 @@ describe('runSelfTest', () => {
     })
     expect(await runSelfTest(deps)).toBe(SELF_TEST_EXIT.asarEntered)
   })
+
+  it('fails when the walk found no files or no file with a size', async () => {
+    const empty = setup({
+      scanOnce: vi.fn(async () => completed(scanDone({ files: 0 }), [row('x', 'folder')])),
+    })
+    expect(await runSelfTest(empty.deps)).toBe(SELF_TEST_EXIT.walkEmpty)
+
+    const zero = setup({
+      scanOnce: vi.fn(async () => completed(scanDone(), [row('app.asar.unpacked', 'folder')])),
+    })
+    expect(await runSelfTest(zero.deps)).toBe(SELF_TEST_EXIT.walkEmpty)
+  })
 })

@@ -59,7 +59,9 @@ function isScannerMessage(value: unknown): value is ScannerMessage {
   if (typeof value !== 'object' || value === null) return false
   const record = value as { type?: unknown; payload?: unknown; requestId?: unknown }
   if (record.type === 'reply') return typeof record.requestId === 'number'
-  if (record.type !== 'progress' && record.type !== 'done') return false
+  if (record.type !== 'progress' && record.type !== 'done' && record.type !== 'failed') {
+    return false
+  }
   const payload = record.payload as { scanId?: unknown } | null | undefined
   return typeof payload === 'object' && payload !== null && typeof payload.scanId === 'string'
 }
@@ -109,6 +111,9 @@ export function createScanService(deps: ScanServiceDeps): ScanService {
       if (message.payload.scanId !== activeScanId) return // superseded or already finished
       if (message.type === 'progress') {
         deps.sendEvent('scan:progress', message.payload)
+      } else if (message.type === 'failed') {
+        activeScanId = null
+        deps.sendEvent('scan:failed', message.payload)
       } else {
         activeScanId = null
         deps.sendEvent('scan:done', message.payload)
