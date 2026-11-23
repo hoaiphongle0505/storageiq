@@ -273,7 +273,7 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
             aria-selected={tab === entry.id}
             onClick={() => setTab(entry.id)}
             onFocus={() => setTab(entry.id)}
-            className="relative min-h-6 rounded-control px-3 text-[13px] leading-[18px] font-medium text-ink-muted transition-colors duration-[120ms] after:absolute after:inset-x-2 after:bottom-0.5 after:h-0.5 after:rounded-[1px] after:bg-accent after:opacity-0 hover:bg-row-hover hover:text-ink aria-selected:font-semibold aria-selected:text-ink aria-selected:after:opacity-100"
+            className="relative min-h-6 rounded-control px-3 text-[13px] leading-[18px] font-medium text-ink-muted transition-colors duration-[120ms] after:absolute after:inset-x-2 after:bottom-0.5 after:h-0.5 after:rounded-[1px] after:bg-accent after:opacity-0 hover:bg-row-hover hover:text-ink aria-selected:font-semibold aria-selected:text-ink aria-selected:after:opacity-100 forced-colors:aria-selected:underline forced-colors:aria-selected:decoration-2 forced-colors:aria-selected:decoration-[Highlight] forced-colors:aria-selected:underline-offset-4"
           >
             {entry.label}
           </button>

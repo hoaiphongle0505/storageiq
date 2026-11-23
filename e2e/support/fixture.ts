@@ -36,6 +36,9 @@ export function allocated(fileSizes: number[], clusterBytes: number): number {
   )
 }
 
+/** Video, image, document, archive, app and code files (see the file-type categories). */
+const EXTENSIONS = ['mp4', 'jpg', 'pdf', 'zip', 'exe', 'js']
+
 /**
  * 12 top-level folders of different sizes, each with a nested folder; one file directly in the
  * root; and a junction to a folder outside the root, which must be counted as one 0-byte entry
@@ -56,10 +59,17 @@ export function createScanFixture(): ScanFixture {
     const nested = path.join(folder, 'nested')
     mkdirSync(nested, { recursive: true })
     const size = i * 1000
+    // A realistic mix of file types, so the legend shows several categories and not just "Other".
     for (let f = 0; f < 3; f += 1)
-      writeFileSync(path.join(folder, `file-${f}.bin`), Buffer.alloc(size))
+      writeFileSync(
+        path.join(folder, `file-${f}.${EXTENSIONS[(i + f) % EXTENSIONS.length]}`),
+        Buffer.alloc(size),
+      )
     for (let f = 0; f < 2; f += 1)
-      writeFileSync(path.join(nested, `file-${f}.bin`), Buffer.alloc(size))
+      writeFileSync(
+        path.join(nested, `file-${f}.${EXTENSIONS[(i + f + 3) % EXTENSIONS.length]}`),
+        Buffer.alloc(size),
+      )
     tops.push({ name, fileSizes: Array(5).fill(size) as number[], files: 5, folders: 1 })
   }
   writeFileSync(path.join(root, 'root-file.txt'), Buffer.alloc(777))

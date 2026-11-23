@@ -76,6 +76,35 @@ test('opens on the empty workspace', async () => {
   expect(await consoleErrors(app!)).toEqual([])
 })
 
+test('arrow keys move focus exactly one item in the toolbar, the tab strip and the Select menu', async () => {
+  // Detection check: whichever way focusgroup is provided (native or the fallback), one key
+  // press is one step, never two.
+  const toolbarButtons = page.getByRole('toolbar', { name: /commands$/ }).getByRole('button')
+  expect(await toolbarButtons.count()).toBeGreaterThan(3)
+  await toolbarButtons.nth(0).focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(toolbarButtons.nth(1)).toBeFocused()
+  await page.keyboard.press('ArrowRight')
+  await expect(toolbarButtons.nth(2)).toBeFocused()
+  await page.keyboard.press('ArrowLeft')
+  await expect(toolbarButtons.nth(1)).toBeFocused()
+
+  const tabs = page.getByRole('tablist', { name: 'Ribbon' }).getByRole('tab')
+  await tabs.nth(1).focus() // Home
+  await page.keyboard.press('ArrowRight')
+  await expect(tabs.nth(2)).toBeFocused()
+
+  await page.getByRole('tab', { name: 'Home' }).click()
+  const menu = await openSelectMenu(page)
+  const items = menu.getByRole('menuitem')
+  await page.keyboard.press('ArrowDown') // from the trigger into the first item
+  await expect(items.nth(0)).toBeFocused()
+  await page.keyboard.press('ArrowDown')
+  await expect(items.nth(1)).toBeFocused()
+  await page.keyboard.press('ArrowUp')
+  await expect(items.nth(0)).toBeFocused()
+})
+
 test('the Select menu lists the system drive', async () => {
   const menu = await openSelectMenu(page)
   await expect(menu.getByRole('group', { name: 'Drives' })).toContainText(`(${systemDrive})`)
@@ -187,8 +216,13 @@ test('the treemap legend names the file types with their shares after a scan', a
   await expect(legend).toBeVisible()
   const items = legend.getByRole('listitem')
   await expect.poll(() => items.count()).toBeGreaterThan(0)
-  // The file-type items carry text: a category name and its share.
+  // The fixture mixes video, image, document, archive, app and code files, so the legend names
+  // those categories with their shares and is not a single "Other 100%".
+  for (const label of ['Video', 'Images', 'Documents', 'Archives', 'Apps & installers', 'Code']) {
+    await expect(legend.getByRole('listitem').filter({ hasText: label })).toHaveCount(1)
+  }
   await expect(legend).toContainText(/\d+(\.\d)?%/)
+  await expect(legend).not.toContainText('Other 100')
   for (const text of await items.allTextContents()) expect(text.trim()).not.toBe('')
 })
 

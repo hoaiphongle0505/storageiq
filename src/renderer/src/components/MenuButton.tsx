@@ -124,7 +124,9 @@ export function MenuButton({
       event.stopPropagation()
       close(true)
     } else if (event.key === 'Tab') {
-      close(false)
+      // Focus goes back to the trigger before the browser moves it, so Tab and Shift+Tab continue
+      // from the trigger (menu button pattern) instead of dropping to the page body.
+      close(true)
     }
   }
 
@@ -211,7 +213,6 @@ function MenuGroup({
           <button
             type="button"
             role="menuitem"
-            tabIndex={-1}
             aria-disabled="true"
             className="flex min-h-8 w-full items-center gap-2 rounded-control px-2.5 text-left text-[13px] leading-[18px] text-ink-subtle"
           >
@@ -226,7 +227,6 @@ function MenuGroup({
                 key={entry.id}
                 type="button"
                 role="menuitem"
-                tabIndex={-1}
                 aria-disabled={entry.disabled ? 'true' : undefined}
                 onClick={() => {
                   if (!entry.disabled) onChoose(entry)

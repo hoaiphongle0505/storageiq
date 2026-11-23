@@ -103,6 +103,37 @@ describe('<SelectMenu />', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
+  it('Tab inside the open menu closes it and continues from the trigger', async () => {
+    const user = userEvent.setup()
+    const { workspace } = renderWithStores(
+      <>
+        <button type="button">Before the menu</button>
+        <SelectMenu />
+        <button type="button">After the menu</button>
+      </>,
+    )
+    await act(() => workspace.getState().loadMenuData())
+    const trigger = screen.getByRole('button', { name: /^Select/ })
+    trigger.focus()
+    await user.keyboard('{ArrowDown}')
+    await waitFor(() =>
+      expect(screen.getByRole('menuitem', { name: 'Local Disk (C:)' })).toHaveFocus(),
+    )
+    await user.tab()
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'After the menu' })).toHaveFocus()
+
+    // Shift+Tab leaves from the trigger too, so focus never falls back to the page body.
+    trigger.focus()
+    await user.keyboard('{ArrowDown}')
+    await waitFor(() =>
+      expect(screen.getByRole('menuitem', { name: 'Local Disk (C:)' })).toHaveFocus(),
+    )
+    await user.tab({ shift: true })
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Before the menu' })).toHaveFocus()
+  })
+
   it('closes on an outside click', async () => {
     const { user } = await openMenu()
     await user.click(document.body)

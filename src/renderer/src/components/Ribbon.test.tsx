@@ -26,6 +26,13 @@ describe('<Ribbon />', () => {
     expect(toolbar()).toHaveAccessibleName('Home commands')
   })
 
+  it('marks the selected tab with an underline in Highlight when colours are forced', () => {
+    renderRibbon()
+    const { className } = screen.getByRole('tab', { name: 'Home' })
+    expect(className).toContain('forced-colors:aria-selected:underline')
+    expect(className).toContain('forced-colors:aria-selected:decoration-[Highlight]')
+  })
+
   it('groups the Home commands into Scan, Mode, Unit and Folder', () => {
     renderRibbon()
     expect(

@@ -54,6 +54,14 @@ describe('<TreemapLegend />', () => {
     expect(swatch?.getAttribute('style')).toContain('var(--treemap-audio)')
   })
 
+  it('draws the "Other" swatch as a filled chip, not an empty box', () => {
+    render(<TreemapLegend layout={layout([rect({})], [{ category: 'other', bytes: 5 }])} />)
+    const swatch = screen.getAllByRole('listitem')[0]?.querySelector('span[aria-hidden]')
+    expect(swatch?.getAttribute('style')).toContain('background: var(--treemap-other)')
+    expect(swatch).toHaveClass('border-line-strong')
+    expect(swatch?.className).toContain('shadow-[inset_')
+  })
+
   it('adds free space with its size and a mixed-folders key', () => {
     const data = layout(
       [

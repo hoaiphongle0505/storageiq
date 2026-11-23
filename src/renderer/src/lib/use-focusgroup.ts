@@ -30,6 +30,9 @@ export function useFocusgroupFallback(
         (item) => item.closest('[focusgroup]') === container,
       )
     const roving = kind !== 'menu'
+    // A native focusgroup ignores an item with `tabindex="-1"` (that is its opt-out), so menu
+    // items carry none in the markup; only this fallback keeps them out of the Tab order.
+    if (!roving) for (const item of items()) item.tabIndex = -1
     if (roving) {
       const all = items()
       const active =

@@ -26,7 +26,10 @@ export function legendItems(layout: TreemapLayout): LegendItem[] {
   return items
 }
 
-const SWATCH = 'size-2.5 shrink-0 rounded-[3px] border border-line-strong forced-colors:hidden'
+// A filled colour chip, not an empty box: the category fill, the 3:1 outline and a darker lower
+// edge like the treemap tiles' shading, so even the pale "Other" fill never reads as a checkbox.
+const SWATCH =
+  'size-2.5 shrink-0 rounded-[3px] border border-line-strong shadow-[inset_0_-3px_0_0_rgb(0_0_0/0.14)] forced-colors:hidden'
 
 function swatchStyle(item: LegendItem): { background: string } {
   if (item.kind === 'category') return { background: `var(--treemap-${item.category})` }
