@@ -1,6 +1,6 @@
 import type { BrowserWindowConstructorOptions } from 'electron'
 
-/** Must stay equal to the `--surface-app` tokens in `src/renderer/src/styles/global.css`. */
+/** Must stay equal to the `surface-app` colours in `design/tokens.json`. */
 export const WINDOW_BACKGROUND = { light: '#f6f7f7', dark: '#161a1b' } as const
 
 export function createMainWindowOptions(input: {
@@ -8,10 +8,10 @@ export function createMainWindowOptions(input: {
   dark: boolean
 }): BrowserWindowConstructorOptions {
   return {
-    width: 1200,
-    height: 780,
-    minWidth: 880,
-    minHeight: 560,
+    width: 1280,
+    height: 860,
+    minWidth: 960,
+    minHeight: 600,
     show: false,
     title: 'StorageIQ',
     backgroundColor: input.dark ? WINDOW_BACKGROUND.dark : WINDOW_BACKGROUND.light,

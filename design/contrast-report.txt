@@ -1,0 +1,62 @@
+Contrast report for design/tokens.json (WCAG 2.2; ui = 3:1 for UI parts and focus rings).
+
+  AAA   15.20:1  light-text               on light-surface-app    
+  AAA   16.31:1  light-text               on light-surface-panel  
+  AAA   14.26:1  light-text               on light-surface-sunken 
+  AA     5.53:1  light-text-muted         on light-surface-app    
+  AA     5.93:1  light-text-muted         on light-surface-panel  
+  AA     5.18:1  light-text-muted         on light-surface-sunken 
+  AAA   12.45:1  light-text               on light-selection      
+  AAA   14.56:1  light-text               on light-row-hover      
+  AAA   13.29:1  light-text               on light-bar            
+  AAA   13.13:1  light-text               on light-pressed        
+  AA     4.52:1  light-text-muted         on light-selection      
+  AA     5.18:1  light-on-accent          on light-accent         
+  AA     6.90:1  light-on-accent          on light-accent-hover   
+  AA     5.18:1  light-accent             on light-surface-panel  
+  AA     6.54:1  light-danger             on light-surface-panel  
+  AA     6.09:1  light-danger             on light-surface-app    
+  AAA   12.01:1  light-text               on light-treemap-0      
+  AAA   10.10:1  light-text               on light-treemap-1      
+  AAA    8.55:1  light-text               on light-treemap-2      
+  AAA   12.94:1  light-text               on light-treemap-files  
+  AAA   13.19:1  light-text               on light-treemap-free   
+  PASS   4.83:1  light-accent             on light-surface-app    ui
+  PASS   3.65:1  light-border-strong      on light-surface-panel  ui
+  PASS   3.89:1  light-bar-fill           on light-surface-panel  ui
+  AAA   14.46:1  dark-text                on dark-surface-app     
+  AAA   13.11:1  dark-text                on dark-surface-panel   
+  AAA   15.13:1  dark-text                on dark-surface-sunken  
+  AA     6.94:1  dark-text-muted          on dark-surface-app     
+  AA     6.29:1  dark-text-muted          on dark-surface-panel   
+  AAA    7.26:1  dark-text-muted          on dark-surface-sunken  
+  AAA   10.49:1  dark-text                on dark-selection       
+  AAA   12.29:1  dark-text                on dark-row-hover       
+  AAA   10.99:1  dark-text                on dark-bar             
+  AAA    9.95:1  dark-text                on dark-pressed         
+  AA     5.03:1  dark-text-muted          on dark-selection       
+  AAA    7.52:1  dark-on-accent           on dark-accent          
+  AAA    8.98:1  dark-on-accent           on dark-accent-hover    
+  AAA    7.29:1  dark-accent              on dark-surface-panel   
+  AAA    9.31:1  dark-danger              on dark-surface-panel   
+  AAA   10.27:1  dark-danger              on dark-surface-app     
+  AAA    9.98:1  dark-text                on dark-treemap-0       
+  AAA    7.47:1  dark-text                on dark-treemap-1       
+  AA     6.01:1  dark-text                on dark-treemap-2       
+  AAA   10.92:1  dark-text                on dark-treemap-files   
+  AAA    8.74:1  dark-text                on dark-treemap-free    
+  PASS   8.05:1  dark-accent              on dark-surface-app     ui
+  PASS   4.34:1  dark-border-strong       on dark-surface-panel   ui
+  PASS   7.29:1  dark-bar-fill            on dark-surface-panel   ui
+  PASS  12.01:1  light-treemap-outline    on light-treemap-0      ui
+  PASS  10.10:1  light-treemap-outline    on light-treemap-1      ui
+  PASS   8.55:1  light-treemap-outline    on light-treemap-2      ui
+  PASS  12.94:1  light-treemap-outline    on light-treemap-files  ui
+  PASS  13.19:1  light-treemap-outline    on light-treemap-free   ui
+  PASS   9.98:1  dark-treemap-outline     on dark-treemap-0       ui
+  PASS   7.47:1  dark-treemap-outline     on dark-treemap-1       ui
+  PASS   6.01:1  dark-treemap-outline     on dark-treemap-2       ui
+  PASS  10.92:1  dark-treemap-outline     on dark-treemap-files   ui
+  PASS   8.74:1  dark-treemap-outline     on dark-treemap-free    ui
+
+  58 pairs, 0 failing AA

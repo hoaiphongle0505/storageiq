@@ -2,47 +2,56 @@
 
 Mode: **Operate.** StorageIQ is a tool. Clarity, scannability and Windows-native expectations come before visual expression. Character shows in precise details: a calm teal accent, tabular numbers and monospaced paths.
 
+Since Phase 3 the window is an analyzer workspace: ribbon, column tree, treemap pane, level bar and status bar. Its structure (density, row height, column order and widths, pane sizes) is measured from the owner's reference screenshots; its name, icons, palette, fonts and copy are StorageIQ's own.
+
 ## Principles
 
-1. Feel at home on Windows 11: Segoe UI Variable, 4 px control radius, 8 px panel radius, native title bar.
+1. Feel at home on Windows 11: Segoe UI Variable, 4 px control radius, 8 px panel radius, native title bar, native Explorer context menu.
 2. Data first: numbers use tabular figures; paths use Cascadia Mono; nothing decorative competes with sizes.
-3. One accent, used only for the primary action and focus.
+3. One accent, used for focus rings and pressed toggles; data bars use the bar tokens and treemap blocks the treemap tokens.
 4. Follow the system light/dark theme; no custom theme switcher in the MVP.
 5. Respect `prefers-reduced-motion`; motion is never needed to understand state.
+6. Icons are Lucide (MIT, `lucide-react`), decorative (`aria-hidden`), always next to a visible label or an `aria-label`.
 
-## Tokens (source: `src/renderer/src/styles/global.css`)
+## Tokens
 
-| Token               | Light     | Dark      | Utility                                                                   |
-| ------------------- | --------- | --------- | ------------------------------------------------------------------------- |
-| `--surface-app`     | `#f6f7f7` | `#161a1b` | `bg-app` (must equal `WINDOW_BACKGROUND` in `src/main/window-options.ts`) |
-| `--surface-panel`   | `#ffffff` | `#1e2324` | `bg-panel`                                                                |
-| `--surface-sunken`  | `#eef0f0` | `#121516` | `bg-sunken`                                                               |
-| `--border`          | `#dde1e1` | `#2e3536` | `border-line`                                                             |
-| `--text`            | `#1b2122` | `#e6eaea` | `text-ink`                                                                |
-| `--text-muted`      | `#5b6667` | `#9aa5a6` | `text-ink-muted`                                                          |
-| `--accent`          | `#0f7a73` | `#4fc1b6` | `bg-accent`                                                               |
-| `--accent-hover`    | `#0c655f` | `#6fd0c6` | `hover:bg-accent-hover`                                                   |
-| `--accent-contrast` | `#ffffff` | `#062421` | `text-on-accent`                                                          |
-| `--danger`          | `#b3261e` | `#f2b8b5` | `text-danger`, `border-danger`                                            |
+Source of truth: `design/tokens.json`. `npm run tokens` writes `design/tokens.css` (CSS custom properties for light and dark); `src/renderer/src/styles/global.css` imports it and maps it into Tailwind (`bg-panel`, `text-ink-muted`, `bg-selection`, …). Components never use raw hex. CI fails when `tokens.css` is stale (`node scripts/build-tokens.mjs --check`).
 
-Typography: body 14 px / 1.43 `Segoe UI Variable Text`; headings `Segoe UI Variable Display`; status text 12 px; paths `Cascadia Mono` 13 px.
+Contrast: `design/contrast-report.txt` lists every text/background and UI pair in both themes with its WCAG ratio; it has zero AA failures. Re-run the design-system contrast checker on `design/tokens.json` after any palette change.
 
-Text contrast meets WCAG 2.2 AA in both themes. Focus is a 2 px accent outline with a 2 px offset.
+| Role                               | Light                  | Dark                     | Utility                          |
+| ---------------------------------- | ---------------------- | ------------------------ | -------------------------------- |
+| `surface-app`                      | `#f6f7f7`              | `#161a1b`                | `bg-app` (= window background)   |
+| `surface-panel`                    | `#ffffff`              | `#1e2324`                | `bg-panel`                       |
+| `surface-sunken`                   | `#eef0f0`              | `#121516`                | `bg-sunken`                      |
+| `border` / `border-strong`         | `#dde1e1` / `#7d8889`  | `#2e3536` / `#7c8889`    | `border-line` / `bg-line-strong` |
+| `text` / `text-muted`              | `#1b2122` / `#5b6667`  | `#e6eaea` / `#9aa5a6`    | `text-ink` / `text-ink-muted`    |
+| `accent` / `on-accent`             | `#0f7a73` / `#ffffff`  | `#4fc1b6` / `#062421`    | `bg-accent` / `text-on-accent`   |
+| `selection` / `row-hover`          | `#cde6e3` / `#eef3f2`  | `#1e3734` / `#1b2a29`    | `bg-selection` / `bg-row-hover`  |
+| `bar` / `bar-fill`                 | `#dcebe9` / `#2f8f87`  | `#1f3331` / `#4fc1b6`    | `bg-bar` / `bg-bar-fill`         |
+| `pressed`                          | `#d6ebe8`              | `#1f3b38`                | `aria-pressed:bg-pressed`        |
+| `treemap-0/1/2`, `-files`, `-free` | teal tints, grey, sand | deep teals, slate, umber | canvas only                      |
+| `danger`                           | `#b3261e`              | `#f2b8b5`                | `text-danger`                    |
 
-## Guidance changes applied to the baseline
+Layout tokens (`--size-*`): tab strip 28, ribbon body 88, header row 32, tree row 30, indent 16, columns 280+/112/112/96/96/112/120, treemap 260 (min 120), level bar 36, status bar 26, splitter 6 (px).
 
-- Inline error "Dismiss" button: added `py-0.5` so the target is at least 24 x 24 CSS px (WCAG 2.2 SC 2.5.8 Target Size, `modern-web-guidance` accessibility guide, "Target sizes"). Without it the button was about 20 px tall.
-- Unreadable-folders disclosure `<summary>`: added `min-h-6 py-0.5` so the toggle meets the 24 x 24 CSS px minimum target (WCAG 2.2 SC 2.5.8; `accessibility` guide, "Target sizes"). Native `<details>` kept (`html`/`search-hidden-content` guides: searchable, accessible by default; no heading inside `<summary>`).
-- Stat grids (`<dl>`) on the scanning and result screens: `grid-cols-2 sm:grid-cols-4` so four stats wrap at narrow widths instead of overflowing (reflow, WCAG 1.4.10; `form-factor-adaptation` guide).
+Typography: body 14 px / 1.43 `Segoe UI Variable Text`; ribbon captions and status text 12 px; paths `Cascadia Mono` 13 px.
 
-Checked and already compliant, so unchanged: the error uses `role="alert"` (live-region guide, critical failures); focus uses `:focus-visible` with an outline and `outline-offset` (focus-indicator guide); the shell uses semantic `main`, `footer` and a labelled `section`; the craft floor's contrast, kicker/eyebrow, nested-card and side-border rules.
+## Components
 
-## Components (Phase 2a)
+Specs with every state and keyboard behaviour: `design/components.md`. Summary:
 
-- **Button** (`src/renderer/src/components/Button.tsx`): `primary` (accent) for the one main action on a screen, `secondary` (panel with a border) for everything else. A busy button uses `aria-disabled="true"`, stays focusable, ignores clicks and keeps its resting colour on hover (`aria-disabled:hover:bg-accent` / `aria-disabled:hover:bg-panel`; roadmap carry-over 8).
-- **Drive card**: the whole card is one button named by its text (`Local Disk (C:) 128 GB free of 512 GB`); removable drives carry a `USB` badge; the used-space bar is decorative (`aria-hidden`) because the text states the numbers.
-- **Data bars** (drive cards, largest folders): neutral `bg-ink-muted` on a `bg-line` track. The accent stays reserved for the primary action and focus (principle 3).
-- **Stats**: a `<dl>` of `Stat` items; values use tabular figures; the exact byte count sits in the `title`.
-- **Progress announcements**: one visually hidden `aria-live="polite"` region, updated at most every 5 s (`useThrottledAnnouncement`).
-- **Focus**: Cancel gets focus when a scan starts; the result heading (`tabIndex=-1`) gets focus when it ends; Retry gets focus on the crash screen.
-- **Unreadable folders**: a native `<details>`/`<summary>` disclosure, closed by default.
+- **Ribbon**: a tab list (File, Home, Scan, View) over one toolbar of labelled groups; toggles use `aria-pressed`, unavailable commands `aria-disabled` (still focusable). Arrow keys move inside the tab list and the toolbar (native `focusgroup`, with a script fallback).
+- **Select menu**: a menu button with grouped items (Drives, Documents and cloud, Recently scanned, Directory).
+- **Column tree**: a virtualized ARIA treegrid; Name cell shows the Mode value over a bar sized to the share of the parent; rows at 10 % or more are bold; one "[N files]" row per folder.
+- **Explorer context menu**: the real Windows shell menu, with StorageIQ's items first.
+- **Treemap pane**: a canvas image with a header (title, × to hide), a level bar (Level 0–5) and a splitter above it.
+- **Status bar**: free space, files found, excluded items (opens their list), bytes per cluster and file system.
+- **Banner** (`role="alert"`), **Dialog** (native `<dialog>`), **Button** (primary/secondary; busy = `aria-disabled` with no hover change).
+
+## Guidance applied
+
+- modern-web-guidance "menu": menu button opens with Enter/Space/click, ArrowDown enters, Escape returns focus, Tab and outside click close; script positioning because Electron 45's Chromium has no CSS anchor positioning.
+- "toolbar" and "tabs": one tab stop, arrow keys, `aria-pressed` toggles, `aria-disabled` instead of `disabled`, selection follows focus in the tab list.
+- Canvas: the treemap is `role="img"` with a label; the tree is the accessible equivalent (the experimental canvas-to-HTML route is not used).
+- Target sizes: ribbon commands are at least 56 × 64 px; small toggles, menu items and the splitter at least 24 px tall (WCAG 2.2 SC 2.5.8).

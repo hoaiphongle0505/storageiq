@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { createMainWindowOptions, WINDOW_BACKGROUND } from './window-options'
 
@@ -26,5 +27,15 @@ describe('createMainWindowOptions', () => {
     expect(createMainWindowOptions({ preloadPath: 'p', dark: false }).backgroundColor).toBe(
       WINDOW_BACKGROUND.light,
     )
+  })
+
+  it('uses the surface-app colours of the design tokens', () => {
+    const tokens = JSON.parse(readFileSync('design/tokens.json', 'utf8')) as {
+      color: Record<'light' | 'dark', Record<string, string>>
+    }
+    expect(WINDOW_BACKGROUND).toEqual({
+      light: tokens.color.light['surface-app'],
+      dark: tokens.color.dark['surface-app'],
+    })
   })
 })

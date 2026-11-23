@@ -1,50 +1,31 @@
 @import 'tailwindcss';
+/* Colour, font, radius and layout tokens (generated from design/tokens.json). */
+@import '../../../../design/tokens.css';
 
-:root {
-  color-scheme: light dark;
-  --surface-app: #f6f7f7;
-  --surface-panel: #ffffff;
-  --surface-sunken: #eef0f0;
-  --border: #dde1e1;
-  --text: #1b2122;
-  --text-muted: #5b6667;
-  --accent: #0f7a73;
-  --accent-hover: #0c655f;
-  --accent-contrast: #ffffff;
-  --danger: #b3261e;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --surface-app: #161a1b;
-    --surface-panel: #1e2324;
-    --surface-sunken: #121516;
-    --border: #2e3536;
-    --text: #e6eaea;
-    --text-muted: #9aa5a6;
-    --accent: #4fc1b6;
-    --accent-hover: #6fd0c6;
-    --accent-contrast: #062421;
-    --danger: #f2b8b5;
-  }
-}
-
+/* Tailwind mapping: components use these utilities, never raw hex. */
 @theme inline {
   --color-app: var(--surface-app);
   --color-panel: var(--surface-panel);
   --color-sunken: var(--surface-sunken);
   --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
   --color-ink: var(--text);
   --color-ink-muted: var(--text-muted);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
-  --color-on-accent: var(--accent-contrast);
+  --color-on-accent: var(--on-accent);
   --color-danger: var(--danger);
-  --font-sans: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
-  --font-display: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
-  --font-mono: 'Cascadia Mono', Consolas, ui-monospace, monospace;
-  --radius-control: 4px;
-  --radius-panel: 8px;
+  --color-selection: var(--selection);
+  --color-row-hover: var(--row-hover);
+  --color-bar: var(--bar);
+  --color-bar-fill: var(--bar-fill);
+  --color-pressed: var(--pressed);
+  --font-sans: var(--family-sans);
+  --font-display: var(--family-display);
+  --font-mono: var(--family-mono);
+  --radius-control: var(--r-control);
+  --radius-panel: var(--r-panel);
+  --shadow-menu: var(--elevation-menu);
 }
 
 @layer base {
@@ -58,7 +39,7 @@
     margin: 0;
     background-color: var(--surface-app);
     color: var(--text);
-    font-family: var(--font-sans);
+    font-family: var(--family-sans);
     font-size: 14px;
     line-height: 1.43;
   }
@@ -76,5 +57,21 @@
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
     }
+  }
+
+  @media (forced-colors: active) {
+    [aria-pressed='true'] {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
+  }
+}
+
+/* Popup menus: a popover in the top layer, placed under its trigger from script. */
+@layer components {
+  .popup-menu {
+    position: fixed;
+    inset: auto;
+    margin: 0;
   }
 }
