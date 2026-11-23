@@ -157,7 +157,8 @@ export function nodeIdListArg(value: unknown, max: number): NodeId[] {
   if (!Array.isArray(value) || value.length < 1 || value.length > max) {
     throw new InvalidIpcArgumentsError(`expected 1 to ${max} tree node ids`)
   }
-  return value.map((entry: unknown) => nodeIdArg(entry))
+  // Array.from visits holes of a sparse array too (map would skip them).
+  return Array.from(value as unknown[], (entry) => nodeIdArg(entry))
 }
 
 /** `[scanId, nodeIds]` */

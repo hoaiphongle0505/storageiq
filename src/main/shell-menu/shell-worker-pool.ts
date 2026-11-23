@@ -27,13 +27,30 @@ export interface ShellWorkerPoolDeps {
   idleMs: number
   /** Runs `callback` once after `ms`; returns a function that cancels it. */
   schedule(callback: () => void, ms: number): () => void
+  /** Posts WM_CANCELMODE to a menu owner window (closes an open popup); used at quit. */
+  cancelMenu?(hwnd: string): void
+  /** Logs a request that has been running for `LONG_BUSY_MS` (the shell call cannot be interrupted). */
+  warn?(message: string): void
 }
+
+/**
+ * A request still running after this long is logged, once. The call cannot be interrupted (it is
+ * inside the shell), so the slot stays busy; with three such calls new requests answer
+ * `ShellBusyError` ("Windows is still working on earlier actions") until one returns.
+ */
+export const LONG_BUSY_MS = 10 * 60_000
 
 export interface ShellWorkerPool extends ShellMenuHost {
   /** Test only: builds the menu for `paths` and runs the shell verb `verb` without showing it. */
   invokeVerb(paths: string[], verb: string): Promise<ShellFinish>
   /** Number of live workers. */
   readonly size: number
+  /**
+   * Quit: closes any open menu (WM_CANCELMODE), terminates every worker and rejects pending
+   * requests. Resolves with the number of requests that were still running; a thread inside a
+   * shell call cannot be interrupted, so the caller should release the single-instance lock.
+   */
+  dispose(): number
 }
 
 /** The error code a dead worker answers with. */
@@ -53,6 +70,9 @@ interface Slot {
   worker: WorkerLike
   pending: Pending | null
   cancelIdle: (() => void) | null
+  cancelLongBusy: (() => void) | null
+  /** Owner window of the open popup (set by `tracking`, cleared when the menu closes). */
+  menuHwnd: string | null
   dead: boolean
 }
 
@@ -72,6 +92,8 @@ export function createShellWorkerPool(deps: ShellWorkerPoolDeps): ShellWorkerPoo
     slot.dead = true
     slot.cancelIdle?.()
     slot.cancelIdle = null
+    slot.cancelLongBusy?.()
+    slot.cancelLongBusy = null
     const index = slots.indexOf(slot)
     if (index !== -1) slots.splice(index, 1)
     slot.worker.terminate().catch(() => undefined)
@@ -88,6 +110,9 @@ export function createShellWorkerPool(deps: ShellWorkerPoolDeps): ShellWorkerPoo
 
   const becomeIdle = (slot: Slot): void => {
     slot.pending = null
+    slot.menuHwnd = null
+    slot.cancelLongBusy?.()
+    slot.cancelLongBusy = null
     if (slot.dead || disposed) return
     slot.cancelIdle = deps.schedule(() => discard(slot), deps.idleMs)
   }
@@ -96,7 +121,11 @@ export function createShellWorkerPool(deps: ShellWorkerPoolDeps): ShellWorkerPoo
     const pending = slot.pending
     if (pending === null || pending.id !== reply.id) return
     switch (reply.type) {
+      case 'tracking':
+        slot.menuHwnd = reply.hwnd
+        return
       case 'chosen':
+        slot.menuHwnd = null
         pending.chosenDone = true
         pending.chosen(reply.choice)
         return
@@ -129,7 +158,14 @@ export function createShellWorkerPool(deps: ShellWorkerPoolDeps): ShellWorkerPoo
 
   const spawnSlot = (): Slot => {
     const worker = deps.spawn()
-    const slot: Slot = { worker, pending: null, cancelIdle: null, dead: false }
+    const slot: Slot = {
+      worker,
+      pending: null,
+      cancelIdle: null,
+      cancelLongBusy: null,
+      menuHwnd: null,
+      dead: false,
+    }
     worker.on('message', (reply) => onReply(slot, reply))
     worker.on('error', (error) => fail(slot, error))
     worker.on('exit', (code) => fail(slot, new Error(`The shell worker stopped (code ${code}).`)))
@@ -166,6 +202,10 @@ export function createShellWorkerPool(deps: ShellWorkerPoolDeps): ShellWorkerPoo
     }
     attach(pending)
     slot.pending = pending
+    slot.cancelLongBusy = deps.schedule(
+      () => deps.warn?.(`A shell request has been running for ${LONG_BUSY_MS / 60_000} minutes.`),
+      LONG_BUSY_MS,
+    )
     try {
       slot.worker.postMessage(build(id))
     } catch (error) {
@@ -235,9 +275,20 @@ export function createShellWorkerPool(deps: ShellWorkerPoolDeps): ShellWorkerPoo
 
     dispose() {
       disposed = true
+      let running = 0
       for (const slot of [...slots]) {
         const pending = slot.pending
         slot.pending = null
+        if (pending !== null) {
+          running += 1
+          if (slot.menuHwnd !== null) {
+            try {
+              deps.cancelMenu?.(slot.menuHwnd)
+            } catch {
+              // the window may already be gone
+            }
+          }
+        }
         discard(slot)
         if (pending !== null) {
           if (!pending.chosenDone)
@@ -245,6 +296,15 @@ export function createShellWorkerPool(deps: ShellWorkerPoolDeps): ShellWorkerPoo
           pending.finish(WORKER_FAILED)
         }
       }
+      return running
     },
   }
+}
+
+/**
+ * At quit: disposes the pool and, when a shell call was still running (its thread cannot be
+ * interrupted, so the process may linger), releases the single-instance lock so a relaunch works.
+ */
+export function disposePoolAtQuit(pool: ShellWorkerPool | null, releaseLock: () => void): void {
+  if ((pool?.dispose() ?? 0) > 0) releaseLock()
 }

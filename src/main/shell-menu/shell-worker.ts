@@ -69,6 +69,7 @@ export function runShellRequest(
     return
   }
   try {
+    post({ type: 'tracking', id, hwnd: menu.ownerHandle() })
     const command = classifyCommand(menu.track(request.x, request.y))
     if (command.kind === 'none') {
       post({ type: 'chosen', id, choice: { kind: 'dismissed' } })
@@ -155,12 +156,17 @@ if (
 ) {
   const port = parentPort
   const post: Post = (reply) => port.postMessage(reply)
+  // The menu-less `invoke-verb` request exists for native tests only: the pool of a real app
+  // never sets this flag, so the request is refused there.
+  const testVerbs = (workerData as { testVerbs?: boolean }).testVerbs === true
   createWinShellNative().then(
     (native) => {
       port.on('message', (request: WorkerRequest) => {
         if (request.type === 'show') runShellRequest(native, request, post)
         else if (request.type === 'probe') runProbeRequest(native, request, post)
-        else runInvokeVerbRequest(native, request, post)
+        else if (testVerbs) runInvokeVerbRequest(native, request, post)
+        else
+          post({ type: 'finished', id: request.id, ok: false, hresult: E_FAIL, step: 'disabled' })
       })
     },
     (error: unknown) => {

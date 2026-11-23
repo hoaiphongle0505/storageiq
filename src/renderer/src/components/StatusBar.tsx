@@ -112,10 +112,10 @@ export function StatusBar() {
       )}
       <span className="sr-only" aria-live="polite">
         {announced}
-        {announcedSelection === '' ? '' : ` ${announcedSelection}`}
       </span>
       <span className="sr-only" role="status">
         {announcement}
+        {announcedSelection === '' ? '' : ` ${announcedSelection}`}
       </span>
       {showExcluded && (
         <Dialog title={unreadableSummary(errors, excluded)} onClose={() => setShowExcluded(false)}>

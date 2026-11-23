@@ -29,6 +29,7 @@ function fakeMenu(chosenId: number, verb: string | null = 'delete') {
     }),
     verb: vi.fn(() => verb),
     offsetOfVerb: vi.fn(() => 9),
+    ownerHandle: vi.fn(() => '4242'),
     invoke: vi.fn(() => {
       calls.push('invoke')
     }),
@@ -56,7 +57,13 @@ function fakeNative(menu: BuiltShellMenu, fallback?: BuiltShellMenu) {
 
 function collect() {
   const replies: WorkerReply[] = []
-  return { replies, post: (reply: WorkerReply) => replies.push(reply) }
+  // `tracking` (owner window for quit) has its own test.
+  return {
+    replies,
+    post: (reply: WorkerReply) => {
+      if (reply.type !== 'tracking') replies.push(reply)
+    },
+  }
 }
 
 describe('runShellRequest', () => {
@@ -153,12 +160,26 @@ describe('runShellRequest', () => {
     const { native } = fakeNative(menu)
     const order: string[] = []
     runShellRequest(native, show(['D:\\Data\\a.txt']), (reply) => {
-      order.push(reply.type)
+      if (reply.type !== 'tracking') order.push(reply.type)
       if (reply.type === 'chosen') expect(calls).toEqual(['track'])
     })
     expect(order).toEqual(['chosen', 'finished'])
     expect(calls).toEqual(['track', 'invoke', 'release'])
     expect(menu.invoke).toHaveBeenCalledWith(9, 100, 200)
+  })
+
+  it('tells main the owner window before the popup opens', () => {
+    const { menu, calls } = fakeMenu(0)
+    const { native } = fakeNative(menu)
+    const order: string[] = []
+    runShellRequest(native, show(['D:\\Data\\a.txt']), (reply) => {
+      order.push(reply.type)
+      if (reply.type === 'tracking') {
+        expect(reply.hwnd).toBe('4242')
+        expect(calls).toEqual([])
+      }
+    })
+    expect(order.slice(0, 2)).toEqual(['tracking', 'chosen'])
   })
 
   it('dismissed and StorageIQ items finish at once without running anything', () => {

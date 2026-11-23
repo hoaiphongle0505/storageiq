@@ -366,7 +366,7 @@ describe('<TreeGrid /> multi-select', () => {
     await press('{Shift>}{ArrowDown}{ArrowDown}{/Shift}')
     await userEvent.setup().keyboard('{Shift>}{F10}{/Shift}')
     await waitFor(() => expect(api.showContextMenu).toHaveBeenCalledTimes(1))
-    expect(vi.mocked(api.showContextMenu).mock.calls[0]?.[1]).toEqual(['d1', 'd2', 'g0'])
+    expect(vi.mocked(api.showContextMenu).mock.calls[0]?.[1]).toEqual(['d1', 'd2'])
   })
 
   it('Ctrl+C copies the paths of every selected row', async () => {

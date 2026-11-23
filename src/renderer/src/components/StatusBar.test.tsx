@@ -149,7 +149,7 @@ describe('<StatusBar /> selection', () => {
       await vi.advanceTimersByTimeAsync(0)
     })
     select(utils, ['d1', 'd2'], 'd2')
-    const live = () => screen.getByRole('contentinfo').querySelector('[aria-live="polite"]')
+    const live = () => screen.getByRole('status')
     expect(live()?.textContent ?? '').not.toContain('items selected')
     await act(() => vi.advanceTimersByTimeAsync(500))
     expect(live()?.textContent).toContain('2 items selected')

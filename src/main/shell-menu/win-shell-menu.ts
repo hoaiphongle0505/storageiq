@@ -32,6 +32,8 @@ const CMIC_MASK_CONTROL_DOWN = 0x40000000
 const VK_SHIFT = 0x10
 const VK_CONTROL = 0x11
 const CMIC_MASK_PTINVOKE = 0x20000000
+/** Required when the calling thread has no message loop or ends soon after (a worker thread). */
+const CMIC_MASK_NOASYNC = 0x00000100
 const SW_SHOWNORMAL = 1
 const WM_DRAWITEM = 0x2b
 const WM_MEASUREITEM = 0x2c
@@ -88,6 +90,17 @@ export function guid(text: string): Guid {
 }
 
 const failed = (hr: number) => hr < 0
+
+/** The `fMask` of every `InvokeCommand`: Unicode, the click point, NOASYNC, and the live Shift/Ctrl. */
+export function invokeMask(shiftDown: boolean, controlDown: boolean): number {
+  return (
+    CMIC_MASK_UNICODE |
+    CMIC_MASK_PTINVOKE |
+    CMIC_MASK_NOASYNC |
+    (shiftDown ? CMIC_MASK_SHIFT_DOWN : 0) |
+    (controlDown ? CMIC_MASK_CONTROL_DOWN : 0)
+  )
+}
 
 /** Everything a built menu owns, so it can be released on every path. */
 interface MenuParts {
@@ -549,6 +562,8 @@ export async function createWinShellNative(): Promise<ShellNative> {
     return {
       labels: () => labelsOf(builtMenu),
 
+      ownerHandle: () => String(koffi.address(owner)),
+
       track(x, y) {
         // The window subclass and its koffi callback live exactly as long as the popup.
         const proc = koffi.register(forwardMenuMessage, koffi.pointer(SubclassProc))
@@ -589,11 +604,7 @@ export async function createWinShellNative(): Promise<ShellNative> {
         const controlDown = Number(GetAsyncKeyState(VK_CONTROL)) < 0
         const info = {
           cbSize: koffi.sizeof(CMINVOKECOMMANDINFOEX),
-          fMask:
-            CMIC_MASK_UNICODE |
-            CMIC_MASK_PTINVOKE |
-            (shiftDown ? CMIC_MASK_SHIFT_DOWN : 0) |
-            (controlDown ? CMIC_MASK_CONTROL_DOWN : 0),
+          fMask: invokeMask(shiftDown, controlDown),
           hwnd: owner,
           // MAKEINTRESOURCE(offset): the item is named by its offset from SHELL_FIRST_ID.
           lpVerb: BigInt(offset),

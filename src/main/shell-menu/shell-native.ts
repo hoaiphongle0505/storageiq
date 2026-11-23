@@ -4,6 +4,8 @@ import type { MenuRoute } from './context-menu'
 export interface BuiltShellMenu {
   /** Item labels at the top level, in order (`''` for separators). */
   labels(): string[]
+  /** The owner window's handle as a decimal string (for WM_CANCELMODE from main). */
+  ownerHandle(): string
   /** Shows the menu at screen pixel `x`, `y` and waits; returns the chosen id (0 = none). */
   track(x: number, y: number): number
   /** The shell's verb for an item (`delete`, `properties`, …), or null when it has none. */

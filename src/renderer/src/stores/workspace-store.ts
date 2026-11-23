@@ -357,9 +357,16 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
     }
 
     /** The rows an action sends: rows inside another selected row are not part of it. */
-    const actionIds = (ids: readonly NodeId[]): NodeId[] => {
+    const actionIds = (ids: readonly NodeId[]): { ids: NodeId[]; removed: number } => {
       const rows = rowIndexOf(get().lists)
-      return dropDescendants(ids, (id) => rows.get(id)?.parentId ?? null)
+      // With several rows main drops the root and "[N files]" rows (rule 12): do it here first,
+      // or the root (everyone's ancestor) would swallow the whole selection.
+      const kept =
+        ids.length > 1 ? ids.filter((id) => id !== ROOT_NODE_ID && !id.startsWith('g')) : ids
+      return {
+        ids: dropDescendants(kept, (id) => rows.get(id)?.parentId ?? null),
+        removed: ids.length - kept.length,
+      }
     }
 
     return {
@@ -612,8 +619,7 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
       async copyPaths(ids) {
         const { scanId } = get()
         if (scanId === null || ids.length === 0) return
-        const sent = actionIds(ids)
-        if (sent.length > MAX_ACTION_ITEMS) {
+        if (ids.length > MAX_ACTION_ITEMS) {
           set({ announcement: TOO_MANY_MESSAGE })
           return
         }
@@ -628,7 +634,13 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
       async showContextMenu(ids, x, y, extended) {
         const { scanId } = get()
         if (scanId === null || ids.length === 0) return
-        const sent = actionIds(ids)
+        const { ids: sent, removed } = actionIds(ids)
+        if (sent.length === 0) {
+          set({
+            announcement: `Skipped ${removed} ${removed === 1 ? 'row' : 'rows'} that cannot be acted on.`,
+          })
+          return
+        }
         if (sent.length > MAX_ACTION_ITEMS) {
           set({ announcement: TOO_MANY_MESSAGE })
           return
@@ -642,7 +654,7 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
               Math.max(0, Math.round(y)),
               extended,
             ),
-            sent.length,
+            sent.length + removed,
           )
         } catch (error) {
           fail(error)

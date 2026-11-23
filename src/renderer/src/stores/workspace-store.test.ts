@@ -649,8 +649,8 @@ describe('multi-select', () => {
 
   it('showContextMenu sends all ids in order', async () => {
     const { api, store } = await scanning()
-    await store.getState().showContextMenu(['d2', 'g0', 'd1'], 5, 6, false)
-    expect(api.showContextMenu).toHaveBeenCalledWith('scan-1', ['d2', 'g0', 'd1'], 5, 6, false)
+    await store.getState().showContextMenu(['d2', 'f1', 'd1'], 5, 6, false)
+    expect(api.showContextMenu).toHaveBeenCalledWith('scan-1', ['d2', 'f1', 'd1'], 5, 6, false)
   })
 
   it('showContextMenu does not send rows inside another selected row', async () => {

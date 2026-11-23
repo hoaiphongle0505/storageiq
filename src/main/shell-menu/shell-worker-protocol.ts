@@ -25,9 +25,14 @@ export type WorkerReply =
   /** The menu could not be built. */
   | { type: 'failed'; id: number; hresult: number; step: string }
   | { type: 'probed'; id: number; labels: string[] }
+  /** The popup is about to open; `hwnd` is the owner window (main may post WM_CANCELMODE to it at quit). */
+  | { type: 'tracking'; id: number; hwnd: string }
 
 /** The verb name `invoke-verb` uses for the IFileOperation fallback. */
 export const FALLBACK_RECYCLE_VERB = '@fallback-recycle'
 
 /** The pool starts the worker with this `workerData`, so importing the file (tests) never starts it. */
 export const SHELL_WORKER_DATA = { storageiqShellWorker: true } as const
+
+/** Native tests only: `workerData` that also enables the menu-less `invoke-verb` request. */
+export const SHELL_WORKER_TEST_DATA = { ...SHELL_WORKER_DATA, testVerbs: true } as const

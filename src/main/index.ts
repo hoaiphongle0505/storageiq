@@ -42,7 +42,11 @@ import { isTrustedRendererUrl } from './security/trusted-url'
 import { isTrustedIpcSender } from './security/trusted-sender'
 import { runSelfTest, SELF_TEST_FLAG, type SelfTestScan } from './self-test'
 import type { ShellMenuHost, ShellMenuRequest } from './shell-menu/context-menu'
-import { createShellWorkerPool, type ShellWorkerPool } from './shell-menu/shell-worker-pool'
+import {
+  createShellWorkerPool,
+  disposePoolAtQuit,
+  type ShellWorkerPool,
+} from './shell-menu/shell-worker-pool'
 import type { WorkerLike } from './shell-menu/shell-worker-pool'
 import { SHELL_WORKER_DATA } from './shell-menu/shell-worker-protocol'
 import { createUpdater, type Updater } from './updater/updater'
@@ -72,6 +76,26 @@ function getDriveApi(): Promise<DriveApi> {
   return driveApi
 }
 
+/** Posts WM_CANCELMODE to a menu owner window so an open popup closes at quit. */
+let cancelMode: ((hwnd: string) => void) | null = null
+function cancelMenuWindow(hwnd: string): void {
+  if (process.platform !== 'win32') return
+  if (cancelMode === null) {
+    // koffi is already loaded by the drive API; this is a synchronous load of user32.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const koffi = require('koffi') as typeof import('koffi')
+    const post = koffi
+      .load('user32.dll')
+      .func(
+        'int __stdcall PostMessageW(void *hwnd, uint32_t msg, uintptr_t wParam, intptr_t lParam)',
+      )
+    cancelMode = (handle) => {
+      post(BigInt(handle), 0x1f, 0, 0)
+    }
+  }
+  cancelMode(hwnd)
+}
+
 /** The pool of shell worker threads, created on first use. */
 function getShellPool(): ShellWorkerPool {
   shellPool ??= createShellWorkerPool({
@@ -83,6 +107,8 @@ function getShellPool(): ShellWorkerPool {
     },
     maxWorkers: 3,
     idleMs: 30_000,
+    cancelMenu: cancelMenuWindow,
+    warn: (message) => console.warn(message),
     schedule: (callback, ms) => {
       const timer = setTimeout(callback, ms)
       timer.unref()
@@ -280,7 +306,9 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
   app.on('before-quit', () => {
     quitting = true
     itemWatcher.cancelAll()
-    shellPool?.dispose()
+    // A thread inside a shell call cannot be interrupted, so the process may linger until it
+    // returns: release the single-instance lock so a relaunch is not blocked meanwhile.
+    disposePoolAtQuit(shellPool, () => app.releaseSingleInstanceLock())
     updater?.dispose()
     scanService.dispose() // kills the scanner; no event is sent during quit
   })

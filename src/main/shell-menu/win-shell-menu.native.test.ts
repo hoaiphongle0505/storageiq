@@ -15,7 +15,7 @@ import { build } from 'vite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { plainMenuLabel } from './menu-commands'
 import { createShellWorkerPool, type ShellWorkerPool, type WorkerLike } from './shell-worker-pool'
-import { FALLBACK_RECYCLE_VERB, SHELL_WORKER_DATA } from './shell-worker-protocol'
+import { FALLBACK_RECYCLE_VERB, SHELL_WORKER_TEST_DATA } from './shell-worker-protocol'
 
 /**
  * Native tests of the shell worker thread (Windows only). Everything is created under
@@ -108,7 +108,8 @@ describe.skipIf(!onWindows)('the shell worker thread (native)', () => {
     const script = await buildWorkerBundle()
     workRoot = mkdtempSync(path.join(os.tmpdir(), 'storageiq-t11-'))
     pool = createShellWorkerPool({
-      spawn: () => new Worker(script, { workerData: SHELL_WORKER_DATA }) as unknown as WorkerLike,
+      spawn: () =>
+        new Worker(script, { workerData: SHELL_WORKER_TEST_DATA }) as unknown as WorkerLike,
       maxWorkers: 3,
       idleMs: 30_000,
       schedule: (callback, ms) => {

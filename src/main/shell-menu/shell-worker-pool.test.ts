@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ShellMenuRequest } from './context-menu'
 import { ShellMenuError } from './shell-menu-error'
-import { createShellWorkerPool, ShellBusyError, type WorkerLike } from './shell-worker-pool'
+import {
+  createShellWorkerPool,
+  disposePoolAtQuit,
+  LONG_BUSY_MS,
+  ShellBusyError,
+  type ShellWorkerPoolDeps,
+  type WorkerLike,
+} from './shell-worker-pool'
 import type { WorkerReply, WorkerRequest } from './shell-worker-protocol'
 
 class FakeWorker implements WorkerLike {
@@ -45,7 +52,7 @@ const request: ShellMenuRequest = {
   hideDestructive: false,
 }
 
-function setup() {
+function setup(extra: Partial<ShellWorkerPoolDeps> = {}) {
   const workers: FakeWorker[] = []
   const pool = createShellWorkerPool({
     spawn: () => {
@@ -55,6 +62,7 @@ function setup() {
     },
     maxWorkers: 3,
     idleMs: 30_000,
+    ...extra,
     schedule: (callback, ms) => {
       const timer = setTimeout(callback, ms)
       return () => clearTimeout(timer)
@@ -233,5 +241,54 @@ describe('shell worker pool', () => {
     expect(worker.posted[1]).toMatchObject({ type: 'invoke-verb', verb: 'delete' })
     worker.reply({ type: 'finished', id: worker.lastId, ok: true })
     await expect(finish).resolves.toEqual({ ok: true })
+  })
+
+  it('quit closes an open menu, reports the running requests and terminates the workers', () => {
+    const cancelMenu = vi.fn()
+    const { pool, workers } = setup({ cancelMenu })
+    pool.show(request)
+    pool.show(request)
+    const open = first(workers)
+    open.reply({ type: 'tracking', id: open.lastId, hwnd: '1234' })
+    expect(pool.dispose()).toBe(2)
+    expect(cancelMenu).toHaveBeenCalledTimes(1)
+    expect(cancelMenu).toHaveBeenCalledWith('1234')
+    expect(workers.every((worker) => worker.terminated)).toBe(true)
+  })
+
+  it('quit with no running request cancels nothing and reports zero', () => {
+    const cancelMenu = vi.fn()
+    const { pool, workers } = setup({ cancelMenu })
+    pool.show(request)
+    const worker = first(workers)
+    worker.reply({ type: 'tracking', id: worker.lastId, hwnd: '1234' })
+    worker.reply({ type: 'chosen', id: worker.lastId, choice: { kind: 'dismissed' } })
+    worker.reply({ type: 'finished', id: worker.lastId, ok: true })
+    expect(pool.dispose()).toBe(0)
+    expect(cancelMenu).not.toHaveBeenCalled()
+  })
+
+  it('logs a request that has been running for ten minutes, once, and keeps the slot busy', async () => {
+    const warn = vi.fn()
+    const { pool } = setup({ warn })
+    pool.show(request)
+    await vi.advanceTimersByTimeAsync(LONG_BUSY_MS - 1)
+    expect(warn).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(pool.size).toBe(1)
+  })
+
+  it('the single-instance lock is released at quit only while a request runs', () => {
+    const release = vi.fn()
+    const idle = setup()
+    disposePoolAtQuit(idle.pool, release)
+    expect(release).not.toHaveBeenCalled()
+    const busy = setup()
+    busy.pool.show(request)
+    disposePoolAtQuit(busy.pool, release)
+    expect(release).toHaveBeenCalledTimes(1)
+    disposePoolAtQuit(null, release)
+    expect(release).toHaveBeenCalledTimes(1)
   })
 })

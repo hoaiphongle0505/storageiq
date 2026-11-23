@@ -160,6 +160,11 @@ describe('contextMenuArgs', () => {
     )
   })
 
+  it('contextMenuArgs rejects a sparse array', () => {
+    const sparse = Object.assign(new Array<string>(3), { 0: 'd1' })
+    expect(() => contextMenuArgs([SCAN, sparse, 1, 2, false])).toThrow(InvalidIpcArgumentsError)
+  })
+
   it('contextMenuArgs rejects the old single-id form', () => {
     expect(() => contextMenuArgs([SCAN, 'd4', 120, 300, false])).toThrow(InvalidIpcArgumentsError)
   })

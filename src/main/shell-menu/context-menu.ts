@@ -28,6 +28,10 @@ export type ShellFinish = { ok: true } | { ok: false; hresult: number; step: str
  * command returned. Neither blocks the UI thread.
  */
 export interface ShellMenuHost {
+  /**
+   * Starts a menu. Throws `ShellBusyError` synchronously when three actions already run (and an
+   * `Error` after `dispose`); it does not return a rejected promise for those.
+   */
   show(request: ShellMenuRequest): {
     chosen: Promise<ShellMenuChoice>
     finished: Promise<ShellFinish>
