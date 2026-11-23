@@ -278,7 +278,9 @@ describe('createScanService', () => {
     const slow = t.service.query({ kind: 'totals', scanId: 'scan-1' })
     t.timers[0]?.()
     await expect(slow).rejects.toThrow(QUERY_TIMEOUT_MESSAGE)
-    expect(() => t.child().emit({ type: 'reply', requestId: 1, ok: true, result: null })).not.toThrow()
+    expect(() =>
+      t.child().emit({ type: 'reply', requestId: 1, ok: true, result: null }),
+    ).not.toThrow()
   })
 
   it('dispose rejects pending queries with the scanner-gone message', async () => {
