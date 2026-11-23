@@ -4,11 +4,14 @@ import type { ScanDone, ScanProgress } from '@shared/scan-types'
 import type { ScannerMessage, ScannerQuery, ScanVolume } from '@shared/scanner-protocol'
 import {
   createScannerHost,
+  type ScannerHostDeps,
   parseScannerRequest,
   REFRESH_BUSY_MESSAGE,
   ROOT_REFRESH_MESSAGE,
   SNAPSHOT_INTERVAL_MS,
 } from './scanner-host'
+import { walk } from './walk'
+import { WalkerStartupError } from './walker-pool'
 import {
   createFakeWalkFs,
   dir,
@@ -28,7 +31,11 @@ function tree(): Record<string, FakeNode> {
   }
 }
 
-function setup(options: FakeWalkFsOptions = {}, children: Record<string, FakeNode> = tree()) {
+function setup(
+  options: FakeWalkFsOptions = {},
+  children: Record<string, FakeNode> = tree(),
+  extra: Partial<ScannerHostDeps> = {},
+) {
   const root = dir(children)
   const lister = createFakeWalkFs(ROOT, root, options)
   const posted: ScannerMessage[] = []
@@ -41,6 +48,7 @@ function setup(options: FakeWalkFsOptions = {}, children: Record<string, FakeNod
       posted.push(message)
     },
     now: () => clock,
+    ...extra,
     startTicker: (callback, ms) => {
       tick = callback
       intervalMs = ms
@@ -65,6 +73,7 @@ function setup(options: FakeWalkFsOptions = {}, children: Record<string, FakeNod
   return {
     host,
     root,
+    posted,
     query,
     tick: () => tick?.(),
     isTicking: () => tick !== null,
@@ -80,6 +89,109 @@ function setup(options: FakeWalkFsOptions = {}, children: Record<string, FakeNod
 }
 
 describe('createScannerHost', () => {
+  it('a scan uses walkParallel when given and reports its walker count in done', async () => {
+    const walkParallel = vi.fn<NonNullable<ScannerHostDeps['walkParallel']>>(
+      async (_root, handle, sink) => {
+        const folder = sink.folder(handle, 'Pool', 5)
+        sink.file(folder, 700, 'p.bin', 6)
+        return { walkers: 4 }
+      },
+    )
+    const t = setup({}, tree(), { walkParallel })
+    t.host.handle({ type: 'start', scanId: 's1', root: ROOT, volume: VOLUME })
+    await t.host.idle()
+
+    expect(walkParallel).toHaveBeenCalledTimes(1)
+    expect(walkParallel.mock.calls[0]?.[0]).toBe(ROOT)
+    expect(t.done()).toHaveLength(1)
+    expect(t.done()[0]).toMatchObject({
+      status: 'complete',
+      files: 1,
+      folders: 1,
+      bytes: 700,
+      walkers: 4,
+    })
+  })
+
+  it('a scan without walkParallel reports walkers 1', async () => {
+    const t = setup()
+    t.host.handle({ type: 'start', scanId: 's1', root: ROOT, volume: VOLUME })
+    await t.host.idle()
+    expect(t.done()[0]?.walkers).toBe(1)
+  })
+
+  it('a rejected parallel walk posts a failed message and clears the running scan', async () => {
+    let calls = 0
+    const walkParallel: NonNullable<ScannerHostDeps['walkParallel']> = async (
+      _root,
+      handle,
+      sink,
+    ) => {
+      calls += 1
+      if (calls === 1) throw new Error('The disk reader stopped unexpectedly: boom')
+      sink.file(handle, 9, 'ok.bin', 1)
+      return { walkers: 3 }
+    }
+    const t = setup({}, tree(), { walkParallel })
+    t.host.handle({ type: 'start', scanId: 's1', root: ROOT, volume: VOLUME })
+    await t.host.idle()
+
+    expect(t.posted.filter((m) => m.type === 'failed')).toEqual([
+      {
+        type: 'failed',
+        payload: { scanId: 's1', message: 'The disk reader stopped unexpectedly: boom' },
+      },
+    ])
+    expect(t.done()).toEqual([])
+    expect(t.isTicking()).toBe(false)
+
+    t.host.handle({ type: 'start', scanId: 's2', root: ROOT, volume: VOLUME })
+    await t.host.idle()
+    expect(t.done()[0]).toMatchObject({ scanId: 's2', files: 1, walkers: 3 })
+  })
+
+  it('a WalkerStartupError falls back to the single-thread walk', async () => {
+    const walkParallel = vi.fn(async () => {
+      throw new WalkerStartupError('cannot start')
+    })
+    const t = setup({}, tree(), { walkParallel })
+    t.host.handle({ type: 'start', scanId: 's1', root: ROOT, volume: VOLUME })
+    await t.host.idle()
+
+    expect(walkParallel).toHaveBeenCalledTimes(1)
+    expect(t.posted.some((m) => m.type === 'failed')).toBe(false)
+    expect(t.done()[0]).toMatchObject({ files: 4, folders: 2, bytes: 605, walkers: 1 })
+  })
+
+  it('refresh uses the single-thread walk even when walkParallel is set', async () => {
+    const lister = createFakeWalkFs(ROOT, dir(tree()))
+    const walkParallel = vi.fn<NonNullable<ScannerHostDeps['walkParallel']>>(
+      async (root, handle, sink, signal) => {
+        await walk(root, handle, sink, { lister, signal })
+        return { walkers: 2 }
+      },
+    )
+    const t = setup({}, tree(), { walkParallel })
+    t.host.handle({ type: 'start', scanId: 's1', root: ROOT, volume: VOLUME })
+    await t.host.idle()
+    expect(walkParallel).toHaveBeenCalledTimes(1)
+    const page = (await t.query({
+      kind: 'children',
+      scanId: 's1',
+      nodeId: 'd0',
+      sortKey: 'name',
+      sortDir: 'asc',
+      offset: 0,
+      limit: 10,
+    })) as { rows: Array<{ id: string; name: string }> }
+    const photosId = page.rows.find((row) => row.name === 'Photos')?.id ?? ''
+
+    const details = await t.query({ kind: 'refresh', scanId: 's1', nodeId: photosId })
+
+    expect(details).toMatchObject({ row: { id: photosId, files: 2 } })
+    expect(walkParallel).toHaveBeenCalledTimes(1) // the refresh did not use it
+  })
+
   it('reports totals, allocated size and the elapsed time when a scan completes', async () => {
     const t = setup()
     t.host.handle({ type: 'start', scanId: 's1', root: ROOT, volume: VOLUME })
@@ -97,6 +209,7 @@ describe('createScannerHost', () => {
         elapsedMs: 40,
         errors: [],
         errorCount: 0,
+        walkers: 1,
       },
     ])
   })

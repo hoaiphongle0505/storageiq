@@ -79,6 +79,8 @@ export interface ScanDone {
   /** At most 1000 entries, in the order they happened; `errorCount` is the exact total. */
   errors: ScanError[]
   errorCount: number
+  /** Walker threads used by the scan (1 = the single-thread walk); informational. */
+  walkers?: number
 }
 
 export interface ScanFailed {

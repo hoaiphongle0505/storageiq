@@ -17,7 +17,8 @@ import {
 } from './tree-queries'
 import { TreeStore } from './tree-store'
 import { treemapLayout } from './treemap'
-import { walk, type DirectoryLister } from './walk'
+import { walk, type DirectoryLister, type WalkSink } from './walk'
+import { WalkerStartupError } from './walker-pool'
 
 export const SNAPSHOT_INTERVAL_MS = 250
 export const REFRESH_BUSY_MESSAGE = 'A scan is running; refresh it when the scan ends.'
@@ -25,6 +26,16 @@ export const ROOT_REFRESH_MESSAGE = 'The scan root is rescanned with a new scan,
 
 export interface ScannerHostDeps {
   lister: DirectoryLister
+  /**
+   * Walks a full scan with several worker threads. When absent (tests, `STORAGEIQ_WALKERS=1`) a
+   * scan uses the single-thread `walk()`. Refreshing one folder never uses it.
+   */
+  walkParallel?(
+    root: string,
+    handle: number,
+    sink: WalkSink<number>,
+    signal: AbortSignal,
+  ): Promise<{ walkers: number }>
   post(message: ScannerMessage): void
   now(): number
   /** Calls `tick` every `intervalMs` until the returned function is called. */
@@ -157,8 +168,20 @@ export function createScannerHost(deps: ScannerHostDeps): ScannerHost {
       }
       deps.post({ type: 'progress', payload: progress })
     }, SNAPSHOT_INTERVAL_MS)
+    let walkers = 1
     try {
-      await walk(rootPath, 0, tree, { lister: deps.lister, signal })
+      if (deps.walkParallel === undefined) {
+        await walk(rootPath, 0, tree, { lister: deps.lister, signal })
+      } else {
+        try {
+          walkers = (await deps.walkParallel(rootPath, 0, tree, signal)).walkers
+        } catch (error) {
+          // No worker could start, so nothing was walked yet: the single-thread walk takes over.
+          if (!(error instanceof WalkerStartupError)) throw error
+          walkers = 1
+          await walk(rootPath, 0, tree, { lister: deps.lister, signal })
+        }
+      }
     } finally {
       stopTicker()
     }
@@ -167,6 +190,7 @@ export function createScannerHost(deps: ScannerHostDeps): ScannerHost {
       status: signal.aborted ? 'canceled' : 'complete',
       errors: [...tree.errors],
       errorCount: tree.errorCount,
+      walkers,
     }
     deps.post({ type: 'done', payload: done })
   }
@@ -265,9 +289,19 @@ export function createScannerHost(deps: ScannerHostDeps): ScannerHost {
       const controller = new AbortController()
       const scan: RunningScan = { scanId: request.scanId, controller, finished: Promise.resolve() }
       current = scan
-      scan.finished = run(request.scanId, request.root, store, controller.signal).finally(() => {
-        if (current === scan) current = null
-      })
+      scan.finished = run(request.scanId, request.root, store, controller.signal)
+        .catch((error: unknown) => {
+          deps.post({
+            type: 'failed',
+            payload: {
+              scanId: request.scanId,
+              message: error instanceof Error ? error.message : String(error),
+            },
+          })
+        })
+        .finally(() => {
+          if (current === scan) current = null
+        })
     },
     idle: async () => {
       await (current?.finished ?? Promise.resolve())

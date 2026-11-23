@@ -13,6 +13,7 @@ export const SELF_TEST_EXIT = {
   scanFailed: 20,
   asarEntered: 21,
   walkEmpty: 22,
+  parallelWalkFailed: 23,
 } as const
 
 /** A real Explorer menu has Open, Copy, Properties and more; fewer items means COM failed. */
@@ -89,6 +90,14 @@ export async function runSelfTest(deps: SelfTestDeps): Promise<number> {
     deps.log(`scan: the walk found no file with a size (${result.done.files} files)`)
     return SELF_TEST_EXIT.walkEmpty
   }
-  deps.log(`scan: ${result.done.files} files, ${result.done.folders} folders`)
+  deps.log(
+    `scan: ${result.done.files} files, ${result.done.folders} folders, ${result.done.walkers ?? 1} walkers`,
+  )
+  // Packaged only: the scan must have run on the walker pool, else the worker script or koffi
+  // in a worker thread did not load and the scanner silently fell back to one thread.
+  if (deps.unpackedNativeModule !== null && (result.done.walkers ?? 1) < 2) {
+    deps.log('walk: only 1 walker (pool did not start)')
+    return SELF_TEST_EXIT.parallelWalkFailed
+  }
   return SELF_TEST_EXIT.ok
 }

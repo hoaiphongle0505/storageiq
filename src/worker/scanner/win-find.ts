@@ -1,4 +1,4 @@
-import type { DirectoryLister, DirectoryListing, ListedEntry } from './walk'
+import type { DirectoryLister, DirectoryListing, ListedEntry, SyncLister } from './walk'
 
 /**
  * Directory listing through kernel32 `FindFirstFileExW`, bound with koffi.
@@ -102,7 +102,7 @@ interface FindData {
 /** Used to compare the handle: koffi returns a number for `intptr_t` (or a BigInt for large). */
 const INVALID_HANDLE = -1
 
-function toEntry(data: FindData): ListedEntry | null {
+export function toEntry(data: FindData): ListedEntry | null {
   const name = data.cFileName
   if (name === '.' || name === '..') return null
   const attributes = data.dwFileAttributes
@@ -123,7 +123,8 @@ let shared: Promise<DirectoryLister> | null = null
 
 /**
  * Loads koffi lazily (like the drive API), so a broken native module fails here, not at import.
- * koffi type names are global, so the lister is built once per process and shared.
+ * koffi type names are global per thread, so the bindings are declared once per thread and shared
+ * by the async and the sync lister.
  */
 export function createWinFindLister(): Promise<DirectoryLister> {
   if (shared === null) {
@@ -136,7 +137,82 @@ export function createWinFindLister(): Promise<DirectoryLister> {
   return shared
 }
 
-async function buildLister(): Promise<DirectoryLister> {
+/**
+ * The synchronous lister the walker worker threads use: the open is a plain blocking
+ * `FindFirstFileExW`, so `GetLastError` is valid right after it on the same thread (no retry
+ * trick). One koffi instance exists per worker thread, so each worker calls this once.
+ */
+export async function createWinFindSyncLister(): Promise<SyncLister> {
+  const api = await loadApi()
+  return {
+    listSync(dirPath): DirectoryListing {
+      const pattern = findPattern(dirPath)
+      const data = emptyFindData()
+      const handle = api.findFirst(
+        pattern,
+        FIND_EX_INFO_BASIC,
+        data,
+        FIND_EX_SEARCH_NAME_MATCH,
+        null,
+        FIND_FIRST_EX_LARGE_FETCH,
+      )
+      if (isInvalid(handle)) {
+        return { entries: [], errorCode: win32ErrorToCode(Number(api.getLastError())) }
+      }
+      const entries: ListedEntry[] = []
+      let errorCode: string | null
+      try {
+        const first = toEntry(data)
+        if (first !== null) entries.push(first)
+        while (api.findNext(handle, data) !== 0) {
+          const entry = toEntry(data)
+          if (entry !== null) entries.push(entry)
+        }
+        errorCode = endOfListingError(Number(api.getLastError()))
+      } finally {
+        api.findClose(handle)
+      }
+      return { entries, errorCode }
+    },
+  }
+}
+
+const isInvalid = (handle: number | bigint): boolean => Number(handle) === INVALID_HANDLE
+
+function emptyFindData(): FindData {
+  return {
+    dwFileAttributes: 0,
+    ftLastWriteTime: { low: 0, high: 0 },
+    nFileSizeHigh: 0,
+    nFileSizeLow: 0,
+    dwReserved0: 0,
+    cFileName: '',
+  }
+}
+
+interface Api {
+  findFirst: (...args: unknown[]) => number | bigint
+  findNext: (handle: number | bigint, data: object) => number
+  findClose: (handle: number | bigint) => number
+  getLastError: () => number
+  // koffi function objects also carry `.async`
+  findFirstFn: { async: (...args: unknown[]) => unknown }
+}
+
+let apiPromise: Promise<Api> | null = null
+
+function loadApi(): Promise<Api> {
+  if (apiPromise === null) {
+    const attempt = bindApi()
+    apiPromise = attempt
+    attempt.catch(() => {
+      if (apiPromise === attempt) apiPromise = null
+    })
+  }
+  return apiPromise
+}
+
+async function bindApi(): Promise<Api> {
   const { default: koffi } = await import('koffi')
   const kernel32 = koffi.load('kernel32.dll')
   const fileTime = koffi.struct('SIQ_FILETIME', { low: 'uint32_t', high: 'uint32_t' })
@@ -155,7 +231,7 @@ async function buildLister(): Promise<DirectoryLister> {
   if (koffi.sizeof(findData) !== FIND_DATA_SIZE) {
     throw new Error(`SIQ_FIND_DATAW is ${koffi.sizeof(findData)} bytes, expected ${FIND_DATA_SIZE}`)
   }
-  const findFirst = kernel32.func(
+  const findFirstFn = kernel32.func(
     'intptr_t __stdcall FindFirstFileExW(const char16_t *lpFileName, int fInfoLevelId, ' +
       '_Out_ SIQ_FIND_DATAW *lpFindFileData, int fSearchOp, void *lpSearchFilter, ' +
       'uint32_t dwAdditionalFlags)',
@@ -165,10 +241,22 @@ async function buildLister(): Promise<DirectoryLister> {
   )
   const findClose = kernel32.func('int __stdcall FindClose(intptr_t hFindFile)')
   const getLastError = kernel32.func('uint32_t __stdcall GetLastError()')
+  return {
+    findFirst: findFirstFn,
+    findNext,
+    findClose,
+    getLastError,
+    findFirstFn,
+  }
+}
+
+async function buildLister(): Promise<DirectoryLister> {
+  const api = await loadApi()
+  const { findFirst, findNext, findClose, getLastError, findFirstFn } = api
 
   const openAsync = (pattern: string, data: object): Promise<number | bigint> =>
     new Promise((resolve, reject) => {
-      findFirst.async(
+      findFirstFn.async(
         pattern,
         FIND_EX_INFO_BASIC,
         data,
@@ -179,19 +267,10 @@ async function buildLister(): Promise<DirectoryLister> {
       )
     })
 
-  const isInvalid = (handle: number | bigint): boolean => Number(handle) === INVALID_HANDLE
-
   return {
     async list(dirPath): Promise<DirectoryListing> {
       const pattern = findPattern(dirPath)
-      const data: FindData = {
-        dwFileAttributes: 0,
-        ftLastWriteTime: { low: 0, high: 0 },
-        nFileSizeHigh: 0,
-        nFileSizeLow: 0,
-        dwReserved0: 0,
-        cFileName: '',
-      }
+      const data = emptyFindData()
       const handle = await openAsync(pattern, data)
       if (isInvalid(handle)) {
         // GetLastError is thread-local: repeat the (quick, failing) open on this thread.

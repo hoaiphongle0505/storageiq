@@ -35,6 +35,7 @@ function scanDone(overrides: Partial<ScanDone> = {}): ScanDone {
     elapsedMs: 20,
     errors: [],
     errorCount: 0,
+    walkers: 4,
     ...overrides,
   }
 }
@@ -133,5 +134,27 @@ describe('runSelfTest', () => {
       scanOnce: vi.fn(async () => completed(scanDone(), [row('app.asar.unpacked', 'folder')])),
     })
     expect(await runSelfTest(zero.deps)).toBe(SELF_TEST_EXIT.walkEmpty)
+  })
+
+  it('fails a packaged run whose scan used only one walker', async () => {
+    const { deps, lines } = setup({
+      scanOnce: vi.fn(async () => completed(scanDone({ walkers: 1 }))),
+    })
+    expect(await runSelfTest(deps)).toBe(SELF_TEST_EXIT.parallelWalkFailed)
+    expect(SELF_TEST_EXIT.parallelWalkFailed).toBe(23)
+    expect(lines).toContain('walk: only 1 walker (pool did not start)')
+  })
+
+  it('passes a packaged run whose scan used four walkers', async () => {
+    const { deps } = setup({ scanOnce: vi.fn(async () => completed(scanDone({ walkers: 4 }))) })
+    expect(await runSelfTest(deps)).toBe(SELF_TEST_EXIT.ok)
+  })
+
+  it('does not require the pool when running unpackaged', async () => {
+    const { deps } = setup({
+      unpackedNativeModule: null,
+      scanOnce: vi.fn(async () => completed(scanDone({ walkers: 1 }))),
+    })
+    expect(await runSelfTest(deps)).toBe(SELF_TEST_EXIT.ok)
   })
 })

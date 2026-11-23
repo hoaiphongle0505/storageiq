@@ -10,9 +10,10 @@ import {
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { DirectoryLister } from './walk'
+import type { DirectoryLister, SyncLister } from './walk'
 import {
   createWinFindLister,
+  createWinFindSyncLister,
   endOfListingError,
   FILETIME_EPOCH_OFFSET_MS,
   FIND_DATA_SIZE,
@@ -229,5 +230,65 @@ describe.runIf(isWindows)('the Windows directory lister', () => {
         Array.from({ length: i + 1 }, (_, j) => j),
       )
     })
+  })
+})
+
+describe.runIf(isWindows)('the Windows synchronous directory lister', () => {
+  let base: string
+  let sync: SyncLister
+  let async: DirectoryLister
+
+  beforeEach(async () => {
+    base = mkdtempSync(path.join(os.tmpdir(), 'storageiq-sync-'))
+    sync = await createWinFindSyncLister()
+    async = await createWinFindLister()
+  })
+
+  afterEach(() => {
+    rmSync(base, { recursive: true, force: true })
+  })
+
+  it('the sync lister lists a temp folder like the async lister', async () => {
+    writeFileSync(path.join(base, 'a.txt'), 'hello')
+    writeFileSync(path.join(base, 'b.bin'), '')
+    mkdirSync(path.join(base, 'sub'))
+
+    const fast = sync.listSync(base)
+    const reference = await async.list(base)
+
+    expect(fast.errorCode).toBeNull()
+    const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name)
+    expect([...fast.entries].sort(byName)).toEqual([...reference.entries].sort(byName))
+    expect(fast.entries.map((e) => e.name).sort()).toEqual(['a.txt', 'b.bin', 'sub'])
+    expect(fast.entries.find((e) => e.name === 'sub')?.isDirectory).toBe(true)
+    expect(fast.entries.find((e) => e.name === 'a.txt')?.size).toBe(5)
+  })
+
+  it('the sync lister reports ENOENT for a missing folder', () => {
+    expect(sync.listSync(path.join(base, 'missing'))).toEqual({ entries: [], errorCode: 'ENOENT' })
+  })
+
+  it('the sync lister reports EACCES for a protected folder', (ctx) => {
+    const protectedFolder = `${process.env['SystemDrive'] ?? 'C:'}\\System Volume Information`
+    if (!existsSync(protectedFolder)) return ctx.skip()
+    const listing = sync.listSync(protectedFolder)
+    if (listing.errorCode === null) return ctx.skip()
+    expect(listing).toEqual({ entries: [], errorCode: 'EACCES' })
+  })
+
+  it('the sync lister flags a junction as a link', (ctx) => {
+    const target = path.join(base, 'target')
+    mkdirSync(target)
+    try {
+      symlinkSync(target, path.join(base, 'junction'), 'junction')
+    } catch {
+      return ctx.skip()
+    }
+    const listing = sync.listSync(base)
+    expect(listing.entries.find((e) => e.name === 'junction')).toMatchObject({
+      isLink: true,
+      size: 0,
+    })
+    expect(listing.entries.find((e) => e.name === 'target')?.isLink).toBe(false)
   })
 })

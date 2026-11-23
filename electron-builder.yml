@@ -46,6 +46,10 @@ nsis:
 asarUnpack:
   - node_modules/koffi/**
   - node_modules/@koromix/koffi-win32-x64/**
+  # The walker worker threads load out/main/walker.js (and the chunks it requires) from the
+  # unpacked tree, so neither the script nor its require('koffi') relies on asar patching in a thread.
+  - out/main/walker.js
+  - out/main/chunks/**
 
 # koffi ships prebuilt, ABI-stable Node-API binaries: nothing needs rebuilding for Electron.
 npmRebuild: false

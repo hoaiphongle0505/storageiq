@@ -27,6 +27,11 @@ export interface DirectoryLister {
   list(dirPath: string): Promise<DirectoryListing>
 }
 
+/** The synchronous twin of `DirectoryLister`, used inside the walker worker threads. */
+export interface SyncLister {
+  listSync(dirPath: string): DirectoryListing
+}
+
 /** Receives everything the walk finds. `D` is the sink's own handle for a folder. */
 export interface WalkSink<D> {
   /** A real folder (not a link) was found inside `parent`; returns its handle. */

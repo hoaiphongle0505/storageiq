@@ -1,32 +1,41 @@
-// Walk benchmark: the koffi FindFirstFileExW lister against the old opendir + lstat walk.
+// Walk benchmark: the koffi FindFirstFileExW walk (async opens on one thread, or a pool of worker
+// threads) against the old opendir + lstat walk.
 //
-//   node scripts/bench-walk.mjs <dir> [--concurrency N] [--legacy] [--async-next]
+//   node scripts/bench-walk.mjs <dir> [--async] [--pool N] [--legacy] [--async-next] [--concurrency N]
 //
-// Without flags it runs the new walk, then the legacy walk, and prints a one-line summary.
-// `--legacy` runs only the old walk (16 directories in flight); `--concurrency N` sets the
-// directories in flight of the new walk (default 8). `--async-next` runs the variant that also
-// reads each FindNextFileW through koffi's async call (one thread-pool hop per entry).
+// Without flags it runs each variant once and prints one line per variant: `async` (the single
+// thread walk, up to 8 opens in flight), then `pool 1`, `pool 2`, `pool 4`, `pool 8` (N worker
+// threads, each doing synchronous listings; the main thread plays the single writer). `--async`,
+// `--pool N` and `--legacy` run only that variant; `--concurrency N` sets the opens in flight of
+// `--async` (default 8); `--async-next` reads every FindNextFileW through koffi's async call.
 //
-// Plain Node ESM, no build step, so it keeps its own small copy of the two listers. It reads
-// folders only and is not run in CI. The first run on a folder warms the file cache, so run
-// each twice and compare the second figures.
+// Plain Node ESM, no build step, so it keeps its own small copies of the listers and of the batch
+// idea (workers return parallel arrays plus one names string; the main thread pushes every name
+// into an array and bumps counters, which approximates the writer-side cost). It reads folders
+// only and is not run in CI. The first run on a folder warms the file cache, so run each twice
+// and compare the second figures.
 import { createRequire } from 'node:module'
 import { opendir, lstat } from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
+import { Worker, isMainThread, parentPort } from 'node:worker_threads'
 
 const require = createRequire(import.meta.url)
 
-const args = process.argv.slice(2)
+const args = isMainThread ? process.argv.slice(2) : []
 const flag = (name) => args.includes(name)
 const option = (name, fallback) => {
   const at = args.indexOf(name)
   return at === -1 ? fallback : Number(args[at + 1])
 }
-const positional = args.filter((arg, i) => !arg.startsWith('--') && args[i - 1] !== '--concurrency')
+const valueFlags = ['--concurrency', '--pool']
+const positional = args.filter(
+  (arg, i) => !arg.startsWith('--') && !valueFlags.includes(args[i - 1]),
+)
 const root = positional[0]
-if (root === undefined) {
+if (isMainThread && root === undefined) {
   console.error(
-    'usage: node scripts/bench-walk.mjs <dir> [--concurrency N] [--legacy] [--async-next]',
+    'usage: node scripts/bench-walk.mjs <dir> [--async] [--pool N] [--legacy] [--async-next] [--concurrency N]',
   )
   process.exit(2)
 }
@@ -34,11 +43,18 @@ if (root === undefined) {
 const IO_REPARSE_TAG_SYMLINK = 0xa000000c
 const IO_REPARSE_TAG_MOUNT_POINT = 0xa0000003
 
-function createFindLister(useAsyncNext) {
+/** `\\?\` form, so the walk reads exactly what the app reads (no 260 limit, no trimming). */
+function pattern(dir) {
+  const clean = dir.replace(/\//g, '\\')
+  const p = clean.endsWith('\\') ? `${clean}*` : `${clean}\\*`
+  return /^[A-Za-z]:\\/.test(p) ? `\\\\?\\${p}` : p
+}
+
+function bindKernel() {
   const koffi = require('koffi')
   const kernel32 = koffi.load('kernel32.dll')
   const fileTime = koffi.struct('BENCH_FILETIME', { low: 'uint32_t', high: 'uint32_t' })
-  const findData = koffi.struct('BENCH_FIND_DATAW', {
+  koffi.struct('BENCH_FIND_DATAW', {
     dwFileAttributes: 'uint32_t',
     ftCreationTime: fileTime,
     ftLastAccessTime: fileTime,
@@ -50,14 +66,21 @@ function createFindLister(useAsyncNext) {
     cFileName: koffi.array('char16_t', 260, 'String'),
     cAlternateFileName: koffi.array('char16_t', 14, 'String'),
   })
-  const findFirst = kernel32.func(
-    'intptr_t __stdcall FindFirstFileExW(const char16_t *p, int lvl, _Out_ BENCH_FIND_DATAW *d, int op, void *f, uint32_t fl)',
-  )
-  const findNext = kernel32.func(
-    'int __stdcall FindNextFileW(intptr_t h, _Out_ BENCH_FIND_DATAW *d)',
-  )
-  const findClose = kernel32.func('int __stdcall FindClose(intptr_t h)')
-  void findData
+  return {
+    findFirst: kernel32.func(
+      'intptr_t __stdcall FindFirstFileExW(const char16_t *p, int lvl, _Out_ BENCH_FIND_DATAW *d, int op, void *f, uint32_t fl)',
+    ),
+    findNext: kernel32.func('int __stdcall FindNextFileW(intptr_t h, _Out_ BENCH_FIND_DATAW *d)'),
+    findClose: kernel32.func('int __stdcall FindClose(intptr_t h)'),
+  }
+}
+
+const isLinkOf = (d) =>
+  (d.dwFileAttributes & 0x400) !== 0 &&
+  (d.dwReserved0 === IO_REPARSE_TAG_SYMLINK || d.dwReserved0 === IO_REPARSE_TAG_MOUNT_POINT)
+
+function createFindLister(useAsyncNext) {
+  const { findFirst, findNext, findClose } = bindKernel()
   const call = (fn, ...fnArgs) =>
     new Promise((resolve, reject) => {
       fn.async(...fnArgs, (error, result) => (error ? reject(error) : resolve(result)))
@@ -65,15 +88,11 @@ function createFindLister(useAsyncNext) {
   const entryOf = (d) => {
     if (d.cFileName === '.' || d.cFileName === '..') return null
     const isDirectory = (d.dwFileAttributes & 0x10) !== 0
-    const isLink =
-      (d.dwFileAttributes & 0x400) !== 0 &&
-      (d.dwReserved0 === IO_REPARSE_TAG_SYMLINK || d.dwReserved0 === IO_REPARSE_TAG_MOUNT_POINT)
-    return { name: d.cFileName, isDirectory, isLink }
+    return { name: d.cFileName, isDirectory, isLink: isLinkOf(d) }
   }
   return async (dir) => {
-    const pattern = (dir.endsWith('\\') ? dir : `${dir}\\`) + '*'
     const data = {}
-    const handle = await call(findFirst, pattern, 1, data, 0, null, 2)
+    const handle = await call(findFirst, pattern(dir), 1, data, 0, null, 2)
     if (Number(handle) === -1) return []
     const entries = []
     try {
@@ -90,6 +109,59 @@ function createFindLister(useAsyncNext) {
     }
     return entries
   }
+}
+
+/** Synchronous listing (what a pool worker does): the open blocks this thread. */
+function createSyncFindLister() {
+  const { findFirst, findNext, findClose } = bindKernel()
+  return (dir, visit) => {
+    const data = {}
+    const handle = findFirst(pattern(dir), 1, data, 0, null, 2)
+    if (Number(handle) === -1) return
+    try {
+      let more = true
+      while (more) {
+        const name = data.cFileName
+        if (name !== '.' && name !== '..') {
+          const isDirectory = (data.dwFileAttributes & 0x10) !== 0
+          visit(name, isDirectory && !isLinkOf(data))
+        }
+        more = findNext(handle, data) !== 0
+      }
+    } finally {
+      findClose(handle)
+    }
+  }
+}
+
+const JOB_ENTRIES = 2000
+const JOB_DIRECTORIES = 64
+const SEPARATOR = '\u0000'
+
+if (!isMainThread) {
+  // Pool worker: one job = a depth-first walk with the same budget as the app's walker job.
+  const listSync = createSyncFindLister()
+  parentPort.on('message', (dir) => {
+    const stack = [dir]
+    const kinds = []
+    const names = []
+    let listed = 0
+    while (
+      stack.length > 0 &&
+      listed < JOB_DIRECTORIES &&
+      (listed === 0 || kinds.length < JOB_ENTRIES)
+    ) {
+      const here = stack.pop()
+      listed += 1
+      listSync(here, (name, isFolder) => {
+        kinds.push(isFolder ? 1 : 0)
+        names.push(name)
+        if (isFolder) stack.push(path.join(here, name))
+      })
+    }
+    parentPort.postMessage({ kinds, names: names.join(SEPARATOR), pending: stack })
+  })
+  parentPort.postMessage('ready')
 }
 
 async function legacyList(dir) {
@@ -156,25 +228,68 @@ async function run(list, concurrency) {
   return { files, folders, seconds, rate: Math.round(files / seconds) }
 }
 
+async function runPool(count) {
+  const started = performance.now()
+  let files = 0
+  let folders = 0
+  const all = [] // the coordinator keeps every name, like the tree store does
+  const queue = [root]
+  const workers = Array.from({ length: count }, () => new Worker(new URL(import.meta.url)))
+  await new Promise((resolve, reject) => {
+    let busy = 0
+    const idle = []
+    const feed = () => {
+      while (idle.length > 0 && queue.length > 0) {
+        busy += 1
+        idle.pop().postMessage(queue.pop())
+      }
+      if (busy === 0 && queue.length === 0 && idle.length === count) resolve()
+    }
+    for (const worker of workers) {
+      worker.on('error', reject)
+      worker.on('message', (message) => {
+        if (message === 'ready') {
+          idle.push(worker)
+        } else {
+          busy -= 1
+          idle.push(worker)
+          const names = message.names === '' ? [] : message.names.split(SEPARATOR)
+          for (let i = 0; i < message.kinds.length; i += 1) {
+            all.push(names[i])
+            if (message.kinds[i] === 1) folders += 1
+            else files += 1
+          }
+          for (const pending of message.pending) queue.push(pending)
+        }
+        feed()
+      })
+    }
+  })
+  const seconds = (performance.now() - started) / 1000
+  await Promise.all(workers.map((worker) => worker.terminate()))
+  return { files, folders, seconds, rate: Math.round(files / seconds) }
+}
+
 function print(label, result) {
   console.log(
     `${label}: files=${result.files} folders=${result.folders} seconds=${result.seconds.toFixed(2)} files/s=${result.rate}`,
   )
 }
 
-const concurrency = option('--concurrency', 8)
-if (flag('--legacy')) {
-  print('legacy', await run(legacyList, 16))
-} else if (flag('--async-next')) {
-  print('async-next', await run(createFindLister(true), concurrency))
-} else if (args.includes('--concurrency')) {
-  print('new', await run(createFindLister(false), concurrency))
-} else {
-  const fresh = await run(createFindLister(false), concurrency)
-  print('new', fresh)
-  const legacy = await run(legacyList, 16)
-  print('legacy', legacy)
-  console.log(
-    `new=${fresh.rate}/s legacy=${legacy.rate}/s ratio=${(fresh.rate / legacy.rate).toFixed(1)}`,
-  )
+if (isMainThread) {
+  const concurrency = option('--concurrency', 8)
+  console.log(`logical cores (os.availableParallelism): ${os.availableParallelism()}`)
+  if (flag('--legacy')) {
+    print('legacy', await run(legacyList, 16))
+  } else if (flag('--async-next')) {
+    print('async-next', await run(createFindLister(true), concurrency))
+  } else if (flag('--async')) {
+    print('async', await run(createFindLister(false), concurrency))
+  } else if (flag('--pool')) {
+    const count = option('--pool', 4)
+    print(`pool ${count}`, await runPool(count))
+  } else {
+    print('async', await run(createFindLister(false), concurrency))
+    for (const count of [1, 2, 4, 8]) print(`pool ${count}`, await runPool(count))
+  }
 }

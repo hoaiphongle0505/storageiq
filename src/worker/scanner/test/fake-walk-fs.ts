@@ -1,5 +1,5 @@
 import path from 'node:path'
-import type { DirectoryLister, DirectoryListing, ListedEntry } from '../walk'
+import type { DirectoryLister, DirectoryListing, ListedEntry, SyncLister } from '../walk'
 
 export type FakeNode =
   | { type: 'dir'; children: Record<string, FakeNode>; mtimeMs: number }
@@ -25,6 +25,8 @@ export interface FakeWalkFsOptions {
 }
 
 export interface FakeWalkFs extends DirectoryLister {
+  /** The same tree as a synchronous lister (what a walker worker uses). */
+  syncLister(): SyncLister
   /** Every path passed to `list`, in call order. */
   readonly listCalls: string[]
   /** The most directories that were being listed at the same moment. */
@@ -71,6 +73,18 @@ export function createFakeWalkFs(
     return node
   }
 
+  const compute = (dirPath: string): DirectoryListing => {
+    const code = options.listErrors?.[dirPath]
+    if (code !== undefined) return { entries: [], errorCode: code }
+    const node = find(dirPath)
+    if (node === undefined) return { entries: [], errorCode: 'ENOENT' }
+    if (node.type !== 'dir') return { entries: [], errorCode: 'ENOTDIR' }
+    const entries = Object.entries(node.children).map(([name, child]) => toEntry(name, child))
+    const partial = options.partialErrors?.[dirPath]
+    if (partial !== undefined) return { entries: entries.slice(0, 1), errorCode: partial }
+    return { entries, errorCode: null }
+  }
+
   const listCalls: string[] = []
   let listing = 0
   let maxListing = 0
@@ -81,6 +95,8 @@ export function createFakeWalkFs(
       return maxListing
     },
 
+    syncLister: () => ({ listSync: (dirPath) => compute(dirPath) }),
+
     async list(dirPath): Promise<DirectoryListing> {
       listCalls.push(dirPath)
       listing += 1
@@ -88,15 +104,7 @@ export function createFakeWalkFs(
       try {
         await options.beforeList?.(dirPath)
         await Promise.resolve()
-        const code = options.listErrors?.[dirPath]
-        if (code !== undefined) return { entries: [], errorCode: code }
-        const node = find(dirPath)
-        if (node === undefined) return { entries: [], errorCode: 'ENOENT' }
-        if (node.type !== 'dir') return { entries: [], errorCode: 'ENOTDIR' }
-        const entries = Object.entries(node.children).map(([name, child]) => toEntry(name, child))
-        const partial = options.partialErrors?.[dirPath]
-        if (partial !== undefined) return { entries: entries.slice(0, 1), errorCode: partial }
-        return { entries, errorCode: null }
+        return compute(dirPath)
       } finally {
         listing -= 1
       }
