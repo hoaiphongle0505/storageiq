@@ -6,26 +6,47 @@
 @theme inline {
   --color-app: var(--surface-app);
   --color-panel: var(--surface-panel);
+  --color-raised: var(--surface-raised);
   --color-sunken: var(--surface-sunken);
-  --color-line: var(--border);
-  --color-line-strong: var(--border-strong);
-  --color-ink: var(--text);
-  --color-ink-muted: var(--text-muted);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-subtle: var(--ink-subtle);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-on-accent: var(--on-accent);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-focus: var(--focus);
   --color-danger: var(--danger);
+  --color-on-danger: var(--on-danger);
+  --color-danger-subtle: var(--danger-subtle);
+  --color-warning: var(--warning);
+  --color-on-warning: var(--on-warning);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-success: var(--success);
+  --color-on-success: var(--on-success);
+  --color-success-subtle: var(--success-subtle);
+  --color-info: var(--info);
+  --color-on-info: var(--on-info);
+  --color-info-subtle: var(--info-subtle);
   --color-selection: var(--selection);
   --color-row-hover: var(--row-hover);
   --color-bar: var(--bar);
+  --color-bar-track: var(--bar-track);
   --color-bar-fill: var(--bar-fill);
   --color-pressed: var(--pressed);
   --font-sans: var(--family-sans);
   --font-display: var(--family-display);
+  --font-small: var(--family-small);
   --font-mono: var(--family-mono);
   --radius-control: var(--r-control);
   --radius-panel: var(--r-panel);
+  --radius-group: var(--r-group);
+  --radius-pill: var(--r-pill);
+  --shadow-raised: var(--elevation-raised);
   --shadow-menu: var(--elevation-menu);
+  --shadow-dialog: var(--elevation-dialog);
 }
 
 @layer base {
@@ -38,14 +59,14 @@
   body {
     margin: 0;
     background-color: var(--surface-app);
-    color: var(--text);
+    color: var(--ink);
     font-family: var(--family-sans);
     font-size: 14px;
     line-height: 1.43;
   }
 
   :focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus);
     outline-offset: 2px;
   }
 
@@ -61,6 +82,11 @@
 
   @media (forced-colors: active) {
     [aria-pressed='true'] {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
+
+    [role='row'][aria-selected='true'] {
       outline: 2px solid Highlight;
       outline-offset: -2px;
     }

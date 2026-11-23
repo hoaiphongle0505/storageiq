@@ -1,62 +1,168 @@
 Contrast report for design/tokens.json (WCAG 2.2; ui = 3:1 for UI parts and focus rings).
 
-  AAA   15.20:1  light-text               on light-surface-app    
-  AAA   16.31:1  light-text               on light-surface-panel  
-  AAA   14.26:1  light-text               on light-surface-sunken 
-  AA     5.53:1  light-text-muted         on light-surface-app    
-  AA     5.93:1  light-text-muted         on light-surface-panel  
-  AA     5.18:1  light-text-muted         on light-surface-sunken 
-  AAA   12.45:1  light-text               on light-selection      
-  AAA   14.56:1  light-text               on light-row-hover      
-  AAA   13.29:1  light-text               on light-bar            
-  AAA   13.13:1  light-text               on light-pressed        
-  AA     4.52:1  light-text-muted         on light-selection      
-  AA     5.18:1  light-on-accent          on light-accent         
-  AA     6.90:1  light-on-accent          on light-accent-hover   
-  AA     5.18:1  light-accent             on light-surface-panel  
-  AA     6.54:1  light-danger             on light-surface-panel  
-  AA     6.09:1  light-danger             on light-surface-app    
-  AAA   12.01:1  light-text               on light-treemap-0      
-  AAA   10.10:1  light-text               on light-treemap-1      
-  AAA    8.55:1  light-text               on light-treemap-2      
-  AAA   12.94:1  light-text               on light-treemap-files  
-  AAA   13.19:1  light-text               on light-treemap-free   
-  PASS   4.83:1  light-accent             on light-surface-app    ui
-  PASS   3.65:1  light-border-strong      on light-surface-panel  ui
-  PASS   3.89:1  light-bar-fill           on light-surface-panel  ui
-  AAA   14.46:1  dark-text                on dark-surface-app     
-  AAA   13.11:1  dark-text                on dark-surface-panel   
-  AAA   15.13:1  dark-text                on dark-surface-sunken  
-  AA     6.94:1  dark-text-muted          on dark-surface-app     
-  AA     6.29:1  dark-text-muted          on dark-surface-panel   
-  AAA    7.26:1  dark-text-muted          on dark-surface-sunken  
-  AAA   10.49:1  dark-text                on dark-selection       
-  AAA   12.29:1  dark-text                on dark-row-hover       
-  AAA   10.99:1  dark-text                on dark-bar             
-  AAA    9.95:1  dark-text                on dark-pressed         
-  AA     5.03:1  dark-text-muted          on dark-selection       
-  AAA    7.52:1  dark-on-accent           on dark-accent          
-  AAA    8.98:1  dark-on-accent           on dark-accent-hover    
-  AAA    7.29:1  dark-accent              on dark-surface-panel   
-  AAA    9.31:1  dark-danger              on dark-surface-panel   
-  AAA   10.27:1  dark-danger              on dark-surface-app     
-  AAA    9.98:1  dark-text                on dark-treemap-0       
-  AAA    7.47:1  dark-text                on dark-treemap-1       
-  AA     6.01:1  dark-text                on dark-treemap-2       
-  AAA   10.92:1  dark-text                on dark-treemap-files   
-  AAA    8.74:1  dark-text                on dark-treemap-free    
-  PASS   8.05:1  dark-accent              on dark-surface-app     ui
-  PASS   4.34:1  dark-border-strong       on dark-surface-panel   ui
-  PASS   7.29:1  dark-bar-fill            on dark-surface-panel   ui
-  PASS  12.01:1  light-treemap-outline    on light-treemap-0      ui
-  PASS  10.10:1  light-treemap-outline    on light-treemap-1      ui
-  PASS   8.55:1  light-treemap-outline    on light-treemap-2      ui
-  PASS  12.94:1  light-treemap-outline    on light-treemap-files  ui
-  PASS  13.19:1  light-treemap-outline    on light-treemap-free   ui
-  PASS   9.98:1  dark-treemap-outline     on dark-treemap-0       ui
-  PASS   7.47:1  dark-treemap-outline     on dark-treemap-1       ui
-  PASS   6.01:1  dark-treemap-outline     on dark-treemap-2       ui
-  PASS  10.92:1  dark-treemap-outline     on dark-treemap-files   ui
-  PASS   8.74:1  dark-treemap-outline     on dark-treemap-free    ui
+  AAA   14.46:1  light-ink                on light-surface-app    
+  AA     6.54:1  light-ink-muted          on light-surface-app    
+  AAA   15.50:1  light-ink                on light-surface-panel  
+  AAA    7.01:1  light-ink-muted          on light-surface-panel  
+  AAA   16.03:1  light-ink                on light-surface-raised 
+  AAA    7.25:1  light-ink-muted          on light-surface-raised 
+  AAA   13.12:1  light-ink                on light-surface-sunken 
+  AA     5.94:1  light-ink-muted          on light-surface-sunken 
+  AAA   12.57:1  light-ink                on light-selection      
+  AA     5.69:1  light-ink-muted          on light-selection      
+  AAA   13.49:1  light-ink                on light-row-hover      
+  AA     6.10:1  light-ink-muted          on light-row-hover      
+  AAA   13.03:1  light-ink                on light-pressed        
+  AA     5.89:1  light-ink-muted          on light-pressed        
+  AAA   12.43:1  light-ink                on light-bar            
+  AA     5.62:1  light-ink-muted          on light-bar            
+  AAA   13.03:1  light-ink                on light-accent-subtle  
+  AA     5.89:1  light-ink-muted          on light-accent-subtle  
+  AA     4.98:1  light-ink-subtle         on light-surface-app    
+  AA     5.33:1  light-ink-subtle         on light-surface-panel  
+  AA     5.51:1  light-ink-subtle         on light-surface-raised 
+  AA     4.52:1  light-ink-subtle         on light-surface-sunken 
+  AA     6.36:1  light-on-accent          on light-accent         
+  AAA    8.32:1  light-on-accent          on light-accent-hover   
+  AA     5.74:1  light-accent             on light-surface-app    
+  AA     6.15:1  light-accent             on light-surface-panel  
+  AA     6.36:1  light-accent             on light-surface-raised 
+  AA     5.17:1  light-accent             on light-accent-subtle  
+  AA     5.17:1  light-accent             on light-pressed        
+  AA     6.92:1  light-on-danger          on light-danger         
+  AAA   12.96:1  light-ink                on light-danger-subtle  
+  AA     5.87:1  light-ink-muted          on light-danger-subtle  
+  AA     5.60:1  light-danger             on light-danger-subtle  
+  AA     6.69:1  light-danger             on light-surface-panel  
+  AA     6.50:1  light-on-warning         on light-warning        
+  AAA   13.43:1  light-ink                on light-warning-subtle 
+  AA     6.08:1  light-ink-muted          on light-warning-subtle 
+  AA     5.44:1  light-warning            on light-warning-subtle 
+  AA     6.28:1  light-warning            on light-surface-panel  
+  AA     6.38:1  light-on-success         on light-success        
+  AAA   13.31:1  light-ink                on light-success-subtle 
+  AA     6.02:1  light-ink-muted          on light-success-subtle 
+  AA     5.30:1  light-success            on light-success-subtle 
+  AA     6.17:1  light-success            on light-surface-panel  
+  AAA    7.06:1  light-on-info            on light-info           
+  AAA   13.14:1  light-ink                on light-info-subtle    
+  AA     5.95:1  light-ink-muted          on light-info-subtle    
+  AA     5.79:1  light-info               on light-info-subtle    
+  AA     6.83:1  light-info               on light-surface-panel  
+  AAA    7.80:1  light-ink                on light-treemap-video  
+  AAA    9.60:1  light-ink                on light-treemap-image  
+  AAA    7.92:1  light-ink                on light-treemap-audio  
+  AAA    8.70:1  light-ink                on light-treemap-document 
+  AAA    9.82:1  light-ink                on light-treemap-archive 
+  AAA    9.11:1  light-ink                on light-treemap-code   
+  AAA    8.24:1  light-ink                on light-treemap-app    
+  AAA    8.95:1  light-ink                on light-treemap-system 
+  AAA    8.24:1  light-ink                on light-treemap-disk-image 
+  AAA   10.66:1  light-ink                on light-treemap-other  
+  AAA   12.31:1  light-ink                on light-treemap-folder 
+  AAA   13.61:1  light-ink                on light-treemap-free   
+  AAA    9.46:1  light-ink                on light-treemap-free-hatch 
+  PASS   3.10:1  light-accent             on light-treemap-video  ui
+  PASS   3.81:1  light-accent             on light-treemap-image  ui
+  PASS   3.14:1  light-accent             on light-treemap-audio  ui
+  PASS   3.46:1  light-accent             on light-treemap-document ui
+  PASS   3.90:1  light-accent             on light-treemap-archive ui
+  PASS   3.62:1  light-accent             on light-treemap-code   ui
+  PASS   3.27:1  light-accent             on light-treemap-app    ui
+  PASS   3.55:1  light-accent             on light-treemap-system ui
+  PASS   3.27:1  light-accent             on light-treemap-disk-image ui
+  PASS   6.36:1  light-accent             on light-treemap-halo   ui
+  PASS   5.74:1  light-focus              on light-surface-app    ui
+  PASS   6.15:1  light-focus              on light-surface-panel  ui
+  PASS   6.36:1  light-focus              on light-surface-raised ui
+  PASS   3.42:1  light-line-strong        on light-surface-app    ui
+  PASS   3.67:1  light-line-strong        on light-surface-panel  ui
+  PASS   3.79:1  light-line-strong        on light-surface-raised ui
+  PASS   3.71:1  light-bar-fill           on light-bar-track      ui
+  PASS   4.54:1  light-bar-fill           on light-surface-panel  ui
+  PASS   4.99:1  light-accent             on light-selection      ui
+  PASS   5.21:1  light-accent             on light-surface-sunken ui
+  AAA   14.17:1  dark-ink                 on dark-surface-app     
+  AAA    7.13:1  dark-ink-muted           on dark-surface-app     
+  AAA   13.28:1  dark-ink                 on dark-surface-panel   
+  AA     6.68:1  dark-ink-muted           on dark-surface-panel   
+  AAA   12.03:1  dark-ink                 on dark-surface-raised  
+  AA     6.05:1  dark-ink-muted           on dark-surface-raised  
+  AAA   14.98:1  dark-ink                 on dark-surface-sunken  
+  AAA    7.54:1  dark-ink-muted           on dark-surface-sunken  
+  AAA    9.53:1  dark-ink                 on dark-selection       
+  AA     4.80:1  dark-ink-muted           on dark-selection       
+  AAA   12.23:1  dark-ink                 on dark-row-hover       
+  AA     6.15:1  dark-ink-muted           on dark-row-hover       
+  AAA    9.93:1  dark-ink                 on dark-pressed         
+  AA     5.00:1  dark-ink-muted           on dark-pressed         
+  AAA    9.91:1  dark-ink                 on dark-bar             
+  AA     4.99:1  dark-ink-muted           on dark-bar             
+  AAA    9.93:1  dark-ink                 on dark-accent-subtle   
+  AA     5.00:1  dark-ink-muted           on dark-accent-subtle   
+  AA     5.36:1  dark-ink-subtle          on dark-surface-app     
+  AA     5.02:1  dark-ink-subtle          on dark-surface-panel   
+  AA     4.54:1  dark-ink-subtle          on dark-surface-raised  
+  AA     5.66:1  dark-ink-subtle          on dark-surface-sunken  
+  AAA    8.06:1  dark-on-accent           on dark-accent          
+  AAA    9.55:1  dark-on-accent           on dark-accent-hover    
+  AAA    8.26:1  dark-accent              on dark-surface-app     
+  AAA    7.74:1  dark-accent              on dark-surface-panel   
+  AAA    7.01:1  dark-accent              on dark-surface-raised  
+  AA     5.79:1  dark-accent              on dark-accent-subtle   
+  AA     5.79:1  dark-accent              on dark-pressed         
+  AAA    9.36:1  dark-on-danger           on dark-danger          
+  AAA   11.91:1  dark-ink                 on dark-danger-subtle   
+  AA     6.00:1  dark-ink-muted           on dark-danger-subtle   
+  AAA    7.59:1  dark-danger              on dark-danger-subtle   
+  AAA    8.46:1  dark-danger              on dark-surface-panel   
+  AAA    9.70:1  dark-on-warning          on dark-warning         
+  AAA   11.15:1  dark-ink                 on dark-warning-subtle  
+  AA     5.61:1  dark-ink-muted           on dark-warning-subtle  
+  AAA    8.10:1  dark-warning             on dark-warning-subtle  
+  AAA    9.64:1  dark-warning             on dark-surface-panel   
+  AAA    9.40:1  dark-on-success          on dark-success         
+  AAA   11.20:1  dark-ink                 on dark-success-subtle  
+  AA     5.64:1  dark-ink-muted           on dark-success-subtle  
+  AAA    7.89:1  dark-success             on dark-success-subtle  
+  AAA    9.36:1  dark-success             on dark-surface-panel   
+  AAA    9.53:1  dark-on-info             on dark-info            
+  AAA   11.41:1  dark-ink                 on dark-info-subtle     
+  AA     5.74:1  dark-ink-muted           on dark-info-subtle     
+  AAA    7.83:1  dark-info                on dark-info-subtle     
+  AAA    9.11:1  dark-info                on dark-surface-panel   
+  AA     5.35:1  dark-ink                 on dark-treemap-video   
+  AA     5.46:1  dark-ink                 on dark-treemap-image   
+  AA     5.86:1  dark-ink                 on dark-treemap-audio   
+  AA     6.10:1  dark-ink                 on dark-treemap-document 
+  AA     5.73:1  dark-ink                 on dark-treemap-archive 
+  AA     5.43:1  dark-ink                 on dark-treemap-code    
+  AA     6.32:1  dark-ink                 on dark-treemap-app     
+  AA     6.49:1  dark-ink                 on dark-treemap-system  
+  AA     6.31:1  dark-ink                 on dark-treemap-disk-image 
+  AAA    7.60:1  dark-ink                 on dark-treemap-other   
+  AAA   11.11:1  dark-ink                 on dark-treemap-folder  
+  AAA   11.65:1  dark-ink                 on dark-treemap-free    
+  AAA    7.76:1  dark-ink                 on dark-treemap-free-hatch 
+  PASS   3.12:1  dark-accent              on dark-treemap-video   ui
+  PASS   3.18:1  dark-accent              on dark-treemap-image   ui
+  PASS   3.41:1  dark-accent              on dark-treemap-audio   ui
+  PASS   3.55:1  dark-accent              on dark-treemap-document ui
+  PASS   3.34:1  dark-accent              on dark-treemap-archive ui
+  PASS   3.17:1  dark-accent              on dark-treemap-code    ui
+  PASS   3.68:1  dark-accent              on dark-treemap-app     ui
+  PASS   3.78:1  dark-accent              on dark-treemap-system  ui
+  PASS   3.68:1  dark-accent              on dark-treemap-disk-image ui
+  PASS   8.73:1  dark-accent              on dark-treemap-halo    ui
+  PASS   8.26:1  dark-focus               on dark-surface-app     ui
+  PASS   7.74:1  dark-focus               on dark-surface-panel   ui
+  PASS   7.01:1  dark-focus               on dark-surface-raised  ui
+  PASS   3.99:1  dark-line-strong         on dark-surface-app     ui
+  PASS   3.74:1  dark-line-strong         on dark-surface-panel   ui
+  PASS   3.39:1  dark-line-strong         on dark-surface-raised  ui
+  PASS   6.49:1  dark-bar-fill            on dark-bar-track       ui
+  PASS   7.74:1  dark-bar-fill            on dark-surface-panel   ui
+  PASS   5.56:1  dark-accent              on dark-selection       ui
+  PASS   8.73:1  dark-accent              on dark-surface-sunken  ui
 
-  58 pairs, 0 failing AA
+  164 pairs, 0 failing AA

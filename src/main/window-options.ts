@@ -1,7 +1,7 @@
 import type { BrowserWindowConstructorOptions } from 'electron'
 
 /** Must stay equal to the `surface-app` colours in `design/tokens.json`. */
-export const WINDOW_BACKGROUND = { light: '#f6f7f7', dark: '#161a1b' } as const
+export const WINDOW_BACKGROUND = { light: '#f5f3ef', dark: '#151a21' } as const
 
 export function createMainWindowOptions(input: {
   preloadPath: string
