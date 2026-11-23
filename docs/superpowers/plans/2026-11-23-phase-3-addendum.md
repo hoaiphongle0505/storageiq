@@ -4,7 +4,7 @@
 
 **State when this addendum starts:** branch `phase-3-workspace`, HEAD `a1df080`, Tasks 1–8 done. Task 9 (workspace E2E, CI perf gate, docs, checks by eye) runs **after** this addendum and absorbs the manual checks listed at the end of Task 10.
 
-**Order:** 8a, 8b, 8c, 10, then 9. Tasks 8a and 8b touch different files and can be built in either order. Task 8b changes `scanner-host.ts` wiring and `entry.ts`; Task 8c is written separately (see its marker).
+**Order:** 8a, 8b, 8c, 10, then 9. Tasks 8a and 8b touch different files and can be built in either order. Task 8b changes `scanner-host.ts` wiring and `entry.ts`; Task 8c is written separately (see its marker). Task 8d (parallel walkers) depends on 8b and runs right after it, before or after 8c.
 
 **Tiers:** every task here is `standard` (Win32/koffi, timers, packaging). Specs below are prose with exact names, constants and test cases; the implementer writes the code and the tests from them. Short code appears only where a value is subtle.
 
@@ -197,6 +197,215 @@ git commit -m "fix(shell): refresh after a late delete, treat vanished items as 
 ```powershell
 git add src/worker/scanner/win-find.ts src/worker/scanner/win-find.test.ts src/worker/scanner/walk.ts src/worker/scanner/walk.test.ts src/worker/scanner/test/fake-walk-fs.ts src/worker/scanner/scanner-host.ts src/worker/scanner/scanner-host.test.ts src/worker/scanner/entry.ts src/renderer/src/stores/workspace-store.ts src/renderer/src/stores/workspace-store.test.ts src/main/self-test.ts src/main/self-test.test.ts scripts/bench-walk.mjs package.json
 git commit -m "perf(scanner): list directories with FindFirstFileExW instead of lstat per entry"
+```
+
+---
+
+### Task 8d: Parallel walkers
+
+**Implementer tier:** standard (worker threads, koffi per thread, abort and packaging details; read the whole task before the first test)
+
+**Why (owner decision):** after Task 8b a full `C:\` scan (1.9M files, 410k folders) takes 195.67 s (9.7k files/s; legacy `lstat` walk: 306.85 s). Everything runs on one JS thread of the scanner process. Measurements so far: a single-thread synchronous `FindFirstFileExW` walk reaches 31–63k files/s on file-dense trees, but folder-dense trees (`C:\Windows`, about 1 file per folder) are bound by the per-directory open cost (about 0.5 ms, mostly the antivirus scan the open triggers), and overlapping opens gave about 2.4x. Task 8b overlaps only the opens (koffi `.async`, at most 8 in flight) and still pays every `FindNextFileW` loop, every JS entry object and every `sink` call on one thread. Several worker threads, each doing fully synchronous listings, overlap the opens **and** the per-entry work, with no admin rights. The coordinator (the scanner host thread) stays the only writer of `TreeStore`, so the store and all its limits do not change.
+
+**Expected result (an estimate, not a promise):** 410k opens x 0.5 ms / 7 walkers is about 30 s of open time, plus about 15–25 s of listing, decoding and tree inserts that cannot overlap with themselves (single writer). Expect roughly 50–80 s on the measured machine (3x to 4x), with the gain flattening beyond 4–6 walkers. **Acceptance is a measurement, not this estimate:** full `C:\` at least 1.8x faster than the Task 8b walk measured back to back on the same machine (rule 15). If it is not reached, stop with NEEDS_CONTEXT and the numbers; do not loosen the bar.
+
+**Verified before writing (do not re-litigate):** koffi 3.3.8 loads and calls Win32 inside `worker_threads` (spike on Node 22: three workers each `require('koffi')`, `koffi.load('kernel32.dll')`, call `GetCurrentThreadId`, three different thread ids). Each worker thread gets its own koffi instance, so the struct type name (`SIQ_FIND_DATAW`) and the function bindings are declared once **per worker**, and `GetLastError` is valid right after a synchronous call on that worker thread (so the sync lister needs no retry trick, unlike the async lister). If this ever fails in the packaged app (rule 12), fall back to the Task 8b design with more `.async` opens in flight and report it; do not ship a half-working pool.
+
+**Files:**
+
+- Create: `src/worker/scanner/walker-batch.ts`, `src/worker/scanner/walker-batch.test.ts` (wire format), `src/worker/scanner/walker-job.ts`, `src/worker/scanner/walker-job.test.ts` (one job: the depth-first local walk, pure, takes a `SyncLister`), `src/worker/scanner/walker-pool.ts`, `src/worker/scanner/walker-pool.test.ts` (coordinator), `src/worker/scanner/walker-pool.win32.test.ts`, `src/worker/scanner/walker-worker.ts` (worker thread entry: wires the koffi sync lister and `runJob` to `parentPort`; no logic of its own), `src/worker/scanner/test/fake-walker-port.ts` (in-thread fake worker)
+- Modify: `src/worker/scanner/win-find.ts` and `win-find.test.ts` (sync lister; share `toEntry` and the constants), `src/worker/scanner/walk.ts` (export `SyncLister`; nothing else changes), `src/worker/scanner/test/fake-walk-fs.ts` (a `syncLister` view of the same fake tree), `src/worker/scanner/scanner-host.ts` and `scanner-host.test.ts` (optional `walkParallel` dep, failure reporting), `src/worker/scanner/entry.ts`, `src/shared/scan-types.ts` (optional `walkers?: number` on `ScanDone`), `src/main/self-test.ts` and `self-test.test.ts`, `electron.vite.config.ts`, `electron-builder.yml`, `scripts/bench-walk.mjs`
+- Unchanged on purpose: `tree-store.ts` (single writer), `WalkSink`, `WalkOptions`, the semantics of `walk()`.
+
+**Interfaces:**
+
+`walk.ts` adds only `interface SyncLister { listSync(dirPath: string): DirectoryListing }` (same contract as `DirectoryLister`: never throws for file-system errors, they come back in `errorCode`). `win-find.ts` adds `createWinFindSyncLister(): Promise<SyncLister>` (async only because koffi loads with `await import('koffi')`), built on the same struct, constants, `toEntry`, `findPattern` and `win32ErrorToCode` as the async lister; the open is a plain synchronous `FindFirstFileExW(... FIND_FIRST_EX_LARGE_FETCH)`; on failure `GetLastError()` is read immediately (same thread); `FindClose` is in a `finally`.
+
+`walker-batch.ts` (the wire format, one result per job; names are exact):
+
+```ts
+export const KIND_FILE = 0 // files, links and every non-folder entry (links have size 0)
+export const KIND_FOLDER = 1 // a real folder (not a link)
+export interface ResultBatch {
+  /** Local index 0 is the job's own directory (its handle was assigned by the coordinator). Folder records get local indexes 1, 2, 3 ... in record order. */
+  count: number
+  kinds: Uint8Array // length count
+  parents: Uint32Array // length count: local index of the containing folder (0 = job root)
+  sizes: Float64Array // length count: bytes (0 for folders and links); exact up to 2^53
+  mtimes: Float64Array // length count: ms since epoch, 0 when unknown
+  nameEnds: Uint32Array // length count: end offset (UTF-16 units) of each name inside `names`
+  names: string // all names concatenated; a JS string, so lone surrogates of NTFS names survive structured clone
+  errors: Array<{ path: string; code: string; kind: ScanErrorKind }> // directory listing failures, in order
+  visited: string // the last directory listed in this job (feeds sink.visiting)
+  pendingLocal: Uint32Array // local indexes of folder records NOT walked (budget hit or abort)
+  pendingPaths: string[] // the same folders' full paths, parallel to pendingLocal
+}
+export class BatchBuilder {
+  addFile(parentLocal, name, size, mtime): void
+  addFolder(parentLocal, name, mtime): number /* new local index */
+  addError(path, code, kind): void
+  setVisited(path): void
+  addPending(local, path): void
+  finish(): ResultBatch
+}
+export function decodeBatch<D>(
+  batch: ResultBatch,
+  rootHandle: D,
+  sink: WalkSink<D>,
+): Array<{ handle: D; path: string }>
+export function batchTransferList(batch: ResultBatch): ArrayBuffer[] // the typed-array buffers, passed to postMessage so they are moved, not copied
+```
+
+`decodeBatch` keeps a local `handles: D[]` (index 0 = `rootHandle`). It applies, in this order: every `errors` entry through `sink.error`; then the records in order (`folder` record: `handles.push(sink.folder(handles[parents[i]], name, mtimes[i]))`; `file` record: `sink.file(handles[parents[i]], sizes[i], name, mtimes[i])`); then `sink.visiting(visited)`; it returns the pending folders as `(handles[pendingLocal[k]], pendingPaths[k])`. A worker emits a folder record before any record that names it as parent, so one in-order pass is enough; no sorting.
+
+`walker-job.ts`:
+
+```ts
+export const WALKER_BUDGET_ENTRIES = 2000 // stop starting new directories once this many records are in the batch
+export const WALKER_BUDGET_DIRECTORIES = 64 // ... or once this many directories were listed
+export const ABORT_CHECK_ENTRIES = 4096 // abort flag checked every this many entries inside one listing
+export function runJob(
+  dirPath: string,
+  lister: SyncLister,
+  shouldStop: () => boolean,
+  budget?: { entries: number; directories: number },
+): ResultBatch
+```
+
+`walker-pool.ts`:
+
+```ts
+export const MIN_WALKERS = 2
+export const MAX_WALKERS = 8
+export const ABORT_GRACE_MS = 2000
+export function walkerCount(parallelism: number): number // clamp(parallelism - 1, MIN_WALKERS, MAX_WALKERS)
+export function defaultWalkerCount(): number // walkerCount(os.availableParallelism())
+export function walkerCountFromEnv(value: string | undefined, fallback: number): number // "1".."8" -> that number, anything else -> fallback
+export class WalkerStartupError extends Error {}
+export interface WalkerPort {
+  // the subset of worker_threads.Worker the pool uses; the fake implements the same
+  postMessage(message: PoolRequest, transfer?: ArrayBuffer[]): void
+  on(event: 'message', fn: (message: PoolReply) => void): void
+  on(event: 'error', fn: (error: Error) => void): void
+  on(event: 'exit', fn: (code: number) => void): void
+  terminate(): Promise<number>
+}
+export interface PoolDeps {
+  createPort(index: number, abortFlag: SharedArrayBuffer): WalkerPort
+  walkers: number
+}
+export function createWalkerPool(deps: PoolDeps): {
+  walk<D>(
+    rootPath: string,
+    rootHandle: D,
+    sink: WalkSink<D>,
+    signal: AbortSignal,
+  ): Promise<{ walkers: number }>
+}
+```
+
+Messages (structured clone): `PoolRequest = { type: 'job'; jobId: number; dirPath: string } | { type: 'exit' }`; `PoolReply = { type: 'ready' } | { type: 'result'; jobId: number; batch: ResultBatch } | { type: 'aborted'; jobId: number } | { type: 'fatal'; message: string }`.
+
+**Behaviours (rules):**
+
+1. **Pool size.** `walkerCount(p) = Math.min(MAX_WALKERS, Math.max(MIN_WALKERS, p - 1))`, so one core stays for the coordinator and the UI: 1→2, 2→2, 3→2, 4→3, 8→7, 9→8, 64→8. At most 8 because past that the single-writer coordinator, not the opens, is the limit (the bench in rule 15 shows it). The env override `STORAGEIQ_WALKERS` (`1` forces the Task 8b single-thread async walk, `2`–`8` forces that count, anything else is ignored) exists for the bench, support and tests.
+2. **Why worker threads inside the scanner process (not more utility processes):** the scanner process already owns the tree and the query path; extra processes would have to ship their batches through the main process. Worker threads share the process, move typed arrays without copying (`transfer`), and koffi works per thread (verified above). Tradeoff accepted: a worker stuck in a kernel open cannot be interrupted (rule 9).
+3. **Work distribution.** The coordinator holds a LIFO stack `queue: Array<{ path: string; handle: D }>` seeded with the root. A free worker (it just reported `ready` or returned a result) gets the top entry as `{ type: 'job', jobId, dirPath }`. **One job per worker at a time**: a job is about 2,000 entries, so the message round trip is negligible next to it, and the bounded in-flight set bounds memory. LIFO keeps the stack small and directory locality high.
+4. **One job (`runJob`).** A local stack starts with the job's directory (local index 0). Loop: pop a directory, `lister.listSync(path)`; if `errorCode !== null` add an error record (`kind: 'folder'`, that path); for each entry in listing order: a link → `addFile(parent, name, 0, mtime)`; a directory that is not a link → `local = addFolder(parent, name, mtime)` and push `{ local, path: path.join(dir, name) }` on the local stack; anything else → `addFile(parent, name, size, mtime)`. Reparse rules stay those of Task 8b (only symlink and mount-point tags give `isLink`; that is decided in the lister, `runJob` only reads `isLink`). A directory listing is **never split**: the budget is checked only **between** directories; when `count >= budget.entries` or the directories listed `>= budget.directories`, the loop stops and everything still on the local stack is returned as `pendingLocal`/`pendingPaths`. The coordinator turns those into new queue entries which idle workers take: this is the work stealing, and it is why a worker that landed in `C:\Windows\WinSxS` hands its unvisited subfolders back after at most 64 directories. Abort: `shouldStop()` is checked before each directory and every `ABORT_CHECK_ENTRIES` entries inside a listing; when true, the job returns the batch so far with the unwalked stack as pending (the coordinator ignores it, rule 9). `visited` is the last path listed. `runJob` never throws for file-system errors.
+5. **Local folder ids and the mapping.** A worker never knows TreeStore ids. The coordinator already has the handle of a job's root (the scan root `0`, or the handle that an earlier `decodeBatch` returned for a pending folder). Folders created inside a job are numbered locally (1, 2, 3 ... in record order) and `decodeBatch` maps local index to handle as it inserts. A batch is self-contained (its only external reference is its own root handle) and a child job exists only after its parent batch was decoded, so batches from different workers may arrive in **any order** and the resulting tree is the same; there is no cross-batch ordering state.
+6. **Single writer.** Only the coordinator calls `decodeBatch` (hence the sink), in the `message` handler on the scanner host thread, one batch at a time. `TreeStore` is never touched by workers and needs no locking.
+7. **Wire cost.** One message per job: parallel typed arrays plus one `names` string; the typed-array buffers are transferred, not copied. No per-entry objects cross threads. Name decoding is `names.slice(prevEnd, nameEnds[i])`.
+8. **Errors, caps, visiting.** Listing failures travel as `errors` records and are applied through `sink.error`, so `MAX_SCAN_ERRORS`, kinds and `errorCount` behave exactly as before (the store caps; workers do not). `sink.visiting` is called once per batch (the last directory of the job) instead of once per directory: `currentPath` in progress is coarser but still moves several times per second. Document this in `walker-pool.ts`.
+9. **Abort.** The pool allocates one `SharedArrayBuffer(4)` abort flag, passed to every worker in `workerData`, read in workers with `Atomics.load` as `shouldStop`. When the `AbortSignal` aborts, the coordinator immediately sets a `stopped` flag (from then on: no `decodeBatch`, no sink call, no new job, even for messages already queued in the event loop), does `Atomics.store(flag, 0, 1)` and waits for each in-flight job's `result` or `aborted` reply. A worker inside a listing stops at its next check; its `finally` runs `FindClose`; then it replies. When every worker is idle the pool posts `{ type: 'exit' }`, awaits `terminate()` on all workers, and the walk resolves (like `walk()`, an abort is a normal resolve). **Grace limit:** if a worker has not replied `ABORT_GRACE_MS` (2000) after the abort (stuck in a blocked kernel open, for example on a dead network share), the pool calls `terminate()` on it without awaiting, logs one line and resolves anyway. `terminate` cannot interrupt a thread inside a native call, so in that rare case the thread ends when the call returns or when the process exits; say so in the pool's doc comment. The pool is created **per walk** and always torn down in a `finally`, so no worker outlives a scan (spawn plus koffi load costs about 100 ms per scan, measured in the bench, acceptable).
+10. **Failure.** A worker `error` event, a non-zero `exit` while the pool is running, or a `fatal` reply makes the pool stop everything as in rule 9 and **reject** the walk with `new Error('The disk reader stopped unexpectedly: <message>')`. `scanner-host.ts` must turn any rejected walk into the existing failure message (`{ type: 'failed', payload: { scanId, message } }`; read `scanner-protocol.ts` for the exact shape) instead of an unhandled rejection (today `run()` has no catch; add one that posts `failed` and still clears `current`). **Startup fallback:** if **every** worker fails before any reported `ready` (koffi cannot load in a thread, the script is missing) and no job was dispatched, the pool rejects with `WalkerStartupError`; the host then runs the Task 8b single-thread `walk()` for that scan and reports `walkers: 1`. A failure after a job was dispatched is never retried silently.
+11. **Host wiring.** `ScannerHostDeps` gains an optional `walkParallel?: (root: string, handle: number, sink: WalkSink<number>, signal: AbortSignal) => Promise<{ walkers: number }>`. When present, `run()` (a full scan) uses it; when absent (tests, `STORAGEIQ_WALKERS=1`) `run()` uses `walk()` and reports `walkers: 1`. **Refresh of one folder keeps using the single-thread async `walk()`**: refreshes are small subtrees, and spawning a pool would cost more than it saves. `ScanDone.walkers` (optional number) carries the count used; the renderer ignores it. `entry.ts` builds `walkParallel` with `createWalkerPool({ walkers: walkerCountFromEnv(process.env.STORAGEIQ_WALKERS, defaultWalkerCount()), createPort })` where `createPort` is `new Worker(walkerScriptPath(), { workerData: { abortFlag, index } })` and `walkerScriptPath()` is `path.join(__dirname, 'walker.js')` with `app.asar` replaced by `app.asar.unpacked` (rule 12). When the env value is `1`, `entry.ts` passes no `walkParallel`.
+12. **Packaging.** `electron.vite.config.ts` main `input` gains `walker: resolve('src/worker/scanner/walker-worker.ts')`, giving `out/main/walker.js` (the build is CommonJS; `out/main/chunks/` already exists, so a shared chunk between `scanner.js` and `walker.js` is likely). Decision: **run the worker from the unpacked tree**, so neither the worker script nor its `require('koffi')` depends on Electron's asar patching inside worker threads (not verified, and a failure would be silent). `electron-builder.yml` `asarUnpack` gains `out/main/walker.js` and `out/main/chunks/**`; a worker loaded from `app.asar.unpacked/out/main` resolves `node_modules/koffi` from `app.asar.unpacked/node_modules`, which already holds koffi. After `npm run dist`, list `release/win-unpacked/resources/app.asar.unpacked/out/main` and confirm `walker.js` and every chunk it requires are there; add any chunk the unpack list missed. In dev the path is `out/main/walker.js` with no replacement. If a packaged worker still cannot start, the startup fallback (rule 10) keeps scans working, but the self-test (rule 13) fails: that is the intended alarm.
+13. **Self-test.** The packaged self-test scan of the `resources` folder must run on the pool: require `done.walkers >= 2`, else the new exit code `SELF_TEST_EXIT.parallelWalkFailed = 23` (log `walk: only 1 walker (pool did not start)`). It is enforced only when `unpackedNativeModule !== null` (packaged), so unpackaged runs and e2e keep passing. `self-test.test.ts`: a finished packaged scan with `walkers: 1` returns 23; with `walkers: 4` returns ok; an unpackaged run with `walkers: 1` returns ok.
+14. **Fake mode.** `runJob` and the coordinator are platform-independent: the coordinator only sees `WalkerPort`. `fake-walker-port.ts` implements `WalkerPort` **in the same thread**: on `job` it calls `runJob(..., fakeSyncLister, shouldStop)` on a timer tick and replies through the same path, simulating transfer with `structuredClone(batch, { transfer: batchTransferList(batch) })`. Options: `replyDelayMs(jobId)` (forces out-of-order arrival), `crashOnJob` (emits `error`), `neverReply`, `startupFails`, and counters `terminated`, `jobsSeen`. `walker-worker.ts` has no unit test of its own (it only wires `createWinFindSyncLister`, `runJob` and `parentPort`); the win32 integration test covers it.
+15. **Benchmark and acceptance** (`scripts/bench-walk.mjs`, still plain Node ESM with its own copies, no build step): add `--pool N` (N worker threads via `isMainThread` and `new Worker(new URL(import.meta.url))`, the same batch idea in simplified form: workers return parallel arrays, the coordinator pushes every name into an array and bumps counters, which approximates the writer-side cost) and make the Task 8b async walk an explicit `--async`. With no flags the script prints one line per variant: `async`, `pool 1`, `pool 2`, `pool 4`, `pool 8`, each with files, folders, seconds and files/s, each run once. Procedure, PowerShell, nothing heavy running, same session, back to back: `node scripts/bench-walk.mjs "C:\Program Files"` and `"C:\Windows"` (second runs, cache warm); then **full `C:\`**: `--async` first (the Task 8b baseline, expect about 195 s), then `--pool 2`, `--pool 4`, `--pool 8`, and the default size. Record every number, `os.availableParallelism()` and the size `walkerCount` picks (7 on 8 logical cores). Then confirm end to end with the real scanner: `npm run dev`, scan `C:\`, read `elapsedMs` of the done event and report it next to the bench figure; they should agree within 15%, and a bigger gap must be explained (decode and tree-insert cost on the coordinator). **Acceptance: the default-size pool finishes full `C:\` in at most `async_seconds / 1.8`** (about 109 s against 195.67 s) in the same back-to-back session. Below that: stop with NEEDS_CONTEXT and the table; do not change the bar; do not commit. If `--pool 8` beats the default size by more than 15%, report it as a finding for the owner instead of raising the cap here.
+16. **Perf limits stay green:** `npm run test:perf` is unchanged (the 1M-file synthetic tests use `TreeStore` directly and nothing here touches it). One extra timing test lives in `walker-batch.test.ts` (see below).
+
+**Tests:**
+
+`walker-batch.test.ts`:
+
+- `a batch round-trips files, folders and nested folders` — root file; folder A (local 1) holding a file; folder B (local 2) inside A holding a file; decoded into a recording sink, the calls are `folder(root,'A')`, `file(handleA,...)`, `folder(handleA,'B')`, `file(handleB,...)` with exact names, sizes (including `2**40 + 7`), mtimes, in record order.
+- `sizes above 4 GB and names with lone surrogates survive` — size `5_000_000_000`; name `'\ud800x'` comes back unchanged, also after `structuredClone`.
+- `errors are applied first and visiting last` — recording sink order: every `error`, then the folder/file calls, then `visiting(visited)`.
+- `pending folders come back with their mapped handles and paths` — two unwalked folders, one nested (local 2 inside local 1): the returned pairs hold the handles the sink returned for those records.
+- `an empty batch decodes to nothing`.
+- `batchTransferList lists the typed-array buffers and a transferred batch still decodes` (`structuredClone(batch, { transfer })`).
+- `encode and decode of 200_000 records takes under 1500 ms` into a no-op sink (guards the wire format, generous for CI).
+
+`walker-job.test.ts` (fake sync lister, no threads):
+
+- `walks depth-first inside one job and numbers folders in record order`.
+- `a link that is a directory is counted as a 0-byte file and never entered` (`isDirectory true, isLink true`).
+- `stops starting directories after 64 directories and returns the rest as pending` — 200 sibling folders under the job root: the first job lists exactly 64 directories (the root plus 63), `pendingLocal` holds the remaining folders, every pending path is a real folder.
+- `stops after 2000 records between directories and never splits a listing` — one directory with 5_000 files is returned whole (5_000 records in one batch) and its sibling folders come back pending.
+- `a listing error becomes an error record and the job continues` — an `EACCES` folder; a partial listing with `ENOENT` keeps the entries read before the error.
+- `shouldStop during a listing stops within ABORT_CHECK_ENTRIES` — 20_000-entry listing, `shouldStop` true from the second check: fewer than 4_200 records, unwalked directories pending.
+
+`walker-pool.test.ts` (fake ports, in-thread):
+
+- `walkerCount clamps to 2..8` — the table of rule 1; `walkerCountFromEnv` — `'1'`→1, `'4'`→4, `'0'`, `'9'`, `'abc'`, `undefined` → fallback.
+- `a pool walk gives the same tree as the single-thread walk` — one fake tree (about 300 folders, 5_000 files, 8 levels deep, links, unreadable folders) walked with `walk()` and with the pool at 1, 3 and 8 fake ports into recording sinks: the sorted `(full path, kind, size, mtime)` lists, the error sets and the `files`/`folders`/`bytes` totals are equal. Full paths are rebuilt from the handles each sink returned, since ids differ.
+- `batches arriving out of order map nested folders to the right parents` — three fake ports whose reply delays make the deepest job reply first; the tree equals the in-order run.
+- `all workers are used and idle workers pick up pending folders` — 8 ports, one root with 500 subfolders: every port saw at least one job, and the first job returned pending folders.
+- `a worker crash fails the walk and terminates every port` — `crashOnJob: 2`: the promise rejects with a message starting `The disk reader stopped unexpectedly`, no hang (test timeout 2 s), every port `terminated`.
+- `startup failure on every port rejects with WalkerStartupError and dispatches nothing`.
+- `an abort while workers are mid-batch stops all sink calls and exits all workers` — ports with reply delay, abort from the sink after 10 files; after the promise resolves the sink call count does not change while fake timers advance 100 ms, the abort flag word is 1, every port `terminated`, a result that was already queued is dropped.
+- `an abort with a worker that never replies resolves after ABORT_GRACE_MS` — `neverReply` on one port, fake timers: resolves after advancing 2_000 ms, that port's `terminate` was called.
+- `a rejecting sink rejects the walk and stops the workers`.
+- `a signal that is already aborted starts no job` — resolves at once, zero jobs seen, ports terminated.
+
+`scanner-host.test.ts` (additions):
+
+- `a scan uses walkParallel when given and reports its walker count in done`.
+- `a scan without walkParallel reports walkers 1`.
+- `a rejected parallel walk posts a failed message and clears the running scan` (a following `start` works).
+- `a WalkerStartupError falls back to the single-thread walk` (`done.walkers 1`, correct totals).
+- `refresh uses the single-thread walk even when walkParallel is set` (the spy is not called).
+- existing tests unchanged.
+
+`win-find.test.ts` (additions; native ones `it.runIf(process.platform === 'win32')`):
+
+- `the sync lister lists a temp folder like the async lister` — same entries, sizes, mtimes; `sub` is a directory; no `.`/`..`.
+- `the sync lister reports ENOENT for a missing folder` (not `WIN32_0`: GetLastError is read on the same thread) and `EACCES` for `C:\System Volume Information` (skip when readable).
+- `the sync lister flags a junction as a link` (skip on EPERM like the async test).
+
+`walker-pool.win32.test.ts` (win32 only, real `worker_threads`; if running the TypeScript worker under vitest is impractical, build with `electron-vite build` in `beforeAll` and use `out/main/walker.js`, and say so in the report):
+
+- `the real pool matches the single-thread walk on a temp tree` — 200 folders, 2_000 small files over 3 levels, a junction that must not be followed, an empty folder: the pool with 4 real workers and `walk()` with the real async lister give the same `files`, `folders`, `bytes` and the same sorted `(path, size)` list.
+- `aborting a real pool walk leaves no worker running` — abort after the first batch; the pool's live-worker counter is 0 when the promise resolves and no further sink calls happen.
+
+- [ ] **Step 1: Write the failing tests** (`walker-batch`, `walker-job`, `walker-pool` with the fake port, host additions, sync-lister pure parts, self-test).
+- [ ] **Step 2: Run them** — `npx vitest run src/worker/scanner src/main/self-test.test.ts`. Expected: FAIL.
+- [ ] **Step 3: Implement** `SyncLister` and `createWinFindSyncLister`, `walker-batch.ts`, `walker-job.ts`, `fake-walker-port.ts`, `walker-pool.ts`, `walker-worker.ts`, then the host wiring (`walkParallel`, failure message, `walkers`), `entry.ts`, `ScanDone.walkers`, the self-test change, `electron.vite.config.ts` and `electron-builder.yml`.
+- [ ] **Step 4: Run the same tests.** Expected: PASS; on Windows the native and real-thread tests also pass.
+- [ ] **Step 5: Extend `scripts/bench-walk.mjs`** and run the acceptance procedure of rule 15 (full `C:\`, back to back). Put the table in the report. If the 1.8x bar is not met: stop with NEEDS_CONTEXT, do not commit.
+- [ ] **Step 6: Perf and gates**, each command separately so a failure points at the right config (PowerShell, from `C:\StorageIQ`):
+
+```powershell
+npm run format
+npm run format:check
+npm run lint
+npm run typecheck:node
+npm run typecheck:web
+npx vitest run
+npm run test:perf
+npm run dist
+npm run test:packaged
+```
+
+Expected: all green; the packaged self-test logs a scan with at least 2 walkers and the file count of the `resources` scan; `app.asar.unpacked/out/main` contains `walker.js` and its chunks.
+
+- [ ] **Step 7: Manual check (record in the report):** `npm run dev`, scan `C:\`; the scan completes, Task Manager shows the scanner process using several cores, the totals move continuously, Cancel mid-scan returns to idle within about 2 s and the scanner process drops to idle CPU (no thread left working); a second scan started right after the cancel completes.
+- [ ] **Step 8: Commit** (message has no Co-Authored-By line and no AI attribution)
+
+```powershell
+git add src/worker/scanner/walker-batch.ts src/worker/scanner/walker-batch.test.ts src/worker/scanner/walker-job.ts src/worker/scanner/walker-job.test.ts src/worker/scanner/walker-pool.ts src/worker/scanner/walker-pool.test.ts src/worker/scanner/walker-pool.win32.test.ts src/worker/scanner/walker-worker.ts src/worker/scanner/test/fake-walker-port.ts src/worker/scanner/win-find.ts src/worker/scanner/win-find.test.ts src/worker/scanner/walk.ts src/worker/scanner/test/fake-walk-fs.ts src/worker/scanner/scanner-host.ts src/worker/scanner/scanner-host.test.ts src/worker/scanner/entry.ts src/shared/scan-types.ts src/main/self-test.ts src/main/self-test.test.ts electron.vite.config.ts electron-builder.yml scripts/bench-walk.mjs
+git commit -m "perf(scanner): walk with several worker threads, one writer, batched results"
 ```
 
 ---
