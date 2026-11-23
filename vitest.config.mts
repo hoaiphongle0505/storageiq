@@ -12,6 +12,8 @@ export default defineConfig({
   },
   test: {
     include: ['src/**/*.test.{ts,tsx}'],
+    // Perf tests run alone (`npm run test:perf`), so other test files cannot skew their timings.
+    exclude: ['**/node_modules/**', 'src/**/*.perf.test.ts'],
     environment: 'node',
     setupFiles: ['src/renderer/src/test/setup.ts'],
     restoreMocks: true,
