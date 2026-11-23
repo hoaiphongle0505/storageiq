@@ -285,6 +285,21 @@ describe('the walker pool', () => {
     for (const port of ports) expect(port.terminated).toBeGreaterThanOrEqual(1)
   })
 
+  it('a walk that settles while workers are still loading sends them exit and does not terminate them', async () => {
+    const { pool, ports } = poolOf({ root: dir({ 'a.txt': file(5) }) }, 3, (index) =>
+      index === 0 ? {} : { neverReady: true },
+    )
+    const run = record()
+    const result = await pool.walk(ROOT, 0, run.sink, new AbortController().signal)
+    expect(result.walkers).toBe(3)
+    expect(run.totals.files).toBe(1)
+    expect(ports[0]?.terminated).toBeGreaterThanOrEqual(1)
+    for (const port of ports.slice(1)) {
+      expect(port.exitsSeen).toBe(1)
+      expect(port.terminated).toBe(0)
+    }
+  })
+
   it('a signal that is already aborted starts no job', async () => {
     const controller = new AbortController()
     controller.abort()
@@ -292,9 +307,11 @@ describe('the walker pool', () => {
     const run = record()
     await pool.walk(ROOT, 0, run.sink, controller.signal)
     expect(run.calls()).toBe(0)
+    // Nothing has reported ready yet, so the ports only get `exit`; they are not terminated.
     for (const port of ports) {
       expect(port.jobsSeen).toBe(0)
-      expect(port.terminated).toBeGreaterThanOrEqual(1)
+      expect(port.exitsSeen).toBe(1)
+      expect(port.terminated).toBe(0)
     }
   })
 })

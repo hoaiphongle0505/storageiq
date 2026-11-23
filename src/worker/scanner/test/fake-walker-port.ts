@@ -12,6 +12,8 @@ export interface FakeWalkerPortOptions {
   neverReply?: boolean
   /** The port emits an `error` event right away and never reports `ready`. */
   startupFails?: boolean
+  /** The port stays alive but never reports `ready` (a thread still loading koffi). */
+  neverReady?: boolean
 }
 
 /**
@@ -21,6 +23,8 @@ export interface FakeWalkerPortOptions {
  */
 export class FakeWalkerPort implements WalkerPort {
   terminated = 0
+  /** How many `{ type: 'exit' }` messages this port received. */
+  exitsSeen = 0
   jobsSeen = 0
   /** Job ids received, in order. */
   readonly jobIds: number[] = []
@@ -40,14 +44,17 @@ export class FakeWalkerPort implements WalkerPort {
     this.flag = new Int32Array(abortFlag)
     if (options.startupFails) {
       queueMicrotask(() => this.emitError(new Error('cannot load the disk reader')))
-    } else {
+    } else if (!options.neverReady) {
       queueMicrotask(() => this.deliver({ type: 'ready' }))
     }
   }
 
   postMessage(message: PoolRequest): void {
     if (this.gone) return
-    if (message.type === 'exit') return
+    if (message.type === 'exit') {
+      this.exitsSeen += 1
+      return
+    }
     const { jobId, dirPath } = message
     this.jobsSeen += 1
     this.jobIds.push(jobId)

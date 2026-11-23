@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -16,6 +17,33 @@ import { createWinFindLister } from './win-find'
 const isWindows = process.platform === 'win32'
 const cacheDir = path.resolve('node_modules', '.cache', 'storageiq-walker-test')
 const script = path.join(cacheDir, 'walker.js')
+const poolDir = path.resolve('node_modules', '.cache', 'storageiq-walker-pool-test')
+
+/**
+ * Runs in a child process: many tiny walks over a real pool. A tiny tree is finished by the first
+ * ready worker while the others are still loading koffi, which is exactly when the pool used to
+ * terminate a thread inside koffi's native init and abort the whole process.
+ */
+const stressChild = `
+const { Worker } = require('node:worker_threads')
+const { createWalkerPool } = require(process.argv[2])
+const script = process.argv[3]
+const root = process.argv[4]
+const sink = { folder: () => 0, file: () => undefined, error: () => undefined, visiting: () => undefined }
+const pool = createWalkerPool({
+  walkers: 7,
+  createPort: (index, abortFlag) => new Worker(script, { workerData: { abortFlag, index } }),
+})
+;(async () => {
+  for (let i = 0; i < 40; i += 1) {
+    await pool.walk(root, 0, sink, new AbortController().signal)
+  }
+  console.log('walks-done')
+})().catch((error) => {
+  console.error(error)
+  process.exit(1)
+})
+`
 
 type Row = [string, number]
 
@@ -82,6 +110,18 @@ describe.runIf(isWindows)('the real walker pool', () => {
         rolldownOptions: { output: { format: 'cjs', entryFileNames: 'walker.js' } },
       },
     })
+    await build({
+      configFile: false,
+      logLevel: 'silent',
+      resolve: { alias: { '@shared': path.resolve('src/shared') } },
+      build: {
+        ssr: path.resolve('src/worker/scanner/walker-pool.ts'),
+        outDir: poolDir,
+        emptyOutDir: true,
+        minify: false,
+        rolldownOptions: { output: { format: 'cjs', entryFileNames: 'walker-pool.js' } },
+      },
+    })
     base = mkdtempSync(path.join(os.tmpdir(), 'storageiq-pool-'))
     for (let a = 0; a < 5; a += 1) {
       for (let b = 0; b < 8; b += 1) {
@@ -107,7 +147,32 @@ describe.runIf(isWindows)('the real walker pool', () => {
   afterAll(() => {
     if (base !== undefined) rmSync(base, { recursive: true, force: true })
     rmSync(cacheDir, { recursive: true, force: true })
+    rmSync(poolDir, { recursive: true, force: true })
   })
+
+  it('40 tiny walks in a row end with exit code 0 (no thread is terminated inside koffi init)', () => {
+    const tiny = mkdtempSync(path.join(os.tmpdir(), 'storageiq-tiny-'))
+    try {
+      for (const name of ['one', 'two', 'three']) {
+        mkdirSync(path.join(tiny, name))
+        writeFileSync(path.join(tiny, name, 'f.txt'), 'x')
+      }
+      const childScript = path.join(poolDir, 'stress-child.js')
+      writeFileSync(childScript, stressChild)
+      const env = { ...process.env }
+      delete env.ELECTRON_RUN_AS_NODE
+      const result = spawnSync(
+        process.execPath,
+        [childScript, path.join(poolDir, 'walker-pool.js'), script, tiny],
+        { encoding: 'utf8', timeout: 100_000, env },
+      )
+      expect(result.stderr).not.toMatch(/FATAL ERROR/)
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain('walks-done')
+    } finally {
+      rmSync(tiny, { recursive: true, force: true })
+    }
+  }, 110_000)
 
   it('the real pool matches the single-thread walk on a temp tree', async () => {
     const lister = await createWinFindLister()
@@ -140,8 +205,13 @@ describe.runIf(isWindows)('the real walker pool', () => {
     }
     const pool = createWalkerPool({ walkers: 4, createPort })
     await pool.walk(base, 0, counting, controller.signal)
-    await new Promise((resolve) => setTimeout(resolve, 50))
     const callsAtEnd = run.calls()
+    // A worker that was still loading koffi is not terminated: it gets `exit` and closes by
+    // itself once it has loaded, so give those a moment.
+    const deadline = Date.now() + 10_000
+    while (live > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    }
 
     expect(live).toBe(0)
     await new Promise((resolve) => setTimeout(resolve, 100))

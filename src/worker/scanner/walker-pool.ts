@@ -22,7 +22,10 @@ import { decodeBatch, type ResultBatch } from './walker-batch'
  * A worker stuck in a blocked kernel open (a dead network share) cannot be interrupted:
  * `terminate()` does not break a thread out of a native call, so after `ABORT_GRACE_MS` the pool
  * calls `terminate()` without awaiting it and resolves anyway; that thread ends when the call
- * returns or when the process exits. The pool is created per walk and torn down in every case.
+ * returns or when the process exits. A worker that has not reported `ready` yet (still loading
+ * koffi) is never terminated, because terminating a thread inside a native module init kills the
+ * process: it only gets `exit` and closes by itself. The pool is created per walk and torn down in
+ * every case.
  */
 
 export const MIN_WALKERS = 2
@@ -159,6 +162,11 @@ export function createWalkerPool(deps: PoolDeps): {
           }
           const waits: Array<Promise<unknown>> = []
           for (const slot of slots) {
+            // A thread that is alive but has not reported `ready` is still inside koffi's native
+            // module init. Terminating it there aborts the whole process (napi_fatal_error), so it
+            // is left alone: the `exit` message queued above closes it once it has loaded. Nothing
+            // waits for it, so a slow loader never delays the end of the walk.
+            if (!slot.ready && !slot.dead) continue
             let ended: Promise<unknown>
             try {
               ended = Promise.resolve(slot.port.terminate()).catch(() => undefined)
