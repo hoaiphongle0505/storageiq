@@ -64,7 +64,7 @@ export function Splitter({
       onPointerUp={endDrag}
       onPointerCancel={endDrag}
       onLostPointerCapture={endDrag}
-      className="h-(--size-splitter) shrink-0 cursor-row-resize touch-none bg-line hover:bg-line-strong focus-visible:bg-accent"
+      className="group relative h-(--size-splitter) shrink-0 cursor-row-resize touch-none bg-app outline-none before:absolute before:inset-x-0 before:top-1/2 before:h-px before:-translate-y-1/2 before:bg-line hover:before:bg-line-strong focus-visible:before:h-0.5 focus-visible:before:bg-accent active:before:h-0.5 active:before:bg-accent after:absolute after:top-1/2 after:left-1/2 after:h-1 after:w-8 after:-translate-x-1/2 after:-translate-y-1/2 after:rounded-pill after:bg-line-strong focus-visible:after:bg-accent active:after:bg-accent"
     />
   )
 }

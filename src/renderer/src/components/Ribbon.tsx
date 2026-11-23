@@ -59,13 +59,11 @@ const UNIT_LABELS: Record<SizeUnit, string> = { auto: 'Auto', gb: 'GB', mb: 'MB'
 function Group({ label, children }: { label: string; children: ReactNode }) {
   const captionId = useId()
   return (
-    <div
-      role="group"
-      aria-labelledby={captionId}
-      className="flex h-full flex-col justify-between border-r border-line px-1.5 last:border-r-0"
-    >
-      <div className="flex items-start gap-0.5">{children}</div>
-      <span id={captionId} className="pb-0.5 text-center text-xs text-ink-muted">
+    <div role="group" aria-labelledby={captionId} className="flex flex-col gap-0.5">
+      <div className="flex items-start gap-0.5 rounded-group border border-line bg-raised p-0.5 shadow-raised">
+        {children}
+      </div>
+      <span id={captionId} className="text-center text-xs leading-4 font-small text-ink-muted">
         {label}
       </span>
     </div>
@@ -144,7 +142,7 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
         },
       ]}
     >
-      <ListTree aria-hidden="true" className="size-6" />
+      <ListTree aria-hidden="true" className="size-5.5" strokeWidth={1.75} />
       <span className="flex items-center gap-0.5">
         Expand
         <ChevronDown aria-hidden="true" className="size-3" />
@@ -169,7 +167,7 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
 
   const unitGroup = (
     <Group label="Unit">
-      <div className="grid grid-cols-2 gap-0.5 pt-1">
+      <div className="grid grid-cols-2 gap-0.5 self-center rounded-pill bg-sunken p-0.5">
         {SIZE_UNITS.map((value) => (
           <button
             key={value}
@@ -258,7 +256,7 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
   const active = TABS.find((entry) => entry.id === tab) ?? { id: 'home', label: 'Home' }
 
   return (
-    <header className="border-b border-line bg-panel">
+    <header className="border-b border-line bg-app">
       <div
         ref={tablistRef}
         role="tablist"
@@ -275,7 +273,7 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
             aria-selected={tab === entry.id}
             onClick={() => setTab(entry.id)}
             onFocus={() => setTab(entry.id)}
-            className="min-h-6 rounded-t-control px-3 text-sm text-ink hover:bg-row-hover aria-selected:bg-sunken aria-selected:font-semibold"
+            className="relative min-h-6 rounded-control px-3 text-[13px] leading-[18px] font-medium text-ink-muted transition-colors duration-[120ms] after:absolute after:inset-x-2 after:bottom-0.5 after:h-0.5 after:rounded-[1px] after:bg-accent after:opacity-0 hover:bg-row-hover hover:text-ink aria-selected:font-semibold aria-selected:text-ink aria-selected:after:opacity-100"
           >
             {entry.label}
           </button>
@@ -284,14 +282,14 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
       <div
         role="tabpanel"
         aria-labelledby={`${baseId}-${active.id}`}
-        className="h-(--size-ribbon-body) bg-sunken px-1 py-1"
+        className="h-(--size-ribbon-body) bg-app px-2 py-1"
       >
         <div
           ref={toolbarRef}
           role="toolbar"
           aria-label={`${active.label} commands`}
           focusgroup="toolbar wrap"
-          className="flex h-full items-stretch"
+          className="flex h-full items-start gap-2"
         >
           {panels[tab]}
         </div>

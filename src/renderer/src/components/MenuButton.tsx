@@ -162,7 +162,7 @@ export function MenuButton({
           ref={popupRef}
           id={menuId}
           popover={supportsPopover() ? 'manual' : undefined}
-          className="popup-menu z-50 min-w-56 rounded-panel border border-line bg-panel py-1 text-ink shadow-menu"
+          className="popup-menu z-50 min-w-56 rounded-panel border border-line bg-raised p-1 text-ink shadow-menu"
           onKeyDown={onMenuKeyDown}
         >
           <div ref={listRef} role="menu" aria-label={menuLabel} focusgroup="menu nomemory">
@@ -196,13 +196,13 @@ function MenuGroup({
   const headingId = useId()
   return (
     <>
-      {!first && <hr className="my-1 border-line" />}
+      {!first && <hr className="mx-1.5 my-1 border-line" />}
       <div role="group" aria-labelledby={section.label ? headingId : undefined}>
         {section.label && (
           <div
             id={headingId}
             role="presentation"
-            className="px-3 pt-1 pb-0.5 text-xs font-semibold text-ink-muted"
+            className="px-2.5 pt-1.5 pb-0.5 text-xs leading-4 font-semibold font-small text-ink-muted"
           >
             {section.label}
           </div>
@@ -213,7 +213,7 @@ function MenuGroup({
             role="menuitem"
             tabIndex={-1}
             aria-disabled="true"
-            className="flex min-h-8 w-full items-center gap-2 px-3 text-left text-ink-muted"
+            className="flex min-h-8 w-full items-center gap-2 rounded-control px-2.5 text-left text-[13px] leading-[18px] text-ink-subtle"
           >
             <span aria-hidden="true" className="size-4 shrink-0" />
             {section.emptyText}
@@ -231,16 +231,19 @@ function MenuGroup({
                 onClick={() => {
                   if (!entry.disabled) onChoose(entry)
                 }}
-                className="flex min-h-8 w-full items-center gap-2 px-3 text-left hover:bg-row-hover focus-visible:bg-row-hover aria-disabled:text-ink-muted aria-disabled:hover:bg-transparent"
+                className="flex min-h-8 w-full items-center gap-2 rounded-control px-2.5 text-left text-[13px] leading-[18px] text-ink transition-colors duration-[120ms] hover:bg-row-hover focus-visible:bg-row-hover focus-visible:outline-offset-[-2px] aria-disabled:text-ink-subtle aria-disabled:hover:bg-transparent"
               >
                 {Icon ? (
-                  <Icon aria-hidden="true" className="size-4 shrink-0" />
+                  <Icon aria-hidden="true" className="size-4 shrink-0 text-ink-muted" />
                 ) : (
                   <span aria-hidden="true" className="size-4 shrink-0" />
                 )}
                 <span className="min-w-0 flex-1 truncate">{entry.label}</span>
                 {entry.hint && (
-                  <span aria-hidden="true" className="ml-4 text-xs text-ink-muted">
+                  <span
+                    aria-hidden="true"
+                    className="ml-4 text-xs leading-4 font-small text-ink-subtle"
+                  >
                     {entry.hint}
                   </span>
                 )}

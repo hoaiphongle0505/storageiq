@@ -4,7 +4,9 @@ import type { SizeMode, TreemapLayout } from '@shared/tree-types'
 import { rowName } from '../lib/format'
 import { drawTreemap, hitTest, readTreemapColors } from '../lib/treemap-draw'
 import { useWorkspace } from '../stores/workspace-store-context'
+import { BUTTON_VARIANT_CLASSES } from './Button'
 import { LevelBar } from './LevelBar'
+import { TreemapLegend } from './TreemapLegend'
 
 interface Size {
   width: number
@@ -69,11 +71,18 @@ export function TreemapPane({ height }: { height: number }) {
   }, [])
 
   useEffect(() => {
-    const query = window.matchMedia?.('(prefers-color-scheme: dark)')
-    if (!query) return
+    if (typeof window.matchMedia !== 'function') return
+    // Colours and the contrast mode are read from the tokens at draw time: redraw when they change.
+    const queries = [
+      '(prefers-color-scheme: dark)',
+      '(prefers-contrast: more)',
+      '(forced-colors: active)',
+    ].map((query) => window.matchMedia(query))
     const onChange = () => setThemeVersion((version) => version + 1)
-    query.addEventListener('change', onChange)
-    return () => query.removeEventListener('change', onChange)
+    for (const query of queries) query.addEventListener('change', onChange)
+    return () => {
+      for (const query of queries) query.removeEventListener('change', onChange)
+    }
   }, [])
 
   // Ask the scanner for a layout; only the newest answer is drawn.
@@ -138,7 +147,8 @@ export function TreemapPane({ height }: { height: number }) {
           .flatMap((list) => Object.values(list.chunks).flatMap((chunk) => chunk.rows))
           .find((row) => row.id === treemapRootId) ??
         null)
-  const title = rootRow === null ? 'Treemap' : `Treemap of ${rowName(rootRow)}`
+  const folderName = rootRow === null ? null : rowName(rootRow)
+  const title = folderName === null ? 'Treemap' : `Treemap of ${folderName}`
 
   return (
     <section
@@ -146,19 +156,28 @@ export function TreemapPane({ height }: { height: number }) {
       className="flex shrink-0 flex-col border-t border-line bg-panel"
       style={{ height }}
     >
-      <div className="flex h-7 items-center justify-between gap-2 border-b border-line px-2 text-sm">
-        <span className="min-w-0 truncate text-ink-muted">{title}</span>
+      <div className="flex h-7 shrink-0 items-center justify-between gap-2 px-3 text-[13px] leading-[18px]">
+        <span className="min-w-0 truncate text-ink-muted">
+          {folderName === null ? (
+            'Treemap'
+          ) : (
+            <>
+              Treemap of{' '}
+              <strong className="text-[15px] leading-5 font-semibold text-ink">{folderName}</strong>
+            </>
+          )}
+        </span>
         <button
           type="button"
           aria-label="Hide treemap"
           title="Hide treemap"
           onClick={() => setTreemapVisible(false)}
-          className="flex size-6 items-center justify-center rounded-control hover:bg-row-hover"
+          className={`flex size-6 items-center justify-center rounded-control ${BUTTON_VARIANT_CLASSES.quiet} transition-colors duration-[120ms]`}
         >
           <X aria-hidden="true" className="size-4" />
         </button>
       </div>
-      <div ref={wrapperRef} className="relative min-h-0 flex-1">
+      <div ref={wrapperRef} className="relative min-h-0 flex-1 bg-(--treemap-edge)">
         {failed && (
           <p
             role="status"
@@ -189,6 +208,7 @@ export function TreemapPane({ height }: { height: number }) {
           />
         )}
       </div>
+      <TreemapLegend layout={shown?.layout ?? null} />
       <LevelBar />
     </section>
   )

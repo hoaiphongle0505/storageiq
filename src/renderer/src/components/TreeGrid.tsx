@@ -101,8 +101,8 @@ function GridRow({
       onClick={() => onSelect(row.id)}
       onDoubleClick={() => hasChildren && onToggle(row.id, !expanded)}
       onContextMenu={(event) => onContextMenu(row.id, event)}
-      className={`absolute inset-x-0 grid cursor-default items-center border-b border-line/60 tabular-nums select-none ${
-        selected ? 'bg-selection' : 'hover:bg-row-hover'
+      className={`absolute inset-x-0 grid cursor-default items-center tabular-nums select-none ${
+        selected ? 'bg-selection shadow-[inset_2px_0_0_var(--accent)]' : 'hover:bg-row-hover'
       } ${bold ? 'font-semibold' : ''}`}
       style={{
         gridTemplateColumns: GRID_TEMPLATE,
@@ -121,7 +121,7 @@ function GridRow({
             event.stopPropagation()
             if (hasChildren) onToggle(row.id, !expanded)
           }}
-          className="flex size-5 shrink-0 items-center justify-center"
+          className="flex size-5 shrink-0 items-center justify-center text-ink-muted hover:text-ink"
         >
           {hasChildren && (
             <ChevronRight
@@ -134,7 +134,7 @@ function GridRow({
           <span
             aria-hidden="true"
             data-testid="name-bar"
-            className="absolute inset-y-1 left-0 rounded-sm bg-bar"
+            className="absolute inset-y-[5px] left-0 rounded-[3px] bg-bar"
             style={{ width: `${Math.min(1, share) * 100}%` }}
           />
           <span className="relative shrink-0">{formatModeValue(row, mode, unit, share)}</span>
@@ -166,9 +166,12 @@ function GridRow({
         {formatCount(row.folders)}
       </div>
       <div role="gridcell" className="flex items-center gap-2 pr-3">
-        <span aria-hidden="true" className="h-2 w-10 shrink-0 overflow-hidden rounded-full bg-bar">
+        <span
+          aria-hidden="true"
+          className="h-1.5 w-12 shrink-0 overflow-hidden rounded-pill bg-bar-track"
+        >
           <span
-            className="block h-full bg-bar-fill"
+            className="block h-full rounded-pill bg-bar-fill forced-colors:bg-[Highlight]"
             style={{ width: `${Math.min(1, share) * 100}%` }}
           />
         </span>
@@ -379,11 +382,11 @@ export function TreeGrid() {
       onContextMenu={(event) => event.preventDefault()}
       className="flex min-h-0 flex-1 flex-col bg-panel focus-visible:outline-offset-[-2px]"
     >
-      <div role="rowgroup" className="border-b border-line bg-sunken">
+      <div role="rowgroup" className="border-b border-line bg-panel">
         <div
           role="row"
           aria-rowindex={1}
-          className="grid h-(--size-header-row) items-stretch text-sm"
+          className="grid h-(--size-header-row) items-stretch text-[13px] leading-[18px]"
           style={{ gridTemplateColumns: GRID_TEMPLATE }}
         >
           {COLUMNS.map((column) => {
@@ -395,16 +398,16 @@ export function TreeGrid() {
                 key={column.id}
                 role="columnheader"
                 aria-sort={ariaSort}
-                className="border-r border-line last:border-r-0"
+                className="relative after:absolute after:top-1/2 after:right-0 after:h-3 after:w-px after:-translate-y-1/2 after:bg-line last:after:hidden"
               >
                 <button
                   type="button"
                   onClick={() => sortBy(column.id)}
-                  className={`flex size-full items-center gap-1 px-2 hover:bg-row-hover ${column.numeric ? 'justify-end' : ''}`}
+                  className={`flex size-full items-center gap-1 px-2 transition-colors duration-[120ms] hover:bg-row-hover hover:text-ink ${active ? 'font-semibold text-ink' : 'font-medium text-ink-muted'} ${column.numeric ? 'justify-end' : ''}`}
                 >
                   {column.label}
                   {active && (
-                    <span aria-hidden="true" className="text-xs text-ink-muted">
+                    <span aria-hidden="true" className="text-xs text-accent">
                       {sort.dir === 'asc' ? '▲' : '▼'}
                     </span>
                   )}

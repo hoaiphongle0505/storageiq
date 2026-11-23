@@ -17,19 +17,21 @@ export function LevelBar() {
       role="toolbar"
       aria-label="Treemap levels"
       focusgroup="toolbar wrap"
-      className="grid h-(--size-level-bar) shrink-0 grid-cols-6 gap-1 border-t border-line bg-sunken p-1"
+      className="h-(--size-level-bar) shrink-0 border-t border-line bg-panel px-2 py-1"
     >
-      {LEVELS.map((level) => (
-        <button
-          key={level}
-          type="button"
-          aria-pressed={depth === level}
-          onClick={() => setTreemapDepth(level)}
-          className="min-h-6 rounded-control border border-line bg-panel px-2 text-left text-sm hover:bg-row-hover aria-pressed:border-accent aria-pressed:bg-pressed aria-pressed:font-semibold"
-        >
-          Level {level}
-        </button>
-      ))}
+      <div className="grid size-full grid-cols-6 gap-0.5 rounded-pill bg-sunken p-0.5">
+        {LEVELS.map((level) => (
+          <button
+            key={level}
+            type="button"
+            aria-pressed={depth === level}
+            onClick={() => setTreemapDepth(level)}
+            className="rounded-pill text-center text-[13px] leading-[18px] text-ink-muted tabular-nums transition-colors duration-[120ms] hover:bg-row-hover hover:text-ink aria-pressed:bg-raised aria-pressed:font-semibold aria-pressed:text-ink aria-pressed:shadow-[inset_0_0_0_1px_var(--accent),var(--elevation-raised)] aria-pressed:hover:bg-raised"
+          >
+            Level {level}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

@@ -45,10 +45,10 @@ export function Dialog({
         event.preventDefault()
         onClose()
       }}
-      className="m-auto w-[min(40rem,90vw)] rounded-panel border border-line bg-panel p-0 text-ink shadow-menu backdrop:bg-black/30"
+      className="m-auto w-[min(40rem,90vw)] rounded-panel border border-line bg-raised p-0 text-ink shadow-dialog backdrop:bg-(--backdrop)"
     >
       <div className="flex max-h-[70vh] flex-col gap-3 p-5">
-        <h2 id={titleId} className="font-display text-lg font-semibold">
+        <h2 id={titleId} className="font-display text-lg leading-6 font-semibold text-ink">
           {title}
         </h2>
         <div className="min-h-0 overflow-auto">{children}</div>

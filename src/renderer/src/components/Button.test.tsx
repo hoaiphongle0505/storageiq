@@ -31,10 +31,22 @@ describe('<Button />', () => {
 
   it('keeps the resting colour on hover while busy (roadmap carry-over 8)', () => {
     expect(BUTTON_VARIANT_CLASSES.primary).toContain('aria-disabled:hover:bg-accent')
-    expect(BUTTON_VARIANT_CLASSES.secondary).toContain('aria-disabled:hover:bg-panel')
+    expect(BUTTON_VARIANT_CLASSES.secondary).toContain('aria-disabled:hover:bg-raised')
     render(<Button busy>Busy</Button>)
     expect(screen.getByRole('button', { name: 'Busy' }).className).toContain(
       'aria-disabled:hover:bg-accent',
+    )
+  })
+
+  it('quiet keeps a transparent background when busy', () => {
+    expect(BUTTON_VARIANT_CLASSES.quiet).toContain('aria-disabled:hover:bg-transparent')
+    render(
+      <Button variant="quiet" busy>
+        Busy
+      </Button>,
+    )
+    expect(screen.getByRole('button', { name: 'Busy' }).className).toContain(
+      'aria-disabled:hover:bg-transparent',
     )
   })
 })

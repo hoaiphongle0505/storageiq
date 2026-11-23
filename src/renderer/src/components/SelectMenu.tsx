@@ -69,7 +69,7 @@ export function SelectMenu() {
       className={RIBBON_BUTTON_CLASS}
       title="Choose a drive or folder to scan"
     >
-      <FolderSearch aria-hidden="true" className="size-6" />
+      <FolderSearch aria-hidden="true" className="size-5.5" strokeWidth={1.75} />
       <span className="flex items-center gap-0.5">
         Select
         <ChevronDown aria-hidden="true" className="size-3" />
