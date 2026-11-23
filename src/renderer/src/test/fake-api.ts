@@ -221,6 +221,7 @@ export function fakeTreemap(nodeId: NodeId, width: number, height: number): Tree
         w: half,
         h: height,
         nested: false,
+        category: 'video',
       },
       {
         id: 'd2',
@@ -234,7 +235,12 @@ export function fakeTreemap(nodeId: NodeId, width: number, height: number): Tree
         w: width - half,
         h: height,
         nested: false,
+        category: 'image',
       },
+    ],
+    categories: [
+      { category: 'video', bytes: 2 * GB },
+      { category: 'image', bytes: 768 * MB },
     ],
   }
 }

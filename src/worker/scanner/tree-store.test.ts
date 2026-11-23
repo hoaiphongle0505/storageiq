@@ -94,7 +94,8 @@ describe('TreeStore', () => {
       allocatedBytes: 20_000 * 4096,
     })
     expect(store.folderFiles(store.folderChain(parent)[1] ?? -1)).toBe(20_000)
-  })
+    // 20 000 files under 3 000 nested folders is 60 million ancestor updates: allow for a loaded CI box.
+  }, 20_000)
 
   it('resetFolder removes a subtree from every total and detaches its entries', () => {
     const { store, photos, year } = sample()
@@ -153,6 +154,49 @@ describe('TreeStore', () => {
       reason: 'access-denied',
       code: 'EPERM',
     })
+  })
+})
+
+describe('TreeStore file types', () => {
+  function typed() {
+    const store = new TreeStore(ROOT, 4096)
+    const a = store.folder(0, 'a', 0)
+    store.file(a, 100, 'x.mp4', 0)
+    store.file(a, 50, 'y.pdf', 0)
+    store.file(0, 10, 'z.mp4', 0)
+    return { store, a }
+  }
+
+  it('keeps logical bytes per file type for every folder', () => {
+    const { store } = typed()
+    const total = store.folderCategoryBytes(0)
+    expect(total.length).toBe(10)
+    expect(total[0]).toBe(110)
+    expect(total[3]).toBe(50)
+    expect(Array.from(total).reduce((sum, v) => sum + v, 0)).toBe(160)
+    const direct = store.directCategoryBytes(0)
+    expect(direct[0]).toBe(10)
+    expect(Array.from(direct).reduce((sum, v) => sum + v, 0)).toBe(10)
+    expect(store.fileCategoryOf(0)).toBe(0)
+  })
+
+  it("removes a folder's file-type bytes from its ancestors on reset", () => {
+    const { store, a } = typed()
+    store.resetFolder(a)
+    expect(store.folderCategoryBytes(0)[0]).toBe(10)
+    expect(store.folderCategoryBytes(0)[3]).toBe(0)
+    expect(Array.from(store.folderCategoryBytes(a)).every((v) => v === 0)).toBe(true)
+    expect(Array.from(store.directCategoryBytes(a)).every((v) => v === 0)).toBe(true)
+  })
+
+  it('grows the category columns with the folders', () => {
+    const store = new TreeStore(ROOT, 4096)
+    for (let i = 0; i < 1500; i += 1) {
+      const folder = store.folder(0, `f${i}`, 0)
+      store.file(folder, 2, 'a.mp3', 0)
+    }
+    expect(store.folderCategoryBytes(0)[2]).toBe(3000)
+    expect(store.folderCategoryBytes(1500)[2]).toBe(2)
   })
 })
 

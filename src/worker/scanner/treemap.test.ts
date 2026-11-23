@@ -182,3 +182,58 @@ describe('treemapLayout limits', () => {
     expect(rects.slice(0, firstDeep).every((r) => r.depth === 0)).toBe(true)
   })
 })
+
+describe('treemapLayout file types', () => {
+  function typed(freeBytes: number | null = null) {
+    const store = new TreeStore('C:\\', 4096, freeBytes)
+    const videos = store.folder(0, 'Videos', 0)
+    store.file(videos, 1500, 'a.mkv', 0)
+    store.file(videos, 100, 'b.txt', 0)
+    const mixed = store.folder(0, 'Mixed', 0)
+    store.file(mixed, 400, 'a.mp4', 0)
+    store.file(mixed, 300, 'b.jpg', 0)
+    store.file(mixed, 300, 'c.mp3', 0)
+    store.file(0, 600, 'x.pdf', 0)
+    store.file(0, 100, 'y.pdf', 0)
+    return { store, videos, mixed }
+  }
+
+  it('colours files by type and folders by their dominant type', () => {
+    const { store, videos, mixed } = typed()
+    const layout = treemapLayout(store, 'd0', 'size', 0, 400, 300)
+    const by = (id: string) => layout?.rects.find((r) => r.id === id)
+    expect(by(`d${videos}`)?.category).toBe('video')
+    expect(by(`d${mixed}`)?.category).toBeNull()
+    expect(by('g0')?.category).toBe('document')
+    const inFiles = treemapLayout(store, `g${videos}`, 'size', 0, 400, 300)
+    expect(inFiles?.rects.map((r) => [r.name, r.category])).toEqual([
+      ['a.mkv', 'video'],
+      ['b.txt', 'document'],
+    ])
+  })
+
+  it('reports the file-type bytes of the laid-out folder', () => {
+    const { store, mixed } = typed()
+    expect(treemapLayout(store, 'd0', 'size', 0, 400, 300)?.categories).toEqual([
+      { category: 'video', bytes: 1900 },
+      { category: 'document', bytes: 800 },
+      { category: 'image', bytes: 300 },
+      { category: 'audio', bytes: 300 },
+    ])
+    expect(treemapLayout(store, `d${mixed}`, 'size', 0, 400, 300)?.categories).toEqual([
+      { category: 'video', bytes: 400 },
+      { category: 'image', bytes: 300 },
+      { category: 'audio', bytes: 300 },
+    ])
+    expect(treemapLayout(store, 'g0', 'size', 0, 400, 300)?.categories).toEqual([
+      { category: 'document', bytes: 700 },
+    ])
+  })
+
+  it('gives free space no category', () => {
+    const { store } = typed(5_000)
+    const layout = treemapLayout(store, 'd0', 'size', 0, 400, 300)
+    expect(layout?.rects.find((r) => r.kind === 'free')?.category).toBeNull()
+    expect(layout?.rects.find((r) => r.id === 'd0')?.category).toBe('video')
+  })
+})

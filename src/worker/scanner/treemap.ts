@@ -1,7 +1,11 @@
+import { categoryShares, dominantCategory } from '@shared/file-category'
 import {
+  FILE_CATEGORIES,
   MAX_TREEMAP_DEPTH,
   modeValue,
   ROOT_NODE_ID,
+  type CategoryShare,
+  type FileCategory,
   type NodeId,
   type SizeMode,
   type TreemapBlockKind,
@@ -98,6 +102,18 @@ interface Item {
   name: string
   value: number
   files: number
+  category: FileCategory | null
+}
+
+function categoryOf(store: TreeStore, ref: NodeRef): FileCategory | null {
+  switch (ref.kind) {
+    case 'file':
+      return FILE_CATEGORIES[store.fileCategoryOf(ref.index)] ?? 'other'
+    case 'folder':
+      return dominantCategory(store.folderCategoryBytes(ref.index))
+    case 'files':
+      return dominantCategory(store.directCategoryBytes(ref.index))
+  }
 }
 
 function itemsOf(store: TreeStore, ref: NodeRef, mode: SizeMode): Item[] {
@@ -113,6 +129,7 @@ function itemsOf(store: TreeStore, ref: NodeRef, mode: SizeMode): Item[] {
         name: row.name,
         value,
         files: row.files,
+        category: categoryOf(store, child),
       })
     }
   }
@@ -135,6 +152,20 @@ function insetBox(cell: Box): Box {
     y: cell.y + TREEMAP_HEADER,
     w: cell.w - TREEMAP_INSET * 2,
     h: cell.h - TREEMAP_HEADER - TREEMAP_INSET,
+  }
+}
+
+function categoriesOf(store: TreeStore, ref: NodeRef): CategoryShare[] {
+  switch (ref.kind) {
+    case 'file': {
+      const bytes = new Array<number>(FILE_CATEGORIES.length).fill(0)
+      bytes[store.fileCategoryOf(ref.index)] = store.fileSize(ref.index)
+      return categoryShares(bytes)
+    }
+    case 'folder':
+      return categoryShares(store.folderCategoryBytes(ref.index))
+    case 'files':
+      return categoryShares(store.directCategoryBytes(ref.index))
   }
 }
 
@@ -180,6 +211,7 @@ export function treemapLayout(
         w: cell.w,
         h: cell.h,
         nested: false,
+        category: item.category,
       }
       rects.push(rect)
       const canNest =
@@ -206,7 +238,15 @@ export function treemapLayout(
     const root = rowOf(store, ref)
     const used = modeValue(root, mode)
     const candidates: Item[] = [
-      { ref, key: nodeId, kind: 'folder', name: root.name, value: used, files: root.files },
+      {
+        ref,
+        key: nodeId,
+        kind: 'folder',
+        name: root.name,
+        value: used,
+        files: root.files,
+        category: categoryOf(store, ref),
+      },
       {
         ref: null,
         key: 'free',
@@ -214,6 +254,7 @@ export function treemapLayout(
         name: 'Free space',
         value: store.freeBytes,
         files: 0,
+        category: null,
       },
     ]
     const top = candidates.filter((item) => item.value > 0)
@@ -238,6 +279,7 @@ export function treemapLayout(
           w: cell.w,
           h: cell.h,
           nested: false,
+          category: null,
         })
         return
       }
@@ -253,6 +295,7 @@ export function treemapLayout(
         w: cell.w,
         h: cell.h,
         nested: false,
+        category: item.category,
       }
       rects.push(rootRect)
       if (cell.w < MIN_NESTED_SIDE || cell.h < MIN_NESTED_SIDE + TREEMAP_HEADER) return
@@ -270,5 +313,5 @@ export function treemapLayout(
     const job = jobs[next]
     if (job !== undefined) place(job)
   }
-  return { nodeId, width, height, rects }
+  return { nodeId, width, height, rects, categories: categoriesOf(store, ref) }
 }

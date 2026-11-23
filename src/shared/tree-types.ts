@@ -81,6 +81,30 @@ export interface TreeNodeDetails {
 
 export type TreemapBlockKind = NodeKind | 'free'
 
+/**
+ * File types the treemap colours by. The order is the index the scanner stores per file: never
+ * reorder, only append.
+ */
+export const FILE_CATEGORIES = [
+  'video',
+  'image',
+  'audio',
+  'document',
+  'archive',
+  'code',
+  'app',
+  'system',
+  'disk-image',
+  'other',
+] as const
+export type FileCategory = (typeof FILE_CATEGORIES)[number]
+
+/** Logical bytes of one file type. */
+export interface CategoryShare {
+  category: FileCategory
+  bytes: number
+}
+
 /** One rectangle of the treemap, in CSS pixels of the requested canvas size. */
 export interface TreemapRect {
   /** `null` for the "Free space" block. */
@@ -99,6 +123,11 @@ export interface TreemapRect {
   h: number
   /** True when the rectangle holds nested rectangles under a label strip. */
   nested: boolean
+  /**
+   * A file's own type; for a folder or "[N files]" block the dominant type (at least half of its
+   * logical bytes). `null` for free space, a mixed folder or a block with no bytes.
+   */
+  category: FileCategory | null
 }
 
 export interface TreemapLayout {
@@ -106,6 +135,8 @@ export interface TreemapLayout {
   width: number
   height: number
   rects: TreemapRect[]
+  /** Logical bytes per file type in the laid-out node, largest first, empty types left out. */
+  categories: CategoryShare[]
 }
 
 /** Totals of the scanned root; sent with `tree:changed` after a folder is refreshed. */

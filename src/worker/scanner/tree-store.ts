@@ -1,5 +1,6 @@
 import path from 'node:path'
 import type { ScanError, ScanErrorKind, ScanErrorReason } from '@shared/scan-types'
+import { CATEGORY_COUNT, fileCategoryIndex } from '@shared/file-category'
 import type { TreeTotals } from '@shared/tree-types'
 import type { WalkSink } from './walk'
 
@@ -53,7 +54,8 @@ function grownI32(array: Int32Array, length: number): Int32Array<ArrayBuffer> {
  * The scan tree in columnar form: one typed-array slot per folder and per file, plus one string
  * per entry name. Folder 0 is the scanned root. Children are singly linked lists (newest first);
  * the query layer sorts them. Every total is kept for the whole subtree, so a row never needs a
- * walk to be read. Memory is 20 bytes per file plus its name (about 125 bytes per file in all).
+ * walk to be read. Memory is 21 bytes per file plus its name (about 125 bytes per file in all), and 160 bytes
+ * per folder for the logical bytes of each file type (total and direct).
  */
 export class TreeStore implements WalkSink<number> {
   readonly rootPath: string
@@ -85,14 +87,18 @@ export class TreeStore implements WalkSink<number> {
   private fDirectSize = new Float64Array(INITIAL_FOLDERS)
   private fDirectAllocated = new Float64Array(INITIAL_FOLDERS)
   private fDirectModified = new Float64Array(INITIAL_FOLDERS)
+  // CATEGORY_COUNT slots per folder: logical bytes per file type, whole subtree and direct files.
+  private fCategoryBytes = new Float64Array(INITIAL_FOLDERS * CATEGORY_COUNT)
+  private fDirectCategoryBytes = new Float64Array(INITIAL_FOLDERS * CATEGORY_COUNT)
   private readonly folderNames: string[] = []
 
-  // Per file: 20 bytes. Allocated size is derived from size; modification time is kept in
+  // Per file: 21 bytes. Allocated size is derived from size; modification time is kept in
   // whole seconds (enough for a date column, and it halves that column).
   private pParent = new Int32Array(INITIAL_FILES)
   private pNext = new Int32Array(INITIAL_FILES)
   private pSize = new Float64Array(INITIAL_FILES)
   private pModifiedSeconds = new Uint32Array(INITIAL_FILES)
+  private pCategory = new Uint8Array(INITIAL_FILES)
   private readonly fileNames: string[] = []
 
   constructor(rootPath: string, clusterBytes: number, freeBytes: number | null = null) {
@@ -127,16 +133,22 @@ export class TreeStore implements WalkSink<number> {
     this.fFirstFile[parent] = index
     this.pSize[index] = bytes
     this.pModifiedSeconds[index] = Math.min(0xffffffff, Math.max(0, Math.floor(modifiedMs / 1000)))
+    const category = fileCategoryIndex(name)
+    this.pCategory[index] = category
     this.fileNames.push(name)
 
     this.fDirectFiles[parent] = (this.fDirectFiles[parent] ?? 0) + 1
     this.fDirectSize[parent] = (this.fDirectSize[parent] ?? 0) + bytes
     this.fDirectAllocated[parent] = (this.fDirectAllocated[parent] ?? 0) + allocated
     if ((this.fDirectModified[parent] ?? 0) < modifiedMs) this.fDirectModified[parent] = modifiedMs
+    const directSlot = parent * CATEGORY_COUNT + category
+    this.fDirectCategoryBytes[directSlot] = (this.fDirectCategoryBytes[directSlot] ?? 0) + bytes
     for (let a = parent; a >= 0; a = this.fParent[a] ?? NONE) {
       this.fFiles[a] = (this.fFiles[a] ?? 0) + 1
       this.fSize[a] = (this.fSize[a] ?? 0) + bytes
       this.fAllocated[a] = (this.fAllocated[a] ?? 0) + allocated
+      const slot = a * CATEGORY_COUNT + category
+      this.fCategoryBytes[slot] = (this.fCategoryBytes[slot] ?? 0) + bytes
       if ((this.fModified[a] ?? 0) < modifiedMs) this.fModified[a] = modifiedMs
     }
     this.version += 1
@@ -213,6 +225,21 @@ export class TreeStore implements WalkSink<number> {
   fileAllocated(index: number): number {
     return allocatedSize(this.pSize[index] ?? 0, this.clusterBytes)
   }
+  /** Index into `FILE_CATEGORIES` of the file's type. */
+  fileCategoryOf(index: number): number {
+    return this.pCategory[index] ?? CATEGORY_COUNT - 1
+  }
+  /**
+   * Logical bytes per file type below folder `index`, `CATEGORY_COUNT` entries. A view into the
+   * store: read it at once and do not keep it across writes.
+   */
+  folderCategoryBytes(index: number): Float64Array {
+    return this.fCategoryBytes.subarray(index * CATEGORY_COUNT, (index + 1) * CATEGORY_COUNT)
+  }
+  /** Like `folderCategoryBytes`, for the files directly in folder `index` only. */
+  directCategoryBytes(index: number): Float64Array {
+    return this.fDirectCategoryBytes.subarray(index * CATEGORY_COUNT, (index + 1) * CATEGORY_COUNT)
+  }
   /** Modification time in ms, to the second. */
   fileModified(index: number): number {
     return (this.pModifiedSeconds[index] ?? 0) * 1000
@@ -280,7 +307,12 @@ export class TreeStore implements WalkSink<number> {
     const folders = this.fFolders[index] ?? 0
     const size = this.fSize[index] ?? 0
     const allocated = this.fAllocated[index] ?? 0
+    const own = this.folderCategoryBytes(index)
     for (let a = this.fParent[index] ?? NONE; a >= 0; a = this.fParent[a] ?? NONE) {
+      for (let c = 0; c < CATEGORY_COUNT; c += 1) {
+        const slot = a * CATEGORY_COUNT + c
+        this.fCategoryBytes[slot] = (this.fCategoryBytes[slot] ?? 0) - (own[c] ?? 0)
+      }
       this.fFiles[a] = (this.fFiles[a] ?? 0) - files
       this.fFolders[a] = (this.fFolders[a] ?? 0) - folders
       this.fSize[a] = (this.fSize[a] ?? 0) - size
@@ -299,6 +331,8 @@ export class TreeStore implements WalkSink<number> {
     this.fFolders[index] = 0
     this.fSize[index] = 0
     this.fAllocated[index] = 0
+    own.fill(0)
+    this.directCategoryBytes(index).fill(0)
     this.fModified[index] = this.fOwnModified[index] ?? 0
     for (let a = this.fParent[index] ?? NONE; a >= 0; a = this.fParent[a] ?? NONE) {
       let newest = Math.max(this.fOwnModified[a] ?? 0, this.fDirectModified[a] ?? 0)
@@ -343,6 +377,8 @@ export class TreeStore implements WalkSink<number> {
     this.fDirectSize = grownF64(this.fDirectSize, length)
     this.fDirectAllocated = grownF64(this.fDirectAllocated, length)
     this.fDirectModified = grownF64(this.fDirectModified, length)
+    this.fCategoryBytes = grownF64(this.fCategoryBytes, length * CATEGORY_COUNT)
+    this.fDirectCategoryBytes = grownF64(this.fDirectCategoryBytes, length * CATEGORY_COUNT)
   }
 
   private growFiles(): void {
@@ -353,5 +389,8 @@ export class TreeStore implements WalkSink<number> {
     const seconds = new Uint32Array(length)
     seconds.set(this.pModifiedSeconds)
     this.pModifiedSeconds = seconds
+    const categories = new Uint8Array(length)
+    categories.set(this.pCategory)
+    this.pCategory = categories
   }
 }
