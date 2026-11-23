@@ -544,9 +544,7 @@ npm run lint
 npm run typecheck
 npx vitest run
 npm run test:perf
-$checker = (Get-ChildItem $HOME\.claude\skills -Recurse -Filter contrast.py | Where-Object FullName -notmatch '\\\.trash\\' | Select-Object -First 1).FullName
-python $checker design/tokens.json
-& "<impeccable skill>\scripts\impeccable.cmd" detect --json src/renderer
+# Then run the contrast checker on design/tokens.json, and the impeccable detect tool on src/renderer (JSON output).
 ```
 
 Expected: all green; the checker prints `164 pairs, 0 failing AA`; impeccable prints `[]`.
@@ -670,6 +668,259 @@ git commit -m "feat(release): all-users installer option and auto-update from Gi
 3. **Update N to N+1:** with the test release procedure of rule 12 (`0.1.1-test.1` → `0.1.1-test.2`, both pre-releases): the banner “StorageIQ 0.1.1-test.2 is ready. Restart to update.” appears without a modal; Later hides it; Restart installs and relaunches on the new version; check this once for a per-user and once for a per-machine install (the per-machine update asks for UAC again).
 4. **Dev and self-test:** `npm run dev` and `StorageIQ.exe --self-test` make no network request to GitHub (no updater timer starts).
 5. **Offline:** with the network off, the app runs normally and shows no error.
+
+---
+
+### Task 11: Multi-select and non-blocking Explorer actions
+
+**Implementer tier:** standard (Win32/koffi worker thread, COM, ARIA treegrid selection; build it in the order of the steps, native part last)
+
+**Why (owner feedback from a preview build):** (1) “Cannot delete several items at the same time”: the tree selects one row only. (2) “Can’t do anything while this window is shown”: choosing Delete in the Explorer menu makes Windows show its “Preparing to recycle / Discovered N items” dialog and the whole app freezes until it ends, because `win-shell-menu.ts` calls `IContextMenu::InvokeCommand` synchronously on Electron’s main (UI) thread. Both are fixed here: many rows can be selected and acted on at once, and no shell operation runs on the UI thread any more.
+
+**Spike evidence (Windows 11 Pro 10.0.26200, Node 22, koffi 3.3.8; log in `RESULTS.md` of the spike, summarised here so the task is self-contained).** Test item: a folder with 3000 small files, delete verb, Recycle Bin.
+
+| Design | UI-thread timer max gap | Result |
+|---|---|---|
+| current: `InvokeCommand` on the UI thread | 4.4 s (frozen) | baseline |
+| `CMIC_MASK_ASYNCOK` on the UI thread | 20 s (frozen) | **rejected**: the delete verb ignores it and runs the copy engine inside `InvokeCommand` |
+| menu build + track + invoke on a dedicated STA **worker thread** with its own hidden owner window | 57 ms steady, 195 ms on the first start-up | **chosen**; the shell still shows its progress dialog, items recycled |
+| same, owner = the main window’s HWND | 57 ms | works, but not chosen (an operation must never be able to disable or attach input to the app window) |
+| `IFileOperation` (`FOF_ALLOWUNDO`, `FOFX_RECYCLEONDELETE`) on a worker | 53 ms | works; used only as the fallback for mixed-folder selections when the shell menu cannot be built |
+
+Further spike facts the rules rely on: `TrackPopupMenuEx` works from the worker’s own hidden window (popup visible, UI thread kept ticking), koffi callbacks (`SetWindowSubclass` proc) fire on the worker thread, and `GetKeyState` is per-thread input state so the worker must use `GetAsyncKeyState`. Multi-item menus: for items in **one** folder, `IShellFolder::GetUIObjectOf` with all child ids gives the full menu (Open, Edit, Print, third-party verbs, Copy as path, Share, Send to, Cut, Copy, Create shortcut, Delete, Properties). For items in **different** folders: `IShellItemArray::BindToHandler(BHID_SFUIObject)` fails with `E_FAIL`; `SHCreateDefaultContextMenu` with `psf` = the desktop folder and `apidl` = absolute PIDLs works and its Delete recycled files in several folders (verified in the Recycle Bin records), but the menu is reduced (Open, third-party verbs, Cut, Copy, Create shortcut, Delete, Properties; no Send to, Copy as path, Share, Open with). Two hazards were found and are forbidden below: using the first item’s parent folder with PIDLs from other folders returns a menu without error but would act on wrong names, and `GetUIObjectOf` on the desktop folder with absolute PIDLs returns `S_OK` while its Delete silently does nothing.
+
+**Decisions (owner can overrule, see Open questions):**
+
+- Selection model: APG multi-select treegrid. The **active row** (focused row, what `aria-activedescendant` names, what the treemap highlights) is separate from the **selection** (a set that includes the active row when it is selected).
+- The root row and “[N files]” group rows can be selected (highlighted, status-bar totals) but are never part of an action set when more than one row is selected, and the root is never a delete target even alone (rule 13).
+- One native shell worker thread **per in-flight action**, at most 3 at once; a 4th request answers `{ kind: 'busy' }`. A second Explorer action while one runs is therefore allowed.
+- Cap: an action takes at most 1,000 items (`MAX_ACTION_ITEMS`).
+- Open in Explorer, New folder, Enter and Ctrl+N act on exactly one row; with several rows selected they are disabled or do nothing (with a short announcement). Copy path (menu item and Ctrl+C) copies all selected paths, one per line, in tree order.
+
+**Files:**
+
+- Create: `src/renderer/src/lib/selection.ts` (+ `selection.test.ts`), `src/main/shell-menu/shell-worker.ts` (the worker entry), `src/main/shell-menu/shell-worker-protocol.ts`, `src/main/shell-menu/shell-worker-pool.ts` (+ `shell-worker-pool.test.ts`), `src/main/shell-menu/win-shell-menu.native.test.ts` (win32-only)
+- Modify: `src/shared/ipc-contract.ts`, `src/main/ipc/parse-args.ts` (+ test), `src/main/ipc/shell-handlers.ts` (+ `shell-handlers.test.ts`), `src/main/ipc/item-watcher.ts` (+ test), `src/main/shell-menu/context-menu.ts` (+ test), `src/main/shell-menu/win-shell-menu.ts`, `src/main/shell-menu/menu-commands.ts` (+ test), `src/main/index.ts`, `src/preload/index.ts` (+ test), `src/renderer/src/stores/workspace-store.ts` (+ test), `src/renderer/src/components/TreeGrid.tsx` (+ test), `src/renderer/src/components/StatusBar.tsx` (+ test), `src/renderer/src/components/Ribbon.tsx` (+ test), `src/renderer/src/test/fake-api.ts`, `electron.vite.config.ts`, `electron-builder.yml`, `scripts/check-packaged-app.mjs`, `e2e/workspace.spec.ts` (+ `e2e/support/fixture.ts` if a second folder is needed). Another change set may be open on some of these files: start from the current working tree and keep its edits.
+
+**Interfaces:**
+
+`ipc-contract.ts`
+
+- `'shell:context-menu': { args: [scanId: string, nodeIds: NodeId[], x: number, y: number, extended: boolean]; result: ContextMenuOutcome }` (the single `nodeId` becomes a list; `StorageIQApi.showContextMenu(scanId, nodeIds, x, y, extended)` and the preload follow).
+- `ContextMenuOutcome` gains `{ kind: 'busy' }` and `count: number` on `shell` and `copied`; `shell` also gains `running: boolean` (true when the command is still running in the worker at the time the outcome is returned). `refreshed`, `gone`, `opened`, `created`, `dismissed` are unchanged.
+- No new channel or event. `shell:open-in-explorer`, `folder:create`, `clipboard:copy-path` keep a single node id.
+
+`parse-args.ts`: `export const MAX_ACTION_ITEMS = 1000`; `nodeIdListArg(value: unknown, max: number): NodeId[]` (an array of 1..max valid node ids; otherwise `InvalidIpcArgumentsError('expected 1 to 1000 tree node ids')`); `contextMenuArgs` returns `[string, NodeId[], number, number, boolean]`. The parser does not dedupe.
+
+`menu-commands.ts`: `StorageIQMenuItem` gains `'delete'` (id 5, label `Delete (move to Recycle Bin)`, only used by the fallback menu of rule 9); `STORAGEIQ_MENU_LABELS['copy-path']` becomes `&Copy path` for one item and `&Copy paths` for several (export `storageiqMenuLabels(count: number, sameFolder: boolean)` returning the items to show: one item = today’s four; several = Refresh, Copy paths only).
+
+`shell-worker-protocol.ts` (the only contract between main and the worker; plain JSON-serialisable):
+
+- to the worker: `{ type: 'show'; id: number; paths: string[]; x: number; y: number; extended: boolean; hideDestructive: boolean }` (x, y screen pixels, paths come from the scanner only);
+- from the worker: `{ type: 'chosen'; id: number; choice: ShellMenuChoice }` (sent as soon as the menu closes, **before** the command runs), `{ type: 'finished'; id: number; ok: boolean; hresult?: number; step?: string }` (sent when `InvokeCommand` or `PerformOperations` returned; for `dismissed` and StorageIQ items it is sent right after `chosen` with `ok: true`), `{ type: 'failed'; id: number; hresult: number; step: string }` (the menu could not be built; maps back to `ShellMenuError`).
+
+`context-menu.ts`: `ShellMenuNative` (sync `build`) is replaced by
+
+```ts
+export interface ShellMenuHost {
+  /** One menu for `paths` (1..1000). `chosen` resolves when the menu closes; `finished` when the shell command returned. Neither blocks the UI thread. */
+  show(request: ShellMenuRequest): { chosen: Promise<ShellMenuChoice>; finished: Promise<ShellFinish> }
+  dispose(): void
+}
+export type ShellFinish = { ok: true } | { ok: false; hresult: number; step: string }
+```
+
+`ShellMenuRequest` becomes `{ paths: string[]; x: number; y: number; extended: boolean; hideDestructive: boolean }` (no `hwnd`: the owner is the worker’s hidden window). `ShellMenuChoice` is unchanged. The `BuiltShellMenu` interface and the synchronous `showShellMenu` are deleted; the logic moves into the worker, where `build/track/verb/invoke/release` stay as internal steps of `win-shell-menu.ts` (still testable through the fake in tests of the worker’s orchestration function `runShellRequest(native, request, post)`).
+
+`shell-worker-pool.ts`: `createShellWorkerPool(deps: { spawn(): WorkerLike; maxWorkers: number /* 3 */; idleMs: number /* 30_000 */; schedule(cb, ms): () => void }): ShellMenuHost`, with `WorkerLike { postMessage(m): void; on('message'|'error'|'exit', cb): void; terminate(): Promise<number> }`. One worker serves one request at a time; an idle worker is reused; a new one is spawned while fewer than `maxWorkers` are busy; otherwise `show` rejects with `ShellBusyError` (a class exported from the file; the handler turns it into `{ kind: 'busy' }`). A worker that errors or exits while serving a request rejects that request’s `chosen` (or resolves `finished` with `{ ok: false, hresult: 0x80004005, step: 'worker' }` if it was already chosen) and is discarded; the pool never throws into the main process.
+
+`item-watcher.ts`: `watchMany(request: { key: string; itemPaths: readonly string[]; isCurrent(): boolean; onSettled(reason: 'gone' | 'timeout', remaining: readonly string[]): void }): void`: at most 1,000 paths (more throws `RangeError`); each tick checks the paths still present with at most 16 `pathExists` calls in flight; settles `'gone'` when none remain, `'timeout'` after `ITEM_WATCH_TIMEOUT_MS`; same `key`/`isCurrent`/`cancelAll` semantics as `watch`. `watch` stays and is implemented on top of `watchMany`.
+
+`shell-handlers.ts` deps: `showShellMenu(request: ShellMenuRequest): ReturnType<ShellMenuHost['show']>` replaces the old `showShellMenu` dep (the handler converts nothing: `index.ts` converts window CSS pixels to screen pixels before calling the host).
+
+Renderer `selection.ts` (pure, no React): `interface Selection { ids: ReadonlySet<NodeId>; activeId: NodeId | null; anchorId: NodeId | null }`; `single(id)`, `toggle(sel, id)`, `rangeTo(sel, visibleIds: readonly NodeId[], toId, additive: boolean)`, `selectAll(visibleIds)`, `extendBy(sel, visibleIds, delta)`, `orderedIds(sel, visibleIds)`; `dropDescendants(ids, parentOf: (id) => NodeId | null)`; `selectionTotal(ids, rowOf: (id) => TreeRow | null): { count: number; bytes: number; unknown: number }`.
+
+Store: `selectedIds: ReadonlySet<NodeId>`, `anchorId: NodeId | null` added; `selectedId` stays and **is the active row** (every existing consumer, the treemap and the Ribbon keep working unchanged); invariant: `selectedId` is in `selectedIds` or `selectedIds` is empty (after “Ctrl+click off” the active row may be outside the set). New actions: `setSelection(sel: Selection): void` (also sets `treemapRootId` like `select`), `showContextMenu(ids: NodeId[], x, y, extended)`, `copyPaths(ids)`. `select(id)` = `setSelection(single(id))`.
+
+**Rules:**
+
+*Renderer: selection (TreeGrid)*
+
+1. The treegrid has `aria-multiselectable="true"` and **every** data row has `aria-selected` `"true"` or `"false"` (never omitted). The loading rows and header keep none. `aria-activedescendant` names the active row.
+2. The active row is visually distinct from selected rows: selected = `bg-selection` plus the inset accent bar (as today); active = an additional 2 px inset focus ring (`outline-offset: -2px`, token `--accent`) shown while the grid has focus, and under `forced-colors` the ring uses `Highlight`/`CanvasText` so it survives. A row that is active and selected shows both; a row that is active and unselected shows only the ring. Contrast of selected text stays on the existing tokens (no new colour; run `impeccable detect --json src/renderer`, expected `[]`).
+3. Mouse: a plain click selects only that row (`single`), sets the anchor. Ctrl+click toggles the row in the set and moves the active row to it, anchor = that row. Shift+click selects the range from the anchor to the clicked row in **visible order** (loading rows are skipped; collapsed descendants are not visible and are not included), replacing the set; Ctrl+Shift+click adds the range to the existing set. Shift/Ctrl clicks never toggle expansion, and the chevron click still only toggles expansion. Double-click still expands/collapses.
+4. Keyboard (the grid has focus; rows never take focus): Arrow Up/Down, Home, End, PageUp/PageDown move the active row and select only it. **Shift+** those keys extend the range from the anchor to the new active row. **Ctrl+Arrow Up/Down** (and Ctrl+Home/End, Ctrl+PageUp/PageDown) move the active row without changing the set. **Space** toggles the active row; **Ctrl+Space** is the same. **Ctrl+A** selects every visible row (loaded, non-loading); **Ctrl+Shift+Home/End** extends the selection to the first/last visible row. **Escape** with more than one row selected reduces the selection to the active row. Arrow Right/Left keep expanding/collapsing the active row (Shift+Arrow Right/Left do nothing). Enter and Ctrl+N and Ctrl+C: see rule 14. Shift+F10 and the Menu key open the menu for the selection (rule 8).
+5. `aria-selected`/set membership of rows that are scrolled out of the virtual window is kept in the set, so scrolling never loses selection. The DOM keeps its virtualisation; membership is a `Set` lookup per rendered row (no per-row store subscription).
+6. Right-click: if the clicked row is in the selection, the menu acts on the whole selection and the active row becomes the clicked row (the set is not changed); otherwise the selection becomes that row alone first (as Explorer does), then the menu opens. The menu always opens only on an explicit right-click, Shift+F10 or the Menu key (unchanged security rule).
+7. Selection lifetime: the set is cleared to the root row on a new scan, rescan or Select. It survives chunk reloads and `revision` bumps (it holds ids, not rows). On `tree:changed` the store prunes it: for at most 200 selected ids it calls `api.getNode(scanId, id, …)` with at most 8 in flight and removes ids that return `null` (rows that vanished); with more than 200 ids it keeps only the active row. Pruning ignores a result if `scanId` or the revision changed meanwhile. If the active row vanishes, the active row becomes the first remaining selected row, or null. After a shell command whose `choice.verb` is `delete` the set is reduced to the active row at once (the rows leave when the refresh lands). **Known limitation, accepted:** ids of rows inside a refreshed folder may be renumbered by the scanner; pruning with `getNode` therefore may drop selected rows of that folder; it never keeps a stale id because every use re-resolves ids in main.
+8. Actions use the selection in **tree order** (the order of the visible model, rows not currently visible placed after the visible ones in id order). `Shift+F10`/Menu key: `showContextMenu(orderedIds, x, y, extended)` where x, y are the active row’s bottom-left (as today). If the set is empty the active row is used. A set over 1,000 ids after `dropDescendants` shows the announcement `Too many items selected (the limit is 1,000).` and does nothing.
+9. Treemap: highlights the **active row only** (decision: a selection can span unrelated folders; the treemap is a navigation aid, not a selection view). Its click still selects one row (`single`), double-click still drills. `treemapRootId` follows the active row as today.
+10. Group rows `[N files]` and the root: selectable and counted in the status bar. In an action set of more than one row they are dropped in main (rule 12) and a one-line announcement says `Skipped 2 rows that cannot be acted on.` (renderer-side, from the outcome `count` being smaller than the number sent: `Skipped N rows that cannot be acted on.`).
+11. Status bar: when the set has more than one row it shows `N items selected, total size X` (X by `formatSize(bytes, unit)` over the **Size** column bytes, not the Mode value; descendants of selected folders are not added twice, using `dropDescendants` over the loaded parent chain); rows whose data is not loaded count in `N` and are summed as soon as they load; if any row is unknown the text is `N items selected, total size at least X`. The text is in the polite live region used by `announcement` throttled like the scan progress (one update per 500 ms at most, never while the user drags a range). For one selected row nothing is added.
+
+*Main: IPC and orchestration*
+
+12. `shell:context-menu` handler: (a) parse (rule above); (b) check the current scan once; (c) dedupe ids, resolve each with `resolveScanNode`, at most 8 in flight; a node that no longer resolves is dropped, and if none resolve the outcome is `gone`; (d) when more than one row remains drop root and `files` rows and every row that has a selected ancestor (`details.ancestorIds` contains another selected id); with exactly one row requested keep today’s behaviour for it (root and group rows included); (e) check existence of each path with `pathExists` (at most 16 in flight); vanished items are dropped and their folders refreshed quietly; none left → `gone`; (f) the paths handed to the host are the scanner’s `details.path` values only, in the order of the request. The renderer never sends a path.
+13. `hideDestructive: true` is sent when the single requested row is the root (or a drive root): the worker removes the `delete`, `cut` and `rename` items of the shell menu with `DeleteMenu(…, MF_BYCOMMAND)` after `QueryContextMenu`, so the root cannot be deleted from StorageIQ’s menu.
+14. Other actions with several rows: `open` and `new-folder` items are not offered (rule 9’s item set); `copy-path` writes every path joined with `\r\n`, outcome `{ kind: 'copied', count }`; `refresh` refreshes each distinct containing folder (rule 17) and returns `{ kind: 'refreshed', nodeId }` for the first. Enter and Ctrl+N act only when exactly one row is selected; with several rows they announce `Select a single item first.` Ctrl+C works with any number of rows: it copies the paths of the selection (one path for one row) through `copyPaths`. `shell:open-in-explorer` is never sent for several rows; the Ribbon’s Open in Explorer and New folder buttons are disabled while more than one row is selected.
+15. Outcome timing: `host.show` returns `{ chosen, finished }`. The handler awaits `chosen` only. For a shell verb it returns `{ kind: 'shell', verb, changed, count, running: true }` **immediately** and continues in the background (rule 16–17); the renderer announces `Windows is working on N items…`. The IPC call therefore never waits for a long operation, and a second right-click is possible while the first operation runs.
+16. Background continuation, per verb class (existing constants kept): **delete** (`verb === 'delete'`): wait for `finished`; on `{ ok: true }` or a failure with `hresult` of a cancelled or partial operation (`0x80270000` family, `ERROR_CANCELLED`, or any error) run the refresh of rule 17 once anyway (items may be partly gone), then a second refresh after `SECOND_REFRESH_DELAY_MS`; failures are logged with `deps.warn`, never thrown. **cut, rename and unknown (`null`)**: do not wait for `finished`; start `watcher.watchMany` on all item paths immediately, settle on all gone or the 15 s timeout, then rule 17 once (a timeout at the root skips the refresh, as in 8a). **Other changing verbs** (`paste`, `newitem`, `link`, third-party): immediate refresh plus one delayed (rule 17), as today. Read-only verbs: nothing. All timers and watches use a key `${scanId}:${actionSeq}` (a counter in the handler) so they cannot collide, and a new scan cancels them (existing `isCurrent`).
+17. Refresh set: `parents` = the distinct `containingFolder(details)` of the items. If there are more than 50, replace them by their deepest common ancestor (longest common prefix of the `ancestorIds` chains). A parent equal to the root means a **rescan** of the root path (existing `refreshFolder` behaviour): it runs once per action, and only if at least one root-level item no longer exists. Other parents are refreshed **one at a time** through a small FIFO inside the handler (a rescan of the same folder is never started twice concurrently; a folder already queued is not queued again), each failure logged. The scanner stays responsive because `refreshFolder` is already asynchronous; the renderer receives one `tree:changed` per parent.
+18. Concurrent actions: the pool allows 3 at once. While a delete is running, a new menu on any row is allowed. If the same item is still being deleted, the later `pathExists` check may still say it exists; Windows then shows its own error, nothing in StorageIQ breaks. A `ShellBusyError` returns `{ kind: 'busy' }`; the store announces `Windows is still working on earlier actions. Try again in a moment.`
+
+*Native (worker thread)*
+
+19. `electron.vite.config.ts` builds `src/main/shell-menu/shell-worker.ts` as its own self-contained CJS bundle `out/main/shell-worker.js`, the same way `walkerBundle` builds `walker.js` (generalise the plugin to a list of worker entries); `electron-builder.yml` adds `out/main/shell-worker.js` to `asarUnpack` (a worker thread loads a real file); `scripts/check-packaged-app.mjs` expects exactly `shell-worker.js` and `walker.js` unpacked (`unpackedFiles.join()` equals `shell-worker.js,walker.js`) and `--self-test` additionally starts the pool, builds (not shows) a menu for `os.tmpdir()` and checks the labels, so a missing bundle fails the packaged check. `index.ts` creates the pool lazily with `spawn: () => new Worker(shellWorkerPath)` and calls `dispose()` (terminate all) in `before-quit`.
+20. Worker thread: `CoInitializeEx(COINIT_APARTMENTTHREADED)`, creates one hidden top-level window (built-in `STATIC` class, never shown, never parented to the app window) used as owner for `GetUIObjectOf`, `TrackPopupMenuEx`, the menu-message subclass and `CMINVOKECOMMANDINFOEX.hwnd`. It handles one request, then waits for the next message. The window subclass and `koffi.register` callback live exactly as long as `TrackPopupMenuEx` (as today). Modifier keys are read with `GetAsyncKeyState` right after `TrackPopupMenuEx` returns (not `GetKeyState`). All COM objects (menu, `IContextMenu` 2/3, PIDLs, folder) are released after `InvokeCommand` has returned, on the same thread, in `finally`. Nothing outlives the call: no `ASYNCOK`.
+21. Menu source by selection (all in the worker, decided from `path.win32.dirname` of the paths, case-insensitive): **one path**: today’s code unchanged. **Several paths with the same parent**: `SHBindToParent` of the first, `GetUIObjectOf(parent, n child ids)` (full menu). **Several paths with different parents**: `SHCreateDefaultContextMenu` with `DEFCONTEXTMENU { hwnd: owner, psf: desktop folder from SHGetDesktopFolder, cidl: n, apidl: absolute PIDLs from SHParseDisplayName }`, `IID_IContextMenu`. It is forbidden to (a) call the first item’s parent `GetUIObjectOf` with PIDLs of other folders, (b) call the desktop folder’s `GetUIObjectOf` with absolute PIDLs, and (c) rely on `IShellItemArray`+`BHID_SFUIObject` for several folders (all three were shown unsafe or failing in the spike); a comment at the code states this and cites `RESULTS.md`’s findings in one line.
+22. Fallback: if `SHCreateDefaultContextMenu` fails with a failing `HRESULT` the worker builds a StorageIQ-only popup: submenu `StorageIQ` (Refresh, Copy paths) plus `Delete (move to Recycle Bin)` (id `STORAGEIQ_COMMAND_IDS.delete`). Choosing Delete runs `IFileOperation` (`CoCreateInstance(CLSID_FileOperation)`, `SetOperationFlags(FOF_ALLOWUNDO | FOFX_ADDUNDORECORD | FOFX_RECYCLEONDELETE)`, `SetOwnerWindow(owner)`, `DeleteItems(IShellItemArray from SHCreateShellItemArrayFromIDLists)`, `PerformOperations`, `GetAnyOperationsAborted`) on the worker; `choice` is `{ kind: 'shell', verb: 'delete', changed: true }`, `finished` follows `PerformOperations`. The Recycle Bin flag is always set; there is never a permanent-delete path in StorageIQ.
+23. `SHELL_PATH_GONE_HRESULTS` mapping stays: a build failure with `0x80070002/3` returns `{ type: 'failed' }` and the handler treats it as `gone` for that request (all items if several fail the same way; for several items, `QueryContextMenu` failures are not per item: the handler then re-checks existence of each path and, if some are gone, retries once with the remaining paths).
+24. Foreground: the worker calls `SetForegroundWindow(owner)` before `TrackPopupMenuEx` as today; main does not call `window.focus()`. If the menu does not close on an outside click (symptom of a refused foreground switch) the implementer reports it (manual check 4); nothing else is changed.
+25. Crash note (state it in the file’s doc comment): a worker thread isolates blocking but not native crashes: a faulty shell extension that crashes would still take the process down. A `utilityProcess` host would isolate it too but needs `AllowSetForegroundWindow` plumbing; not done here (Open question 3).
+
+**Tests (names exact, grouped by file):**
+
+`src/renderer/src/lib/selection.test.ts` (pure):
+
+- `single replaces the set and sets the anchor`
+- `toggle adds and removes a row and moves the active row`
+- `toggle off the active row leaves the active row on it`
+- `rangeTo selects anchor to target in visible order, both directions`
+- `rangeTo skips ids that are not visible`
+- `rangeTo with additive keeps the existing set`
+- `selectAll takes every visible id and keeps the active row`
+- `extendBy moves the active row and extends from the anchor`
+- `extendBy clamps at the first and last row`
+- `orderedIds returns tree order and appends ids that are not visible`
+- `dropDescendants removes rows whose ancestor is selected`
+- `selectionTotal sums sizes, counts unknown rows and does not double count children`
+
+`TreeGrid.test.tsx` (Testing Library, fake store, like the existing tests; rows come from the existing fixture lists):
+
+- `the grid is multiselectable and every row has aria-selected`
+- `click selects one row and clears the others`
+- `ctrl click toggles a row without clearing the others`
+- `shift click selects a range in visible order`
+- `shift click ignores collapsed descendants`
+- `ctrl shift click adds a range`
+- `ctrl A selects all visible rows`
+- `shift arrow down extends the selection by one row`
+- `ctrl arrow moves the active row without changing the selection`
+- `space toggles the active row and ctrl space does too`
+- `escape reduces a multi selection to the active row`
+- `the active row has a focus ring that differs from the selected style` (class/attribute assertion: `data-active` present only on the active row)
+- `the selection survives a chunk reload`
+- `right click inside the selection opens the menu for all selected rows` (the store’s `showContextMenu` receives the ordered ids)
+- `right click outside the selection selects that row and opens the menu for it`
+- `shift F10 opens the menu for the whole selection at the active row`
+- `selecting more than 1000 rows announces the limit and opens no menu`
+- `enter with several rows announces select a single item first`
+
+`StatusBar.test.tsx`: `shows N items selected and the total size for several rows`, `shows total size at least X when a selected row is not loaded`, `shows nothing extra for one row`, `does not double count a child of a selected folder`.
+
+`workspace-store.test.ts`: `setSelection keeps selectedId as the active row`, `select resets the set to one row`, `a new scan clears the selection to the root`, `tree:changed prunes selected ids that no longer resolve` (fake `getNode` returns null for one id), `more than 200 selected ids collapse to the active row on tree:changed`, `a result that arrives after a new scan is ignored`, `showContextMenu sends all ids in order`, `a busy outcome announces the busy message`, `a shell outcome announces that Windows is working on N items`, `a delete outcome reduces the selection to the active row`, `copyPaths announces the count`.
+
+`Ribbon.test.tsx`: `Open in Explorer and New folder are disabled while several rows are selected`.
+
+`parse-args.test.ts`: `contextMenuArgs accepts 1 id and 1000 ids`, `contextMenuArgs rejects an empty list`, `contextMenuArgs rejects 1001 ids`, `contextMenuArgs rejects a non-array, a non-string id and an id with a bad pattern`, `contextMenuArgs rejects the old single-id form`, `contextMenuArgs still validates x, y and extended`.
+
+`shell-handlers.test.ts` (fake host whose `chosen`/`finished` are controllable promises, fake scan service, fake watcher, fake `refreshFolder` recording calls):
+
+- `resolves every id through the scan and passes only scanner paths to the host`
+- `dedupes ids and drops descendants of a selected ancestor`
+- `drops the root and group rows when several rows are requested`
+- `keeps a single root request and sends hideDestructive`
+- `drops ids that no longer resolve and returns gone when none do`
+- `drops vanished paths, refreshes their folder and continues with the rest`
+- `returns the shell outcome as soon as the menu closes while the command is still running`
+- `delete: refreshes each affected parent once after finished, then once more after the delay`
+- `delete: a failed finished still refreshes and logs the error`
+- `delete with items in 60 folders refreshes their common ancestor instead`
+- `delete with an item at the root refreshes the root once and only when an item is gone`
+- `refreshes a parent that appears twice only once`
+- `a refresh for the same folder is never started while another is in flight`
+- `cut and rename start a watchMany on all paths and refresh on settle`
+- `other changing verbs refresh now and once more after the delay`
+- `a new scan cancels the pending refreshes`
+- `a second request is served while the first is still running`
+- `a ShellBusyError returns the busy outcome`
+- `copy-path with several rows writes all paths joined by CRLF in request order and returns the count`
+- `open-in-explorer and new-folder are not offered for several rows` (the host receives the item set from `storageiqMenuLabels(n, …)`)
+- `refresh with several rows refreshes each distinct containing folder`
+- `a request of 1001 items never reaches the handler` (parser)
+
+`item-watcher.test.ts`: `watchMany settles gone when every path is gone`, `watchMany reports the remaining paths on timeout`, `watchMany checks at most 16 paths at a time`, `watchMany refuses more than 1000 paths`, `watch still behaves as before` (the existing cases keep passing).
+
+`menu-commands.test.ts`: `storageiqMenuLabels offers four items for one row and Refresh plus Copy paths for several`, `delete is classified as a StorageIQ command with id 5`.
+
+`context-menu.test.ts` and `shell-worker-pool.test.ts` (fake `WorkerLike`, fake timers):
+
+- `a request is posted to an idle worker and resolves chosen then finished`
+- `chosen resolves before finished`
+- `a second request while the first runs spawns a second worker`
+- `the fourth concurrent request rejects with ShellBusyError`
+- `an idle worker is terminated after the idle time and a later request spawns a new one`
+- `a worker that exits mid-request rejects chosen with a plain Error`
+- `a worker that exits after chosen resolves finished with ok false`
+- `a failed message becomes a ShellMenuError with the hresult`
+- `dispose terminates every worker and rejects pending requests`
+
+`shell-worker.test.ts` (`runShellRequest` with a fake native that records calls): `one path uses the single item route`, `paths in one folder use one parent with all child ids`, `paths in several folders use the default menu route`, `a failed default menu falls back to the StorageIQ menu with Delete`, `hideDestructive removes delete, cut and rename`, `chosen is posted before the command runs`, `finished carries the hresult of a failed command`, `everything is released when the command throws`.
+
+`win-shell-menu.native.test.ts` (**win32 only**: `describe.skipIf(process.platform !== 'win32')`; creates files only under `os.tmpdir()/storageiq-t11-<random>` and deletes only those; uses the real worker thread through `createShellWorkerPool`; the Explorer menu is **not** shown (no cursor interaction): the test drives the native layer through a test-only entry `invokeVerbForTest(paths, verb)` exported by `win-shell-menu.ts`, which builds the menu with the same routing as rule 21 and invokes the named verb, so no UI is needed). Tests:
+
+- `delete on one temp file recycles it` (file gone; its original path is found in the user’s Recycle Bin `$I` records under `C:\$RECYCLE.BIN\<sid>` when the temp dir is on a fixed drive; the test removes nothing from the bin and says so in a comment; skip the bin assertion when the drive has no bin)
+- `delete on three temp files in one folder recycles all three`
+- `delete on files in two folders recycles all and leaves a sibling file untouched`
+- `delete on a folder and a file in different parents recycles both`
+- `the menu for files in different folders lists Delete and Properties`
+- `does not block the event loop: a 20 ms timer on the main thread never has a gap over 250 ms while 3000 temp files are deleted in a worker` (3000 tiny files in one temp folder; assert `finished` resolved, files gone, `maxGap <= 250`; the old synchronous call produced a 4400 ms gap in the spike)
+- `a second delete can be started while the first runs` (two folders of 1500 files each; both finish; the second `show` is posted before the first `finished` resolves)
+- `the fallback IFileOperation delete recycles items in two folders` (calls the fallback function directly)
+- `the root of a drive hides delete, cut and rename` (`hideDestructive` on `C:\`: labels from the built menu contain no `Delete`; the test never invokes anything on `C:\`)
+
+e2e (`e2e/workspace.spec.ts`, Playwright, existing fixture app): `selecting several rows with ctrl click shows the item count and total size in the status bar`, `shift click selects a range and shift arrow extends it`, `ctrl A selects all visible rows`, `the treemap highlights only the active row`, `escape reduces the selection to the active row`. The native Explorer menu is not exercised by e2e (it opens a native popup); the e2e uses the existing probe hook only to check that `showContextMenu` receives all selected ids (extend the probe to record the ids; no production hook).
+
+**Steps:**
+
+- [ ] **Step 1: Write the failing tests** above, in this order: `selection.test.ts`, `parse-args.test.ts`, `item-watcher.test.ts`, `menu-commands.test.ts`, `shell-worker-pool.test.ts`, `shell-worker.test.ts`, `shell-handlers.test.ts`, store, `TreeGrid`, `StatusBar`, `Ribbon`. Write `win-shell-menu.native.test.ts` last (needs Step 5).
+- [ ] **Step 2: Run them.** `npx vitest run src/renderer src/main/ipc src/main/shell-menu src/preload`. Expected: FAIL.
+- [ ] **Step 3: Renderer.** `selection.ts`, store changes (rule 7, `showContextMenu(ids, …)`, `copyPaths`), `TreeGrid` (rules 1–6, 8, 10, 14), `StatusBar` (rule 11), `Ribbon`, `fake-api.ts`, preload and contract (`shell:context-menu` list form). Run the renderer tests; expected PASS.
+- [ ] **Step 4: Main orchestration.** `parse-args`, `item-watcher.watchMany`, `menu-commands`, `shell-handlers` (rules 12–18) with the fake host, `context-menu.ts` types, `shell-worker-pool.ts`. Run `npx vitest run src/main`; expected PASS.
+- [ ] **Step 5: Native.** `shell-worker-protocol.ts`, `shell-worker.ts`, `win-shell-menu.ts` (rules 20–23, `invokeVerbForTest`), `index.ts` wiring (screen-pixel conversion stays in `index.ts`; `before-quit` disposes the pool), `electron.vite.config.ts`, `electron-builder.yml`, `check-packaged-app.mjs` (rule 19). Run the native test file from PowerShell; expected PASS, and report the measured max timer gap and the 3000-file duration in the commit body.
+- [ ] **Step 6: Gate** (common gate), then `npm run test:e2e` (unset `ELECTRON_RUN_AS_NODE` first; needs the interactive desktop), then `npm run dist; npm run test:packaged`. Expected: all pass; `release/<version>/win-unpacked/resources/app.asar.unpacked/out/main/` contains exactly `shell-worker.js` and `walker.js`; the packaged `--self-test` builds a menu through the worker.
+- [ ] **Step 7: Commit**
+
+```powershell
+git add electron.vite.config.ts electron-builder.yml scripts/check-packaged-app.mjs e2e/workspace.spec.ts e2e/support/fixture.ts src/shared/ipc-contract.ts src/preload/index.ts src/preload/index.test.ts src/main/index.ts src/main/ipc/parse-args.ts src/main/ipc/parse-args.test.ts src/main/ipc/shell-handlers.ts src/main/ipc/shell-handlers.test.ts src/main/ipc/item-watcher.ts src/main/ipc/item-watcher.test.ts src/main/shell-menu/context-menu.ts src/main/shell-menu/context-menu.test.ts src/main/shell-menu/menu-commands.ts src/main/shell-menu/menu-commands.test.ts src/main/shell-menu/win-shell-menu.ts src/main/shell-menu/win-shell-menu.native.test.ts src/main/shell-menu/shell-worker.ts src/main/shell-menu/shell-worker.test.ts src/main/shell-menu/shell-worker-protocol.ts src/main/shell-menu/shell-worker-pool.ts src/main/shell-menu/shell-worker-pool.test.ts src/renderer/src/lib/selection.ts src/renderer/src/lib/selection.test.ts src/renderer/src/stores/workspace-store.ts src/renderer/src/stores/workspace-store.test.ts src/renderer/src/components/TreeGrid.tsx src/renderer/src/components/TreeGrid.test.tsx src/renderer/src/components/StatusBar.tsx src/renderer/src/components/StatusBar.test.tsx src/renderer/src/components/Ribbon.tsx src/renderer/src/components/Ribbon.test.tsx src/renderer/src/test/fake-api.ts
+git commit -m "feat(workspace): multi-select rows and run Explorer actions on a worker thread"
+```
+
+Add any other test file the change touched to the `git add` line. No AI attribution trailer.
+
+**Manual checks for the owner (add to Task 9’s checks-by-eye list):**
+
+1. **Several rows, mouse:** click a row, Ctrl+click two others, Shift+click a far row: the highlighted rows and the status bar text `N items selected, total size X` match; X equals the sum of the Size column of the selected rows.
+2. **Several rows, keyboard:** Shift+Down, Ctrl+Down (moves the ring only), Space, Ctrl+A, Esc behave as in rule 4; the focus ring is visible on the active row and differs from the selection colour, in light, dark and Windows high-contrast.
+3. **Delete many, same folder:** select 5 files in one folder, right-click one of them: the full Explorer menu appears (Send to, Copy as path, …); choose Delete: Windows’ “Preparing to recycle” dialog appears and **the StorageIQ window stays usable** (scroll the tree, resize the splitter, switch the Mode, expand folders) while it runs. When it ends the rows disappear and the folder totals drop without pressing Refresh.
+4. **Delete many, different folders:** select files in two or three folders (Ctrl+click across expanded folders), right-click: a **reduced** menu appears (Open, Cut, Copy, Create shortcut, Delete, Properties plus StorageIQ items). Delete recycles all (check the Recycle Bin); every affected folder updates. Check that a click outside the menu closes it (foreground rule 24) and the app window is not left disabled or greyed while Windows’ dialog is shown.
+5. **Big delete:** delete a folder with tens of thousands of files: the dialog shows “Discovered N items”, the app stays fully responsive, you can start a second action (for instance Copy path on another row) while it runs; a fourth simultaneous action shows the busy message.
+6. **Cancel:** press Cancel in Windows’ dialog half way: the items already moved are gone from the tree after the refresh, the rest remain.
+7. **Protected root:** right-click the root row: no Delete, Cut or Rename in the menu. Ctrl+A then right-click: the root is not part of the action (the announcement says rows were skipped).
+8. **Limits:** select all (Ctrl+A) in a folder with more than 1,000 visible rows and open the menu: the limit message appears and no menu opens.
+9. **Single row:** everything that worked before still works (right-click, Shift+F10, Open in Explorer, New folder, Ctrl+C).
+
+**Open questions for the controller / owner (Task 11):**
+
+1. **Reduced menu for mixed folders.** Selections spanning several folders get Windows’ default multi-item menu without Send to, Copy as path, Share, Open with, Edit and Print. Acceptable, or should StorageIQ refuse the menu for mixed selections and offer only its own Delete / Copy paths (rule 22’s fallback as the primary)?
+2. **Treemap shows the active row only.** Alternative: outline every selected row that is visible in the current treemap. Say if wanted.
+3. **Crash isolation.** A worker thread does not isolate a native crash in a third-party shell extension; a separate `utilityProcess` would, at the cost of foreground-window plumbing and an IPC hop. Revisit if crashes are reported.
+4. **Foreground and menu dismissal from the worker’s hidden owner window** could not be fully proven without a person (the spike’s Esc key did not reach the menu because the test console was not the foreground process). Manual check 4 decides; fallback is to make the app window the owner of the menu only (not of the operation).
+5. **Stale rows during a long delete.** The rows leave the tree when the operation ends (rule 16), not while Windows moves them. A periodic mid-operation refresh is possible; not done to avoid rescans of a folder that is changing under the scanner.
+6. **Pruning by `getNode`** (rule 7) is bounded at 200 ids; a batched `tree:exists` channel would be cleaner. Say if the owner wants it.
+7. **Ctrl+C with several rows** copies all paths (Explorer copies files instead; StorageIQ keeps the path semantics it already has for one row).
+8. **Recycle Bin only.** There is no Shift+Delete or permanent-delete path in StorageIQ; the shell’s own menu still offers Shift+Delete through the extended verbs (`Shift` at right-click), unchanged.
+9. **The spike left about ten small test items in the user’s Recycle Bin** (files named `a.txt`, `b.txt`, `c.txt`, `d1.txt`, `f00xxxx.txt`, folders `tmp-*`); they can be emptied with the bin.
 
 ---
 

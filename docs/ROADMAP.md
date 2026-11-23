@@ -11,7 +11,7 @@ Living document owned by the technical lead. Update it whenever a phase complete
 
 **"Shows where your disk space went, and explains it in plain words."**
 
-StorageIQ is a free, open-source Windows disk-space analyzer for everyday users. Point it at a drive or folder and it shows which folders and files are using the space and explains the well-known ones in plain language. Its totals are honest: they match what Windows reports, or the app explains the difference. It covers what paid disk analyzers sell (tree view, largest files, treemap, duplicates, history, export) at no cost and under the MIT license. It has no nags and needs no account. We make no speed claims and never name competitors in marketing.
+StorageIQ is a free, open-source Windows disk-space analyzer for everyday users. Point it at a drive or folder and it shows which folders and files are using the space and explains the well-known ones in plain language. Its totals are honest: they match what Windows reports, or the app explains the difference. It covers what paid disk analyzers sell (tree view, largest files, treemap, duplicates, history, export) at no cost and under the MIT license. It has no nags and needs no account. We make no speed claims beyond what was measured, and never name competitors in marketing.
 
 Scope and ordering follow the research-driven [Roadmap v2 spec](superpowers/specs/2026-11-18-roadmap-v2-research-driven-design.md), approved 2026-11-18.
 
@@ -236,10 +236,10 @@ Decisions recorded with the plan:
 
 ### Release checklist (before first public release, not tied to a phase)
 
-Decided before the first public build, at the end of Phase 4:
+Decided before the first public build; the MVP (Phase 6) is the first public release:
 
 - [ ] Custom app icon (`build/icon.ico`)
-- [ ] Code signing: apply to the SignPath Foundation (free signing for open-source projects); if declined, use Azure Trusted Signing
+- [ ] Code signing: SignPath Foundation application pending (the owner is applying; free signing for open-source projects); if declined, use Azure Trusted Signing. Until builds are signed, SmartScreen warns on first run
 - [ ] Official winget package under the StorageIQ name
 - [ ] Decide whether uninstall removes `%APPDATA%\StorageIQ` (kept by default today)
 - [ ] Decide whether the installer keeps `allowToChangeInstallationDirectory` (enabled today)

@@ -31,7 +31,10 @@ export const FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 export const IO_REPARSE_TAG_SYMLINK = 0xa000000c
 export const IO_REPARSE_TAG_MOUNT_POINT = 0xa0000003
 export const ERROR_NO_MORE_FILES = 18
-/** Patterns this long or longer get the `\\?\` prefix (MAX_PATH is 260, minus room for names). */
+/**
+ * Historic threshold, kept for the tests: `findPattern` now gives every drive pattern the `\\?\`
+ * prefix, short or long (MAX_PATH is 260, minus room for names), so nothing branches on it.
+ */
 export const LONG_PATH_PREFIX_AT = 248
 /** `sizeof(WIN32_FIND_DATAW)` on x64: 4 + 24 + 16 + 520 + 28. */
 export const FIND_DATA_SIZE = 592

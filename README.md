@@ -33,7 +33,7 @@ Notes:
 - `npm run test:e2e` opens a real window, so it needs an interactive desktop session (it is not headless).
 - Run the unit tests from PowerShell or cmd, not Git Bash.
 
-Installers are currently unsigned, so Windows SmartScreen will warn on first run.
+Installers are currently unsigned, so Windows SmartScreen will warn on first run. An all-users (per-machine) install shows a Windows administrator (UAC) prompt, also when an update installs at quit.
 
 ## Architecture
 
@@ -43,6 +43,8 @@ Installers are currently unsigned, so Windows SmartScreen will warn on first run
 - `src/renderer`: React UI (Tailwind, Zustand, Lucide icons): ribbon, column tree, treemap with legend, status bar
 - `src/shared`: types shared by every process, including the IPC contract
 - `design`: design tokens (`tokens.json` → `tokens.css`), component specs and the contrast report
+
+The installed app lists the licences of the open-source packages it ships in `THIRD_PARTY_NOTICES.txt` (next to the program; generated at build time by `scripts/build-notices.cjs`, also `npm run notices`).
 
 Security baseline: context isolation, sandboxed renderer, no Node integration, strict CSP, blocked navigation and pop-ups, a sender check and argument validation on every IPC call, and shell actions only on paths from the current scan. Read [docs/ROADMAP.md](docs/ROADMAP.md) for the architecture decisions and [docs/RELEASING.md](docs/RELEASING.md) for releases and updates.
 

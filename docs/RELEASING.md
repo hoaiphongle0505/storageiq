@@ -7,8 +7,8 @@ StorageIQ updates itself from GitHub Releases (`hoaiphongle0505/storageiq`). Pus
 1. Bump `version` in `package.json` (for example `0.2.0` or `0.2.0-beta.1`) and commit it.
 2. Tag the commit `vX.Y.Z` (stable) or `vX.Y.Z-beta.N` (pre-release). The tag must equal `v` plus the `package.json` version; the workflow fails otherwise.
 3. Push the commit and the tag: `git push` and `git push origin vX.Y.Z`.
-4. Wait for the **Release** workflow (`.github/workflows/release.yml`). It type-checks, runs the tests, builds the installer, runs the packaged-app check, and creates the release (marked as a pre-release when the tag contains a hyphen). A re-run uploads the files again over the existing release.
-5. Edit the release notes on GitHub (they start as generated notes) and publish.
+4. Wait for the **Release** workflow (`.github/workflows/release.yml`). Its `build` job (read-only access) type-checks, runs the tests, builds the installer, runs the packaged-app check and uploads the three release files. Its `publish` job (write access, runs none of the repository's code) creates the release as a draft, attaches the files and then publishes it, so nobody sees a release without `latest.yml`. The release is marked as a pre-release when the tag contains a hyphen. A re-run uploads the files again over the existing release.
+5. Edit the release notes on GitHub (they start as generated notes) if they need it.
 6. Publish pre-releases first. When a pre-release has proven itself, release the same code as a stable version with a new version bump and tag.
 
 ## Update channel
@@ -18,7 +18,9 @@ The installed version decides what it is offered:
 - A stable install (`0.2.0`) receives stable releases only.
 - A pre-release install (`0.2.0-beta.1`) receives pre-releases and stable releases.
 
-An update downloads in the background. A banner offers **Restart**; if it is ignored, the update installs the next time the app is closed normally. The first check runs about 10 seconds after the app starts, then every 6 hours. Nothing runs in `npm run dev` or under `--self-test`.
+A pre-release must be tagged `vX.Y.Z-beta.N` with the matching `package.json` version. Marking a stable version (`0.2.0`) as a pre-release by hand on GitHub does not work: it is never offered to stable installs, and beta installs fall back to `latest.yml` (the stable feed).
+
+An update downloads in the background. A banner offers **Restart**; if it is ignored, the update installs the next time the app is closed normally (`autoInstallOnAppQuit`). Each per-machine (all-users) install shows a Windows administrator (UAC) prompt at that quit when an update was downloaded. The first check runs about 10 seconds after the app starts, then every 6 hours. Nothing runs in `npm run dev` or under `--self-test`.
 
 ## The three release files
 
@@ -38,4 +40,8 @@ Use the real timing; there is no test override in the update code. Repeat once f
 
 ## TODO: code signing (SignPath)
 
-The installer is **unsigned** today. Windows SmartScreen shows “unknown publisher”, and the per-machine install’s administrator prompt shows the same. electron-updater does not require a signature for updates hosted on GitHub, but a signed build is planned: signing with SignPath is a later step and is not set up yet.
+The installer is **unsigned** today. Windows SmartScreen shows “unknown publisher”, and the per-machine install’s administrator prompt shows the same. electron-updater does not require a signature for updates hosted on GitHub today, but a signed build is planned: signing with SignPath is a later step and is not set up yet (the application is pending).
+
+Once builds are signed, verify that electron-updater checks the publisher signature on updates: the installed `app-update.yml` must carry the publisher name (`publisherName`, from the `win.signtoolOptions.publisherName` setting in `electron-builder.yml`), and an update signed by anyone else must be refused. This only applies after builds are signed; until then updates are checked by the `latest.yml` hash only.
+
+Unpacked files are outside the asar integrity check: only `out/main/walker.js` and koffi are unpacked (see the `asarUnpack` comment in `electron-builder.yml`), and code signing is what covers them.

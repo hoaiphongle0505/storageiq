@@ -54,8 +54,9 @@ function grownI32(array: Int32Array, length: number): Int32Array<ArrayBuffer> {
  * The scan tree in columnar form: one typed-array slot per folder and per file, plus one string
  * per entry name. Folder 0 is the scanned root. Children are singly linked lists (newest first);
  * the query layer sorts them. Every total is kept for the whole subtree, so a row never needs a
- * walk to be read. Memory is 21 bytes per file plus its name (about 125 bytes per file in all), and 160 bytes
- * per folder for the logical bytes of each file type (total and direct).
+ * walk to be read. Memory is 21 bytes per file plus its name (about 77 bytes per file in all,
+ * measured with 1M generated files; the perf limit is 125), and 160 bytes per folder for the
+ * logical bytes of each file type (total and direct).
  */
 export class TreeStore implements WalkSink<number> {
   readonly rootPath: string

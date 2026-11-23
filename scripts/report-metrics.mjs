@@ -50,7 +50,7 @@ const rows = [
   ],
   ['Cancel latency, system drive (target < 500 ms)', e2e ? `${e2e.cancelMs} ms` : 'n/a'],
   [
-    'Tree memory, 1M files (limit 300 MB; 125 B/file)',
+    'Tree memory, 1M files (limits 300 MB and 125 B/file)',
     perf ? `${perf.memoryMb.toFixed(1)} MB (${perf.bytesPerFile.toFixed(0)} B/file)` : 'n/a',
   ],
   ['First tree page, 1M files (limit 100 ms)', perf ? `${perf.firstPageMs.toFixed(1)} ms` : 'n/a'],
