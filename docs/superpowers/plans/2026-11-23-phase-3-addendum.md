@@ -679,13 +679,13 @@ git commit -m "feat(release): all-users installer option and auto-update from Gi
 
 **Spike evidence (Windows 11 Pro 10.0.26200, Node 22, koffi 3.3.8; log in `RESULTS.md` of the spike, summarised here so the task is self-contained).** Test item: a folder with 3000 small files, delete verb, Recycle Bin.
 
-| Design | UI-thread timer max gap | Result |
-|---|---|---|
-| current: `InvokeCommand` on the UI thread | 4.4 s (frozen) | baseline |
-| `CMIC_MASK_ASYNCOK` on the UI thread | 20 s (frozen) | **rejected**: the delete verb ignores it and runs the copy engine inside `InvokeCommand` |
-| menu build + track + invoke on a dedicated STA **worker thread** with its own hidden owner window | 57 ms steady, 195 ms on the first start-up | **chosen**; the shell still shows its progress dialog, items recycled |
-| same, owner = the main window’s HWND | 57 ms | works, but not chosen (an operation must never be able to disable or attach input to the app window) |
-| `IFileOperation` (`FOF_ALLOWUNDO`, `FOFX_RECYCLEONDELETE`) on a worker | 53 ms | works; used only as the fallback for mixed-folder selections when the shell menu cannot be built |
+| Design                                                                                            | UI-thread timer max gap                    | Result                                                                                               |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| current: `InvokeCommand` on the UI thread                                                         | 4.4 s (frozen)                             | baseline                                                                                             |
+| `CMIC_MASK_ASYNCOK` on the UI thread                                                              | 20 s (frozen)                              | **rejected**: the delete verb ignores it and runs the copy engine inside `InvokeCommand`             |
+| menu build + track + invoke on a dedicated STA **worker thread** with its own hidden owner window | 57 ms steady, 195 ms on the first start-up | **chosen**; the shell still shows its progress dialog, items recycled                                |
+| same, owner = the main window’s HWND                                                              | 57 ms                                      | works, but not chosen (an operation must never be able to disable or attach input to the app window) |
+| `IFileOperation` (`FOF_ALLOWUNDO`, `FOFX_RECYCLEONDELETE`) on a worker                            | 53 ms                                      | works; used only as the fallback for mixed-folder selections when the shell menu cannot be built     |
 
 Further spike facts the rules rely on: `TrackPopupMenuEx` works from the worker’s own hidden window (popup visible, UI thread kept ticking), koffi callbacks (`SetWindowSubclass` proc) fire on the worker thread, and `GetKeyState` is per-thread input state so the worker must use `GetAsyncKeyState`. Multi-item menus: for items in **one** folder, `IShellFolder::GetUIObjectOf` with all child ids gives the full menu (Open, Edit, Print, third-party verbs, Copy as path, Share, Send to, Cut, Copy, Create shortcut, Delete, Properties). For items in **different** folders: `IShellItemArray::BindToHandler(BHID_SFUIObject)` fails with `E_FAIL`; `SHCreateDefaultContextMenu` with `psf` = the desktop folder and `apidl` = absolute PIDLs works and its Delete recycled files in several folders (verified in the Recycle Bin records), but the menu is reduced (Open, third-party verbs, Cut, Copy, Create shortcut, Delete, Properties; no Send to, Copy as path, Share, Open with). Two hazards were found and are forbidden below: using the first item’s parent folder with PIDLs from other folders returns a menu without error but would act on wrong names, and `GetUIObjectOf` on the desktop folder with absolute PIDLs returns `S_OK` while its Delete silently does nothing.
 
@@ -724,7 +724,10 @@ Further spike facts the rules rely on: `TrackPopupMenuEx` works from the worker�
 ```ts
 export interface ShellMenuHost {
   /** One menu for `paths` (1..1000). `chosen` resolves when the menu closes; `finished` when the shell command returned. Neither blocks the UI thread. */
-  show(request: ShellMenuRequest): { chosen: Promise<ShellMenuChoice>; finished: Promise<ShellFinish> }
+  show(request: ShellMenuRequest): {
+    chosen: Promise<ShellMenuChoice>
+    finished: Promise<ShellFinish>
+  }
   dispose(): void
 }
 export type ShellFinish = { ok: true } | { ok: false; hresult: number; step: string }
@@ -744,7 +747,7 @@ Store: `selectedIds: ReadonlySet<NodeId>`, `anchorId: NodeId | null` added; `sel
 
 **Rules:**
 
-*Renderer: selection (TreeGrid)*
+_Renderer: selection (TreeGrid)_
 
 1. The treegrid has `aria-multiselectable="true"` and **every** data row has `aria-selected` `"true"` or `"false"` (never omitted). The loading rows and header keep none. `aria-activedescendant` names the active row.
 2. The active row is visually distinct from selected rows: selected = `bg-selection` plus the inset accent bar (as today); active = an additional 2 px inset focus ring (`outline-offset: -2px`, token `--accent`) shown while the grid has focus, and under `forced-colors` the ring uses `Highlight`/`CanvasText` so it survives. A row that is active and selected shows both; a row that is active and unselected shows only the ring. Contrast of selected text stays on the existing tokens (no new colour; run `impeccable detect --json src/renderer`, expected `[]`).
@@ -758,7 +761,7 @@ Store: `selectedIds: ReadonlySet<NodeId>`, `anchorId: NodeId | null` added; `sel
 10. Group rows `[N files]` and the root: selectable and counted in the status bar. In an action set of more than one row they are dropped in main (rule 12) and a one-line announcement says `Skipped 2 rows that cannot be acted on.` (renderer-side, from the outcome `count` being smaller than the number sent: `Skipped N rows that cannot be acted on.`).
 11. Status bar: when the set has more than one row it shows `N items selected, total size X` (X by `formatSize(bytes, unit)` over the **Size** column bytes, not the Mode value; descendants of selected folders are not added twice, using `dropDescendants` over the loaded parent chain); rows whose data is not loaded count in `N` and are summed as soon as they load; if any row is unknown the text is `N items selected, total size at least X`. The text is in the polite live region used by `announcement` throttled like the scan progress (one update per 500 ms at most, never while the user drags a range). For one selected row nothing is added.
 
-*Main: IPC and orchestration*
+_Main: IPC and orchestration_
 
 12. `shell:context-menu` handler: (a) parse (rule above); (b) check the current scan once; (c) dedupe ids, resolve each with `resolveScanNode`, at most 8 in flight; a node that no longer resolves is dropped, and if none resolve the outcome is `gone`; (d) when more than one row remains drop root and `files` rows and every row that has a selected ancestor (`details.ancestorIds` contains another selected id); with exactly one row requested keep today’s behaviour for it (root and group rows included); (e) check existence of each path with `pathExists` (at most 16 in flight); vanished items are dropped and their folders refreshed quietly; none left → `gone`; (f) the paths handed to the host are the scanner’s `details.path` values only, in the order of the request. The renderer never sends a path.
 13. `hideDestructive: true` is sent when the single requested row is the root (or a drive root): the worker removes the `delete`, `cut` and `rename` items of the shell menu with `DeleteMenu(…, MF_BYCOMMAND)` after `QueryContextMenu`, so the root cannot be deleted from StorageIQ’s menu.
@@ -768,7 +771,7 @@ Store: `selectedIds: ReadonlySet<NodeId>`, `anchorId: NodeId | null` added; `sel
 17. Refresh set: `parents` = the distinct `containingFolder(details)` of the items. If there are more than 50, replace them by their deepest common ancestor (longest common prefix of the `ancestorIds` chains). A parent equal to the root means a **rescan** of the root path (existing `refreshFolder` behaviour): it runs once per action, and only if at least one root-level item no longer exists. Other parents are refreshed **one at a time** through a small FIFO inside the handler (a rescan of the same folder is never started twice concurrently; a folder already queued is not queued again), each failure logged. The scanner stays responsive because `refreshFolder` is already asynchronous; the renderer receives one `tree:changed` per parent.
 18. Concurrent actions: the pool allows 3 at once. While a delete is running, a new menu on any row is allowed. If the same item is still being deleted, the later `pathExists` check may still say it exists; Windows then shows its own error, nothing in StorageIQ breaks. A `ShellBusyError` returns `{ kind: 'busy' }`; the store announces `Windows is still working on earlier actions. Try again in a moment.`
 
-*Native (worker thread)*
+_Native (worker thread)_
 
 19. `electron.vite.config.ts` builds `src/main/shell-menu/shell-worker.ts` as its own self-contained CJS bundle `out/main/shell-worker.js`, the same way `walkerBundle` builds `walker.js` (generalise the plugin to a list of worker entries); `electron-builder.yml` adds `out/main/shell-worker.js` to `asarUnpack` (a worker thread loads a real file); `scripts/check-packaged-app.mjs` expects exactly `shell-worker.js` and `walker.js` unpacked (`unpackedFiles.join()` equals `shell-worker.js,walker.js`) and `--self-test` additionally starts the pool, builds (not shows) a menu for `os.tmpdir()` and checks the labels, so a missing bundle fails the packaged check. `index.ts` creates the pool lazily with `spawn: () => new Worker(shellWorkerPath)` and calls `dispose()` (terminate all) in `before-quit`.
 20. Worker thread: `CoInitializeEx(COINIT_APARTMENTTHREADED)`, creates one hidden top-level window (built-in `STATIC` class, never shown, never parented to the app window) used as owner for `GetUIObjectOf`, `TrackPopupMenuEx`, the menu-message subclass and `CMINVOKECOMMANDINFOEX.hwnd`. It handles one request, then waits for the next message. The window subclass and `koffi.register` callback live exactly as long as `TrackPopupMenuEx` (as today). Modifier keys are read with `GetAsyncKeyState` right after `TrackPopupMenuEx` returns (not `GetKeyState`). All COM objects (menu, `IContextMenu` 2/3, PIDLs, folder) are released after `InvokeCommand` has returned, on the same thread, in `finally`. Nothing outlives the call: no `ASYNCOK`.
