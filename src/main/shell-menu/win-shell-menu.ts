@@ -21,6 +21,9 @@ const TPM_RETURNCMD = 0x100
 const GCS_VERBW = 0x4
 const CMIC_MASK_UNICODE = 0x4000
 const CMIC_MASK_SHIFT_DOWN = 0x10000000
+const CMIC_MASK_CONTROL_DOWN = 0x40000000
+const VK_SHIFT = 0x10
+const VK_CONTROL = 0x11
 const CMIC_MASK_PTINVOKE = 0x20000000
 const SW_SHOWNORMAL = 1
 const WM_DRAWITEM = 0x2b
@@ -125,6 +128,7 @@ export async function createWinShellMenu(): Promise<ShellMenuNative> {
   const GetMenuStringW = user32.func(
     'int __stdcall GetMenuStringW(void *menu, uint32_t item, _Out_ uint16_t *text, int max, uint32_t flags)',
   )
+  const GetKeyState = user32.func('int16_t __stdcall GetKeyState(int vk)')
   const SetForegroundWindow = user32.func('int __stdcall SetForegroundWindow(void *hwnd)')
   const TrackPopupMenuEx = user32.func(
     'int __stdcall TrackPopupMenuEx(void *menu, uint32_t flags, int x, int y, void *hwnd, void *params)',
@@ -230,7 +234,9 @@ export async function createWinShellMenu(): Promise<ShellMenuNative> {
         menu2 = menu3 === null ? queryInterface(contextMenu, IID_IContextMenu2) : null
 
         menu = CreatePopupMenu()
+        if (!menu) throw new Error('CreatePopupMenu failed')
         submenu = CreatePopupMenu()
+        if (!submenu) throw new Error('CreatePopupMenu failed')
         AppendMenuW(
           submenu,
           MF_STRING,
@@ -244,7 +250,8 @@ export async function createWinShellMenu(): Promise<ShellMenuNative> {
           STORAGEIQ_MENU_LABELS['copy-path'],
         )
         AppendMenuW(submenu, MF_STRING, STORAGEIQ_COMMAND_IDS.open, STORAGEIQ_MENU_LABELS.open)
-        AppendMenuW(menu, MF_POPUP, submenu, STORAGEIQ_MENU_LABELS.submenu)
+        if (!AppendMenuW(menu, MF_POPUP, submenu, STORAGEIQ_MENU_LABELS.submenu))
+          throw new Error('AppendMenuW failed')
         submenu = null // owned by `menu` now; DestroyMenu(menu) destroys it
         AppendMenuW(
           menu,
@@ -285,34 +292,39 @@ export async function createWinShellMenu(): Promise<ShellMenuNative> {
         wParam: unknown,
         lParam: unknown,
       ): unknown => {
-        if (MENU_MESSAGES.has(msg)) {
-          if (menu3) {
-            const result: unknown[] = [0]
-            const handled = Number(
-              koffi.call(
-                method(menu3, VT_CONTEXTMENU3_HANDLE_MENU_MSG2),
-                HandleMenuMsg2,
-                menu3,
-                msg,
-                wParam,
-                lParam,
-                result,
-              ),
-            )
-            if (handled === S_OK) return result[0] ?? 0
-          } else if (menu2) {
-            const handled = Number(
-              koffi.call(
-                method(menu2, VT_CONTEXTMENU2_HANDLE_MENU_MSG),
-                HandleMenuMsg,
-                menu2,
-                msg,
-                wParam,
-                lParam,
-              ),
-            )
-            if (handled === S_OK) return 0
+        // A JS exception must never cross the native window-procedure frame.
+        try {
+          if (MENU_MESSAGES.has(msg)) {
+            if (menu3) {
+              const result: unknown[] = [0]
+              const handled = Number(
+                koffi.call(
+                  method(menu3, VT_CONTEXTMENU3_HANDLE_MENU_MSG2),
+                  HandleMenuMsg2,
+                  menu3,
+                  msg,
+                  wParam,
+                  lParam,
+                  result,
+                ),
+              )
+              if (handled === S_OK) return result[0] ?? 0
+            } else if (menu2) {
+              const handled = Number(
+                koffi.call(
+                  method(menu2, VT_CONTEXTMENU2_HANDLE_MENU_MSG),
+                  HandleMenuMsg,
+                  menu2,
+                  msg,
+                  wParam,
+                  lParam,
+                ),
+              )
+              if (handled === S_OK) return 0
+            }
           }
+        } catch {
+          // fall through to the default handling
         }
         return DefSubclassProc(window, msg, wParam, lParam)
       }
@@ -322,16 +334,18 @@ export async function createWinShellMenu(): Promise<ShellMenuNative> {
 
         track(x, y) {
           const proc = koffi.register(forwardMenuMessage, koffi.pointer(SubclassProc))
-          SetWindowSubclass(hwnd, proc, SUBCLASS_ID, 0)
-          // TrackPopupMenuEx needs its owner in the foreground, or the menu does not close
-          // when the user clicks elsewhere (TrackPopupMenu remarks).
-          SetForegroundWindow(hwnd)
+          let subclassed = false
           try {
+            subclassed = Boolean(SetWindowSubclass(hwnd, proc, SUBCLASS_ID, 0))
+            if (!subclassed) throw new Error('SetWindowSubclass failed')
+            // TrackPopupMenuEx needs its owner in the foreground, or the menu does not close
+            // when the user clicks elsewhere (TrackPopupMenu remarks).
+            SetForegroundWindow(hwnd)
             return Number(
               TrackPopupMenuEx(builtMenu, TPM_RETURNCMD | TPM_RIGHTBUTTON, x, y, hwnd, null),
             )
           } finally {
-            RemoveWindowSubclass(hwnd, proc, SUBCLASS_ID)
+            if (subclassed) RemoveWindowSubclass(hwnd, proc, SUBCLASS_ID)
             koffi.unregister(proc)
           }
         },
@@ -356,10 +370,17 @@ export async function createWinShellMenu(): Promise<ShellMenuNative> {
           return verb === '' ? null : verb
         },
 
-        invoke(offset, x, y, shiftDown) {
+        invoke(offset, x, y) {
+          // Explorer reads the live key state: Shift may have been released since the right-click.
+          const shiftDown = Number(GetKeyState(VK_SHIFT)) < 0
+          const controlDown = Number(GetKeyState(VK_CONTROL)) < 0
           const info = {
             cbSize: koffi.sizeof(CMINVOKECOMMANDINFOEX),
-            fMask: CMIC_MASK_UNICODE | CMIC_MASK_PTINVOKE | (shiftDown ? CMIC_MASK_SHIFT_DOWN : 0),
+            fMask:
+              CMIC_MASK_UNICODE |
+              CMIC_MASK_PTINVOKE |
+              (shiftDown ? CMIC_MASK_SHIFT_DOWN : 0) |
+              (controlDown ? CMIC_MASK_CONTROL_DOWN : 0),
             hwnd,
             // MAKEINTRESOURCE(offset): the item is named by its offset from SHELL_FIRST_ID.
             lpVerb: BigInt(offset),

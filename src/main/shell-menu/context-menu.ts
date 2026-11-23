@@ -8,8 +8,8 @@ export interface BuiltShellMenu {
   track(x: number, y: number): number
   /** The shell's verb for an item (`delete`, `properties`, …), or null when it has none. */
   verb(offset: number): string | null
-  /** Runs the shell's item as Explorer would. */
-  invoke(offset: number, x: number, y: number, extended: boolean): void
+  /** Runs the shell's item as Explorer would; Shift/Ctrl are read from the live key state. */
+  invoke(offset: number, x: number, y: number): void
   /** Destroys the menu and releases every COM object. */
   release(): void
 }
@@ -25,7 +25,7 @@ export interface ShellMenuRequest {
   /** Screen pixels. */
   x: number
   y: number
-  /** Shift was held: also show the extended verbs (Copy as path, Open PowerShell here, …). */
+  /** Shift was held at the click: also show the extended verbs (Copy as path, Open PowerShell here, …). */
   extended: boolean
 }
 
@@ -42,7 +42,7 @@ export function showShellMenu(native: ShellMenuNative, request: ShellMenuRequest
     if (command.kind === 'none') return { kind: 'dismissed' }
     if (command.kind === 'storageiq') return { kind: 'storageiq', item: command.item }
     const verb = menu.verb(command.offset)
-    menu.invoke(command.offset, request.x, request.y, request.extended)
+    menu.invoke(command.offset, request.x, request.y)
     return { kind: 'shell', verb, changed: verbChangesFileSystem(verb) }
   } finally {
     menu.release()

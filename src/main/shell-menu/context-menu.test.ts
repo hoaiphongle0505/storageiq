@@ -45,7 +45,7 @@ describe('showShellMenu', () => {
       changed: true,
     })
     expect(menu.verb).toHaveBeenCalledWith(9)
-    expect(menu.invoke).toHaveBeenCalledWith(9, 300, 200, true)
+    expect(menu.invoke).toHaveBeenCalledWith(9, 300, 200)
   })
 
   it('reports read-only shell verbs as unchanged', () => {
