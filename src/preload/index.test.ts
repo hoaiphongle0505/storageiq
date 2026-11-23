@@ -64,6 +64,30 @@ describe('preload bridge', () => {
     expect(listeners.get('update:ready')).toEqual([])
   })
 
+  it('sends the list of node ids for the menu and for copying paths', async () => {
+    const { ipcRenderer } = await import('electron')
+    await (exposed['showContextMenu'] as unknown as (...args: unknown[]) => Promise<unknown>)(
+      'scan-1',
+      ['d1', 'f2'],
+      10,
+      20,
+      false,
+    )
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith(
+      'shell:context-menu',
+      'scan-1',
+      ['d1', 'f2'],
+      10,
+      20,
+      false,
+    )
+    await (exposed['copyNodePath'] as unknown as (...args: unknown[]) => Promise<unknown>)(
+      'scan-1',
+      ['d1', 'f2'],
+    )
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('clipboard:copy-path', 'scan-1', ['d1', 'f2'])
+  })
+
   it('exposes copyNodePath and no free-text clipboard writer', () => {
     expect(typeof exposed['copyNodePath']).toBe('function')
     expect(exposed['writeClipboardText']).toBeUndefined()

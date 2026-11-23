@@ -308,3 +308,106 @@ test('a scanned folder appears under "Recently scanned"', async () => {
   const menu = await openSelectMenu(page)
   await expect(menu.getByRole('group', { name: 'Recently scanned' })).toContainText(f.root)
 })
+
+test('selecting several rows with ctrl click shows the item count and total size in the status bar', async () => {
+  await scanFixture()
+  await treeRow(page, 'folder-12').click()
+  await treeRow(page, 'folder-11').click({ modifiers: ['Control'] })
+  await expect(treeRow(page, 'folder-12')).toHaveAttribute('aria-selected', 'true')
+  await expect(treeRow(page, 'folder-11')).toHaveAttribute('aria-selected', 'true')
+  const bytes =
+    (await cellBytes(treeRow(page, 'folder-12'), 1)) +
+    (await cellBytes(treeRow(page, 'folder-11'), 1))
+  const footer = page.getByRole('contentinfo')
+  await expect(footer).toContainText('2 items selected, total size')
+  const text = (await footer.textContent()) ?? ''
+  const match = /2 items selected, total size ([\d.,]+) (B|KB|MB|GB|TB)/.exec(text)
+  expect(match).not.toBeNull()
+  const unit = { B: 1, KB: 1024, MB: 1024 ** 2, GB: 1024 ** 3, TB: 1024 ** 4 }[match![2] as 'B']
+  // The status bar rounds to one decimal of its unit (a whole unit from 100 up).
+  expect(Math.abs(Number(match![1]!.replace(/,/g, '')) * unit - bytes)).toBeLessThanOrEqual(
+    unit * 0.51,
+  )
+  // A plain click goes back to one row and the extra text disappears.
+  await treeRow(page, 'folder-10').click()
+  await expect(footer).not.toContainText('items selected')
+})
+
+test('shift click selects a range and shift arrow extends it', async () => {
+  await scanFixture()
+  await treeRow(page, 'folder-12').click()
+  await treeRow(page, 'folder-10').click({ modifiers: ['Shift'] })
+  for (const name of ['folder-12', 'folder-11', 'folder-10']) {
+    await expect(treeRow(page, name)).toHaveAttribute('aria-selected', 'true')
+  }
+  await expect(treeRow(page, 'folder-09')).toHaveAttribute('aria-selected', 'false')
+  await expect(treegrid(page)).toBeFocused()
+  await page.keyboard.press('Shift+ArrowDown')
+  await expect(treeRow(page, 'folder-09')).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('contentinfo')).toContainText('4 items selected')
+})
+
+test('ctrl A selects all visible rows', async () => {
+  await scanFixture()
+  await treegrid(page).focus()
+  await page.keyboard.press('Control+a')
+  const rows = treegrid(page).locator('[role="row"][id^="tree-row-"]')
+  const total = await rows.count()
+  // The root, 12 folders and the root's "[N files]" row.
+  expect(total).toBe(14)
+  await expect(treegrid(page).locator('[role="row"][aria-selected="true"]')).toHaveCount(total)
+  await expect(page.getByRole('contentinfo')).toContainText(`${total} items selected`)
+})
+
+test('the treemap highlights only the active row', async () => {
+  await scanFixture()
+  const canvas = page.getByRole('img', { name: /^Treemap of/ })
+  await treeRow(page, 'folder-12').click()
+  await treeRow(page, 'folder-11').click({ modifiers: ['Control'] })
+  // Two rows are selected, but the treemap follows the active row (the last one clicked) only.
+  await expect(treegrid(page).locator('[role="row"][aria-selected="true"]')).toHaveCount(2)
+  await expect(canvas).toHaveAccessibleName(/^Treemap of folder-11/)
+  await expect(treegrid(page).locator('[role="row"][data-active]')).toHaveCount(1)
+  await expect(treeRow(page, 'folder-11')).toHaveAttribute('data-active', 'true')
+})
+
+test('escape reduces the selection to the active row', async () => {
+  await scanFixture()
+  await treeRow(page, 'folder-12').click()
+  await treeRow(page, 'folder-10').click({ modifiers: ['Shift'] })
+  await expect(treegrid(page).locator('[role="row"][aria-selected="true"]')).toHaveCount(3)
+  await page.keyboard.press('Escape')
+  await expect(treegrid(page).locator('[role="row"][aria-selected="true"]')).toHaveCount(1)
+  await expect(treeRow(page, 'folder-10')).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('contentinfo')).not.toContainText('items selected')
+})
+
+test('the Explorer menu request carries every selected row, with the scanner’s paths', async () => {
+  const { fixture: f } = await scanFixture()
+  await treeRow(page, 'folder-12').click()
+  await treeRow(page, 'folder-11').click({ modifiers: ['Control'] })
+  await page.keyboard.press('Shift+F10')
+  const requests = await expect
+    .poll(() =>
+      app!.evaluate(() => {
+        const hook = (globalThis as unknown as { __storageiqMenuRequests: () => unknown[] | null })
+          .__storageiqMenuRequests
+        return hook()
+      }),
+    )
+    .toHaveLength(1)
+    .then(() =>
+      app!.evaluate(() =>
+        (
+          globalThis as unknown as {
+            __storageiqMenuRequests: () => Array<{ paths: string[]; hideDestructive: boolean }>
+          }
+        ).__storageiqMenuRequests(),
+      ),
+    )
+  expect(requests[0]?.paths).toEqual([
+    path.join(f.root, 'folder-12'),
+    path.join(f.root, 'folder-11'),
+  ])
+  expect(requests[0]?.hideDestructive).toBe(false)
+})

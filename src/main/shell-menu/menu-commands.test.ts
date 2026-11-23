@@ -7,6 +7,7 @@ import {
   SHELL_LAST_ID,
   STORAGEIQ_COMMAND_IDS,
   STORAGEIQ_MENU_LABELS,
+  storageiqMenuLabels,
   verbChangesFileSystem,
 } from './menu-commands'
 
@@ -30,7 +31,7 @@ describe('classifyCommand', () => {
     })
   })
 
-  it.each([0, -1, 5, SHELL_FIRST_ID - 1, SHELL_LAST_ID + 1, 1.5])(
+  it.each([0, -1, 6, SHELL_FIRST_ID - 1, SHELL_LAST_ID + 1, 1.5])(
     'treats %d as no choice',
     (id) => {
       expect(classifyCommand(id)).toEqual({ kind: 'none' })
@@ -79,5 +80,31 @@ describe('nextNewFolderName', () => {
     expect(nextNewFolderName(['New folder', 'New folder (2)', 'New folder (4)'])).toBe(
       'New folder (3)',
     )
+  })
+})
+
+describe('storageiqMenuLabels', () => {
+  it('offers four items for one row and Refresh plus Copy paths for several', () => {
+    expect(storageiqMenuLabels(1, true).map((entry) => entry.item)).toEqual([
+      'refresh',
+      'copy-path',
+      'open',
+      'new-folder',
+    ])
+    expect(storageiqMenuLabels(1, true).find((e) => e.item === 'copy-path')?.label).toBe(
+      '&Copy path',
+    )
+    const several = storageiqMenuLabels(3, false)
+    expect(several.map((entry) => entry.item)).toEqual(['refresh', 'copy-path'])
+    expect(several.find((e) => e.item === 'copy-path')?.label).toBe('&Copy paths')
+    expect(storageiqMenuLabels(3, true).map((e) => e.item)).toEqual(['refresh', 'copy-path'])
+  })
+})
+
+describe('delete command', () => {
+  it('is classified as a StorageIQ command with id 5', () => {
+    expect(STORAGEIQ_COMMAND_IDS.delete).toBe(5)
+    expect(classifyCommand(5)).toEqual({ kind: 'storageiq', item: 'delete' })
+    expect(STORAGEIQ_MENU_LABELS.delete).toBe('Delete (move to &Recycle Bin)')
   })
 })

@@ -159,7 +159,7 @@ test('opens in Explorer and copies only paths of the current scan', async () => 
     }
     return {
       open: await attempt(() => api.openInExplorer(stale, 'd0')),
-      copy: await attempt(() => api.copyNodePath(stale, 'd0')),
+      copy: await attempt(() => api.copyNodePath(stale, ['d0'])),
     }
   })
   expect(outcome.open).toContain('not part of the current scan')

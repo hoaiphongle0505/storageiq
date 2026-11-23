@@ -41,10 +41,20 @@ export type ContextMenuOutcome =
   | { kind: 'dismissed' }
   | { kind: 'gone' }
   | { kind: 'refreshed'; nodeId: NodeId }
-  | { kind: 'copied' }
+  | { kind: 'copied'; count: number }
   | { kind: 'opened' }
   | { kind: 'created'; nodeId: NodeId; name: string }
-  | { kind: 'shell'; verb: string | null; changed: boolean }
+  | {
+      kind: 'shell'
+      verb: string | null
+      changed: boolean
+      /** How many items the command was started for (rows the shell cannot act on are skipped). */
+      count: number
+      /** The command is still running in Windows when this outcome is returned. */
+      running: boolean
+    }
+  /** Three Explorer actions are already running; try again in a moment. */
+  | { kind: 'busy' }
 
 /** `folder:create` result: the folder that now holds the new one, and the new folder's name. */
 export interface CreateFolderResult {
@@ -95,11 +105,11 @@ export interface IpcContract {
   }
   'shell:open-in-explorer': { args: [scanId: string, nodeId: NodeId]; result: void }
   'shell:context-menu': {
-    args: [scanId: string, nodeId: NodeId, x: number, y: number, extended: boolean]
+    args: [scanId: string, nodeIds: NodeId[], x: number, y: number, extended: boolean]
     result: ContextMenuOutcome
   }
   'folder:create': { args: [scanId: string, nodeId: NodeId]; result: CreateFolderResult }
-  'clipboard:copy-path': { args: [scanId: string, nodeId: NodeId]; result: void }
+  'clipboard:copy-path': { args: [scanId: string, nodeIds: NodeId[]]; result: void }
   'update:install': { args: []; result: void }
 }
 
@@ -165,18 +175,24 @@ export interface StorageIQApi {
     height: number,
   ): Promise<TreemapLayout | null>
   openInExplorer(scanId: string, nodeId: NodeId): Promise<void>
-  /** Shows the Windows Explorer context menu for a row at window coordinates (CSS px). */
+  /**
+   * Shows the Windows Explorer context menu for one or more rows (1 to 1,000) at window
+   * coordinates (CSS px). Resolves when the menu closes, not when the command ends.
+   */
   showContextMenu(
     scanId: string,
-    nodeId: NodeId,
+    nodeIds: NodeId[],
     x: number,
     y: number,
     extended: boolean,
   ): Promise<ContextMenuOutcome>
   /** Creates "New folder" (or "New folder (2)", …) in the row's folder and rescans that folder. */
   createFolder(scanId: string, nodeId: NodeId): Promise<CreateFolderResult>
-  /** Copies the path of a row of the current scan to the clipboard (main resolves the path). */
-  copyNodePath(scanId: string, nodeId: NodeId): Promise<void>
+  /**
+   * Copies the paths of rows of the current scan to the clipboard, one per line (main resolves
+   * the paths).
+   */
+  copyNodePath(scanId: string, nodeIds: NodeId[]): Promise<void>
   onScanProgress(listener: (progress: ScanProgress) => void): Unsubscribe
   onScanDone(listener: (done: ScanDone) => void): Unsubscribe
   onScanFailed(listener: (failed: ScanFailed) => void): Unsubscribe

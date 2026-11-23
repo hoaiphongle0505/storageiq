@@ -2,14 +2,22 @@ import { lstat } from 'node:fs/promises'
 import path from 'node:path'
 import type { ContextMenuOutcome, CreateFolderResult } from '@shared/ipc-contract'
 import { type NodeId, ROOT_NODE_ID, type TreeNodeDetails } from '@shared/tree-types'
-import type { ShellMenuChoice } from '../shell-menu/context-menu'
+import type {
+  ShellFinish,
+  ShellMenuChoice,
+  ShellMenuHost,
+  ShellMenuRequest,
+} from '../shell-menu/context-menu'
 import { nextNewFolderName } from '../shell-menu/menu-commands'
-import { isShellPathGone } from '../shell-menu/win-shell-menu'
+import { isShellPathGone } from '../shell-menu/shell-menu-error'
+import { ShellBusyError } from '../shell-menu/shell-worker-pool'
 import type { ItemWatcher } from './item-watcher'
-import { contextMenuArgs, scanNodeArgs } from './parse-args'
+import { mapLimit } from './map-limit'
+import { contextMenuArgs, scanNodeArgs, scanNodesArgs } from './parse-args'
 import type { IpcHandlerMap } from './register'
 import {
   folderIdOf,
+  NOT_IN_SCAN_MESSAGE,
   type RefreshFolder,
   resolveScanNode,
   SCAN_RUNNING_MESSAGE,
@@ -24,8 +32,14 @@ export type ShellHandlers = Pick<
 /** For verbs that leave the item in place: the folder is rescanned once more after this delay. */
 export const SECOND_REFRESH_DELAY_MS = 1500
 
+/** Nodes resolved at the same time, and paths checked on disk at the same time. */
+const RESOLVE_IN_FLIGHT = 8
+const EXISTS_IN_FLIGHT = 16
+/** More affected folders than this are replaced by their deepest common ancestor. */
+const MAX_REFRESH_FOLDERS = 50
+
 /** Verbs after which the item may leave its folder, possibly well after InvokeCommand returns. */
-const ITEM_LEAVING_VERBS: readonly (string | null)[] = ['delete', 'cut', 'rename', null]
+const WATCHED_VERBS: readonly (string | null)[] = ['cut', 'rename', null]
 
 /**
  * Whether `target` exists. Only a missing path (ENOENT, ENOTDIR) is reported as absent: any other
@@ -52,18 +66,218 @@ export interface ShellHandlerDeps {
   writeClipboard(text: string): void
   readdir(folder: string): Promise<string[]>
   mkdir(folder: string): Promise<void>
-  /** Shows the native Explorer menu at window CSS pixel `x`, `y` and runs the shell choice. */
-  showShellMenu(target: string, x: number, y: number, extended: boolean): Promise<ShellMenuChoice>
+  /**
+   * Starts the native Explorer menu for the request (x, y in window CSS pixels; `index.ts`
+   * converts them to screen pixels). Throws `ShellBusyError` when three actions already run.
+   */
+  showShellMenu(request: ShellMenuRequest): ReturnType<ShellMenuHost['show']>
   /** Whether the path still exists on disk (`fs.promises.lstat`). */
   pathExists(target: string): Promise<boolean>
-  /** Polls for an item that a shell command is removing, and owns the delayed refresh timers. */
+  /** Polls for items that a shell command is removing, and owns the delayed refresh timers. */
   watcher: ItemWatcher
   /** `console.warn`. */
   warn(message: string, error: unknown): void
 }
 
+/** The folder ids from the root down to (and including) `last` for an item. */
+function folderChain(details: TreeNodeDetails, ownFolder: boolean): NodeId[] {
+  const chain = details.ancestorIds.filter((id) => id.startsWith('d'))
+  if (ownFolder && details.row.kind === 'folder') return [...chain, details.row.id]
+  return chain.length === 0 ? [details.row.id] : chain
+}
+
+/** The folder to rescan after something happened to this item. */
+function containingFolder(details: TreeNodeDetails): NodeId {
+  return details.row.kind === 'folder'
+    ? (details.ancestorIds.at(-1) ?? details.row.id)
+    : folderIdOf(details)
+}
+
+const isDriveRootPath = (target: string): boolean => /^[A-Za-z]:\\?$/.test(target)
+
 export function createShellHandlers(deps: ShellHandlerDeps): ShellHandlers {
   const { scanService } = deps
+  /** Counts actions, so timers and watches of two actions never share a key. */
+  let actionSeq = 0
+
+  const isCurrentScan = (scanId: string): boolean => scanService.currentScan()?.scanId === scanId
+
+  // ---- refreshes -------------------------------------------------------------------------
+
+  /** One job per folder, one at a time: a rescan of the same folder never runs twice at once. */
+  interface RefreshJob {
+    scanId: string
+    nodeId: NodeId
+    waiters: Array<{
+      resolve(details: Awaited<ReturnType<RefreshFolder>>): void
+      reject(error: unknown): void
+    }>
+  }
+  const refreshQueue: RefreshJob[] = []
+  let draining = false
+
+  const drainRefreshes = async (): Promise<void> => {
+    if (draining) return
+    draining = true
+    try {
+      for (let job = refreshQueue.shift(); job !== undefined; job = refreshQueue.shift()) {
+        if (!isCurrentScan(job.scanId)) {
+          for (const waiter of job.waiters) waiter.resolve(null)
+          continue
+        }
+        try {
+          const details = await deps.refreshFolder(job.scanId, job.nodeId)
+          for (const waiter of job.waiters) waiter.resolve(details)
+        } catch (error) {
+          for (const waiter of job.waiters) waiter.reject(error)
+        }
+      }
+    } finally {
+      draining = false
+    }
+  }
+
+  /** Queues a refresh of one folder (a folder already waiting in the queue is not queued twice). */
+  const enqueueRefresh = (scanId: string, nodeId: NodeId): ReturnType<RefreshFolder> =>
+    new Promise((resolve, reject) => {
+      const waiting = refreshQueue.find((job) => job.scanId === scanId && job.nodeId === nodeId)
+      if (waiting) waiting.waiters.push({ resolve, reject })
+      else refreshQueue.push({ scanId, nodeId, waiters: [{ resolve, reject }] })
+      void drainRefreshes()
+    })
+
+  /** A refresh nobody awaits: a failure is logged, never thrown. */
+  const refreshQuietly = (scanId: string, target: NodeId): void => {
+    enqueueRefresh(scanId, target).catch((error: unknown) =>
+      deps.warn('Refresh after shell command failed', error),
+    )
+  }
+
+  /**
+   * The folders to rescan for these items: their distinct containing folders, or their deepest
+   * common ancestor when there are more than 50.
+   */
+  const refreshTargets = (items: readonly TreeNodeDetails[], ownFolder = false): NodeId[] => {
+    const folderOf = ownFolder ? folderIdOf : containingFolder
+    const parents = [...new Set(items.map(folderOf))]
+    if (parents.length <= MAX_REFRESH_FOLDERS) return parents
+    const chains = items.map((item) => folderChain(item, ownFolder))
+    const first = chains[0] ?? [ROOT_NODE_ID]
+    let depth = first.length
+    for (const chain of chains) {
+      let common = 0
+      while (common < depth && chain[common] === first[common]) common += 1
+      depth = common
+    }
+    return [first[Math.max(0, depth - 1)] ?? ROOT_NODE_ID]
+  }
+
+  /**
+   * After items may have gone: rescan their folders (rule: one `tree:changed` per folder). A root
+   * rescan is a full scan, so it runs once, and with `needGone` only when a root-level item no
+   * longer exists. `skipRoot` leaves the root out (a timed-out watch, or a root rescan that
+   * already ran). Resolves with whether the root was rescanned.
+   */
+  const refreshAffected = async (
+    scanId: string,
+    items: readonly TreeNodeDetails[],
+    options: { needGone: boolean; skipRoot?: boolean },
+  ): Promise<boolean> => {
+    if (!isCurrentScan(scanId)) return false
+    const targets = refreshTargets(items)
+    if (targets.includes(ROOT_NODE_ID)) {
+      if (options.skipRoot) return false
+      let rescan = !options.needGone
+      if (options.needGone) {
+        const rootItems = items.filter((item) => containingFolder(item) === ROOT_NODE_ID)
+        const gone = await mapLimit(rootItems, EXISTS_IN_FLIGHT, async (item) =>
+          deps.pathExists(item.path).then(
+            (exists) => !exists,
+            () => false,
+          ),
+        )
+        rescan = gone.some(Boolean)
+      }
+      // A root rescan replaces the whole scan, so the folder refreshes would be wasted.
+      if (rescan) refreshQuietly(scanId, ROOT_NODE_ID)
+      else for (const target of targets) if (target !== ROOT_NODE_ID) refreshQuietly(scanId, target)
+      return rescan
+    }
+    for (const target of targets) refreshQuietly(scanId, target)
+    return false
+  }
+
+  // ---- shell commands that keep running ----------------------------------------------------
+
+  /**
+   * Continues after the menu closed, per verb class. Nothing here is awaited by the IPC call and
+   * nothing throws: failures are logged.
+   */
+  const continueAfterShell = (
+    scanId: string,
+    items: readonly TreeNodeDetails[],
+    verb: string | null,
+    finished: Promise<ShellFinish>,
+  ): void => {
+    const seq = (actionSeq += 1)
+    const key = `${scanId}:${seq}`
+    const isCurrent = () => isCurrentScan(scanId)
+    const later = (run: () => void): void =>
+      deps.watcher.later({ key, isCurrent, run, ms: SECOND_REFRESH_DELAY_MS })
+    const quiet = (promise: Promise<boolean>): Promise<boolean> =>
+      promise.catch((error: unknown) => {
+        deps.warn('Refresh after shell command failed', error)
+        return false
+      })
+
+    if (verb === 'delete') {
+      // The shell runs the copy engine inside InvokeCommand (on the worker): wait for it, then
+      // refresh once even after a failure or Cancel, because some items may already be gone.
+      void finished
+        .catch((): ShellFinish => ({ ok: false, hresult: 0, step: 'finished' }))
+        .then((result) => {
+          if (!result.ok) {
+            deps.warn(
+              'Shell delete did not finish cleanly',
+              new Error(`${result.step} (0x${result.hresult.toString(16)})`),
+            )
+          }
+          void quiet(refreshAffected(scanId, items, { needGone: true })).then((rootRescanned) =>
+            later(() => {
+              void quiet(
+                refreshAffected(scanId, items, { needGone: true, skipRoot: rootRescanned }),
+              )
+            }),
+          )
+        })
+      return
+    }
+
+    if (WATCHED_VERBS.includes(verb)) {
+      // Cut, rename and unknown commands: the items leave some time later, and no signal says when.
+      deps.watcher.watchMany({
+        key,
+        itemPaths: items.map((item) => item.path),
+        isCurrent,
+        // A root item that is still there after the timeout means the command was cancelled: a
+        // root refresh is a full rescan, so it is skipped. Deeper folders refresh cheaply.
+        onSettled: (reason) => {
+          void quiet(
+            refreshAffected(scanId, items, { needGone: true, skipRoot: reason === 'timeout' }),
+          )
+        },
+      })
+      return
+    }
+
+    // Paste, new item, shortcut, third-party commands: the items stay, only the folder changes.
+    void quiet(refreshAffected(scanId, items, { needGone: false }))
+    later(() => {
+      void quiet(refreshAffected(scanId, items, { needGone: false, skipRoot: true }))
+    })
+  }
+
+  // ---- node helpers ------------------------------------------------------------------------
 
   const openInExplorer = async (details: TreeNodeDetails): Promise<void> => {
     if (details.row.kind === 'file') {
@@ -83,63 +297,143 @@ export function createShellHandlers(deps: ShellHandlerDeps): ShellHandlers {
     const folderPath = details.row.kind === 'file' ? path.win32.dirname(details.path) : details.path
     const name = nextNewFolderName(await deps.readdir(folderPath))
     await deps.mkdir(path.win32.join(folderPath, name))
-    await deps.refreshFolder(scanId, parentId)
+    await enqueueRefresh(scanId, parentId)
     return { parentId, name }
   }
 
-  /** The folder to rescan after something happened to this item. */
-  const containingFolder = (details: TreeNodeDetails): NodeId =>
-    details.row.kind === 'folder'
-      ? (details.ancestorIds.at(-1) ?? details.row.id)
-      : folderIdOf(details)
-
-  /** A refresh nobody awaits: a failure is logged, never thrown. */
-  const refreshQuietly = (scanId: string, target: NodeId): void => {
-    deps
-      .refreshFolder(scanId, target)
-      .catch((error: unknown) => deps.warn('Refresh after shell command failed', error))
-  }
-
-  /** The item no longer exists: rescan its folder so the stale row goes away. */
-  const goneOutcome = (scanId: string, details: TreeNodeDetails): ContextMenuOutcome => {
-    refreshQuietly(scanId, containingFolder(details))
-    return { kind: 'gone' }
-  }
-
-  /** After a shell command that changed files: rescan now, and again once the change settles. */
-  const refreshAfterShell = (
+  /**
+   * Looks the rows up in the current scan (ids deduplicated, request order kept). A row that no
+   * longer exists is dropped; any other failure (another scan, a dead scanner) is thrown.
+   */
+  const resolveNodes = async (
     scanId: string,
-    details: TreeNodeDetails,
-    verb: string | null,
-  ): void => {
-    const target = containingFolder(details)
-    const key = `${scanId}:${details.row.id}`
-    const isCurrent = () => scanService.currentScan()?.scanId === scanId
-    // A root rescan is a full scan: never queue a second one.
-    const isRoot = target === ROOT_NODE_ID
-    if (ITEM_LEAVING_VERBS.includes(verb)) {
-      if (!isRoot) refreshQuietly(scanId, target)
-      deps.watcher.watch({
-        key,
-        itemPath: details.path,
-        isCurrent,
-        // A root item that is still there after the timeout means the command was cancelled:
-        // a root refresh is a full rescan, so it is not worth it. Deeper folders refresh cheaply.
-        onSettled: (reason) => {
-          if (reason === 'timeout' && isRoot) return
-          refreshQuietly(scanId, target)
-        },
-      })
-      return
+    nodeIds: readonly NodeId[],
+  ): Promise<TreeNodeDetails[]> => {
+    if (!isCurrentScan(scanId)) throw new Error(NOT_IN_SCAN_MESSAGE)
+    const unique = [...new Set(nodeIds)]
+    const resolved = await mapLimit(unique, RESOLVE_IN_FLIGHT, async (id) => {
+      try {
+        return await resolveScanNode(scanService, scanId, id)
+      } catch (error) {
+        if (
+          isCurrentScan(scanId) &&
+          error instanceof Error &&
+          error.message === NOT_IN_SCAN_MESSAGE
+        )
+          return null
+        throw error
+      }
+    })
+    return resolved.filter((details): details is TreeNodeDetails => details !== null)
+  }
+
+  /** With several rows: no root, no "[N files]" rows, no row inside another selected row. */
+  const actionable = (items: TreeNodeDetails[]): TreeNodeDetails[] => {
+    if (items.length <= 1) return items
+    const rows = items.filter((item) => item.row.id !== ROOT_NODE_ID && item.row.kind !== 'files')
+    const selected = new Set(rows.map((item) => item.row.id))
+    return rows.filter((item) => !item.ancestorIds.some((id) => selected.has(id)))
+  }
+
+  /** Drops items that vanished from disk (their folders are refreshed quietly). */
+  const existingOnly = async (
+    scanId: string,
+    items: readonly TreeNodeDetails[],
+  ): Promise<TreeNodeDetails[]> => {
+    const present = await mapLimit(items, EXISTS_IN_FLIGHT, (item) => deps.pathExists(item.path))
+    const kept = items.filter((_, index) => present[index] === true)
+    const missing = items.filter((_, index) => present[index] !== true)
+    for (const target of refreshTargets(missing)) refreshQuietly(scanId, target)
+    return kept
+  }
+
+  /** Starts the menu; `ShellBusyError` (thrown or rejected) becomes `null`. */
+  const startMenu = (request: ShellMenuRequest): ReturnType<ShellMenuHost['show']> | null => {
+    try {
+      return deps.showShellMenu(request)
+    } catch (error) {
+      if (error instanceof ShellBusyError) return null
+      throw error
     }
-    refreshQuietly(scanId, target)
-    if (!isRoot) {
-      deps.watcher.later({
-        key,
-        isCurrent,
-        run: () => refreshQuietly(scanId, target),
-        ms: SECOND_REFRESH_DELAY_MS,
-      })
+  }
+
+  const contextMenu = async (
+    scanId: string,
+    nodeIds: readonly NodeId[],
+    x: number,
+    y: number,
+    extended: boolean,
+  ): Promise<ContextMenuOutcome> => {
+    const resolved = await resolveNodes(scanId, nodeIds)
+    if (resolved.length === 0) return { kind: 'gone' }
+    // A single request keeps today's behaviour for any row, the root and group rows included.
+    let items = actionable(resolved)
+    if (items.length === 0) return { kind: 'dismissed' }
+    items = await existingOnly(scanId, items)
+    if (items.length === 0) return { kind: 'gone' }
+
+    const hideDestructive =
+      resolved.length === 1 &&
+      items.length === 1 &&
+      (items[0]?.row.id === ROOT_NODE_ID || isDriveRootPath(items[0]?.path ?? ''))
+
+    // A menu that fails because an item vanished meanwhile is retried once with the rest.
+    let shown = startMenu({ paths: items.map((i) => i.path), x, y, extended, hideDestructive })
+    if (shown === null) return { kind: 'busy' }
+    let choice: ShellMenuChoice
+    try {
+      choice = await shown.chosen
+    } catch (error) {
+      if (!isShellPathGone(error)) throw error
+      const remaining = await existingOnly(scanId, items)
+      if (remaining.length === 0 || remaining.length === items.length) {
+        // Nothing vanished that we can see (or everything did): the list is stale either way.
+        for (const target of refreshTargets(items)) refreshQuietly(scanId, target)
+        return { kind: 'gone' }
+      }
+      items = remaining
+      shown = startMenu({ paths: items.map((i) => i.path), x, y, extended, hideDestructive })
+      if (shown === null) return { kind: 'busy' }
+      try {
+        choice = await shown.chosen
+      } catch (retryError) {
+        if (!isShellPathGone(retryError)) throw retryError
+        return { kind: 'gone' }
+      }
+    }
+
+    const count = items.length
+    const first = items[0]
+    if (choice.kind === 'dismissed' || first === undefined) return { kind: 'dismissed' }
+
+    if (choice.kind === 'shell') {
+      if (choice.changed) continueAfterShell(scanId, items, choice.verb, shown.finished)
+      // The IPC call never waits for the command: it is still running in Windows right now.
+      return { kind: 'shell', verb: choice.verb, changed: choice.changed, count, running: true }
+    }
+
+    switch (choice.item) {
+      case 'refresh': {
+        const targets = refreshTargets(items, true)
+        const results = await Promise.all(targets.map((target) => enqueueRefresh(scanId, target)))
+        const target = targets[0] ?? folderIdOf(first)
+        return { kind: 'refreshed', nodeId: results[0]?.row.id ?? target }
+      }
+      case 'copy-path':
+        deps.writeClipboard(items.map((item) => item.path).join('\r\n'))
+        return { kind: 'copied', count }
+      case 'open':
+        if (count !== 1) return { kind: 'dismissed' }
+        await openInExplorer(first)
+        return { kind: 'opened' }
+      case 'new-folder': {
+        if (count !== 1) return { kind: 'dismissed' }
+        const created = await createFolder(scanId, first)
+        return { kind: 'created', nodeId: created.parentId, name: created.name }
+      }
+      case 'delete':
+        // Only the fallback menu has this item, and its choice is reported as a shell verb.
+        return { kind: 'dismissed' }
     }
   }
 
@@ -153,38 +447,8 @@ export function createShellHandlers(deps: ShellHandlerDeps): ShellHandlers {
 
     'shell:context-menu': {
       parseArgs: contextMenuArgs,
-      handle: async (_event, scanId, nodeId, x, y, extended): Promise<ContextMenuOutcome> => {
-        const details = await resolveScanNode(scanService, scanId, nodeId)
-        if (!(await deps.pathExists(details.path))) return goneOutcome(scanId, details)
-        let choice: ShellMenuChoice
-        try {
-          choice = await deps.showShellMenu(details.path, x, y, extended)
-        } catch (error) {
-          if (isShellPathGone(error)) return goneOutcome(scanId, details)
-          throw error
-        }
-        if (choice.kind === 'dismissed') return { kind: 'dismissed' }
-        if (choice.kind === 'shell') {
-          if (choice.changed) refreshAfterShell(scanId, details, choice.verb)
-          return { kind: 'shell', verb: choice.verb, changed: choice.changed }
-        }
-        switch (choice.item) {
-          case 'refresh': {
-            const refreshed = await deps.refreshFolder(scanId, folderIdOf(details))
-            return { kind: 'refreshed', nodeId: refreshed?.row.id ?? folderIdOf(details) }
-          }
-          case 'copy-path':
-            deps.writeClipboard(details.path)
-            return { kind: 'copied' }
-          case 'open':
-            await openInExplorer(details)
-            return { kind: 'opened' }
-          case 'new-folder': {
-            const created = await createFolder(scanId, details)
-            return { kind: 'created', nodeId: created.parentId, name: created.name }
-          }
-        }
-      },
+      handle: (_event, scanId, nodeIds, x, y, extended) =>
+        contextMenu(scanId, nodeIds, x, y, extended),
     },
 
     'folder:create': {
@@ -194,9 +458,11 @@ export function createShellHandlers(deps: ShellHandlerDeps): ShellHandlers {
     },
 
     'clipboard:copy-path': {
-      parseArgs: scanNodeArgs,
-      handle: async (_event, scanId, nodeId) => {
-        deps.writeClipboard((await resolveScanNode(scanService, scanId, nodeId)).path)
+      parseArgs: scanNodesArgs,
+      handle: async (_event, scanId, nodeIds) => {
+        const items = await resolveNodes(scanId, nodeIds)
+        if (items.length === 0) throw new Error(NOT_IN_SCAN_MESSAGE)
+        deps.writeClipboard([...new Set(items.map((item) => item.path))].join('\r\n'))
       },
     },
   }

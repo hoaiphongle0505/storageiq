@@ -82,6 +82,7 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
   const phase = useWorkspace((s) => s.phase)
   const target = useWorkspace((s) => s.target)
   const selectedId = useWorkspace((s) => s.selectedId)
+  const severalSelected = useWorkspace((s) => s.selectedIds.size > 1)
   const mode = useWorkspace((s) => s.mode)
   const unit = useWorkspace((s) => s.unit)
   const treemapVisible = useWorkspace((s) => s.treemapVisible)
@@ -192,7 +193,7 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
       <RibbonButton
         label="Open in Explorer"
         icon={FolderOpen}
-        disabled={!hasTree || selectedId === null}
+        disabled={!hasTree || selectedId === null || severalSelected}
         title="Open the selected item in File Explorer (Enter)"
         onClick={() => {
           if (selectedId !== null) void openInExplorer(selectedId)
@@ -201,7 +202,7 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
       <RibbonButton
         label="New folder"
         icon={FolderPlus}
-        disabled={!hasTree || scanning || selectedId === null}
+        disabled={!hasTree || scanning || selectedId === null || severalSelected}
         title="Create a folder in the selected folder (Ctrl+N)"
         onClick={() => {
           if (selectedId !== null) void createFolder(selectedId)

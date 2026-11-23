@@ -4,7 +4,9 @@ import {
   contextMenuArgs,
   expandArgs,
   InvalidIpcArgumentsError,
+  MAX_ACTION_ITEMS,
   nodeArgs,
+  nodeIdListArg,
   noArgs,
   oneString,
   scanNodeArgs,
@@ -119,16 +121,57 @@ describe('treemapArgs', () => {
 })
 
 describe('contextMenuArgs', () => {
-  it('accepts a menu request', () => {
-    expect(contextMenuArgs([SCAN, 'd4', 120, 300, false])).toEqual([SCAN, 'd4', 120, 300, false])
+  const ids = (n: number) => Array.from({ length: n }, (_, i) => `f${i + 1}`)
+
+  it('contextMenuArgs accepts 1 id and 1000 ids', () => {
+    expect(contextMenuArgs([SCAN, ['d4'], 120, 300, false])).toEqual([
+      SCAN,
+      ['d4'],
+      120,
+      300,
+      false,
+    ])
+    expect(contextMenuArgs([SCAN, ids(1000), 1, 2, true])[1]).toHaveLength(1000)
+    expect(MAX_ACTION_ITEMS).toBe(1000)
   })
 
-  it.each([
-    [[SCAN, 'd4', 120, 300]],
-    [[SCAN, 'd4', -1, 300, false]],
-    [[SCAN, 'd4', 120, 300, 'yes']],
-    [[SCAN, 'd4', 1.5, 300, true]],
-  ])('rejects %j', (args) => {
-    expect(() => contextMenuArgs(args)).toThrow(InvalidIpcArgumentsError)
+  it('contextMenuArgs rejects an empty list', () => {
+    expect(() => contextMenuArgs([SCAN, [], 1, 2, false])).toThrow(
+      'expected 1 to 1000 tree node ids',
+    )
+  })
+
+  it('contextMenuArgs rejects 1001 ids', () => {
+    expect(() => contextMenuArgs([SCAN, ids(1001), 1, 2, false])).toThrow(InvalidIpcArgumentsError)
+  })
+
+  it('a request of 1001 items never reaches the handler', () => {
+    expect(() => nodeIdListArg(ids(1001), MAX_ACTION_ITEMS)).toThrow(InvalidIpcArgumentsError)
+    expect(nodeIdListArg(ids(3), 3)).toEqual(['f1', 'f2', 'f3'])
+  })
+
+  it('contextMenuArgs rejects a non-array, a non-string id and an id with a bad pattern', () => {
+    expect(() => contextMenuArgs([SCAN, new Set(['d1']), 1, 2, false])).toThrow(
+      InvalidIpcArgumentsError,
+    )
+    expect(() => contextMenuArgs([SCAN, [4], 1, 2, false])).toThrow(InvalidIpcArgumentsError)
+    expect(() => contextMenuArgs([SCAN, ['d1', 'C:\\Windows'], 1, 2, false])).toThrow(
+      InvalidIpcArgumentsError,
+    )
+  })
+
+  it('contextMenuArgs rejects the old single-id form', () => {
+    expect(() => contextMenuArgs([SCAN, 'd4', 120, 300, false])).toThrow(InvalidIpcArgumentsError)
+  })
+
+  it('contextMenuArgs still validates x, y and extended', () => {
+    for (const args of [
+      [SCAN, ['d4'], 120, 300],
+      [SCAN, ['d4'], -1, 300, false],
+      [SCAN, ['d4'], 120, 300, 'yes'],
+      [SCAN, ['d4'], 1.5, 300, true],
+    ]) {
+      expect(() => contextMenuArgs(args)).toThrow(InvalidIpcArgumentsError)
+    }
   })
 })

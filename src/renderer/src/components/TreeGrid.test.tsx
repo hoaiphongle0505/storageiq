@@ -127,14 +127,14 @@ describe('<TreeGrid />', () => {
       shiftKey: true,
     })
     await waitFor(() =>
-      expect(api.showContextMenu).toHaveBeenCalledWith('scan-1', 'd2', 120, 80, true),
+      expect(api.showContextMenu).toHaveBeenCalledWith('scan-1', ['d2'], 120, 80, true),
     )
     grid().focus()
     await user.keyboard('{Shift>}{F10}{/Shift}')
     expect(api.showContextMenu).toHaveBeenCalledTimes(2)
-    expect(vi.mocked(api.showContextMenu).mock.calls[1]?.[1]).toBe('d2')
+    expect(vi.mocked(api.showContextMenu).mock.calls[1]?.[1]).toEqual(['d2'])
     await user.keyboard('{Control>}c{/Control}')
-    await waitFor(() => expect(api.copyNodePath).toHaveBeenCalledWith('scan-1', 'd2'))
+    await waitFor(() => expect(api.copyNodePath).toHaveBeenCalledWith('scan-1', ['d2']))
     await user.keyboard('{Control>}n{/Control}')
     expect(api.createFolder).toHaveBeenCalledWith('scan-1', 'd2')
   })
@@ -183,5 +183,221 @@ describe('<TreeGrid />', () => {
     await waitFor(() =>
       expect(vi.mocked(api.getChildren).mock.calls.length).toBeGreaterThan(calls + 1),
     )
+  })
+})
+
+describe('<TreeGrid /> multi-select', () => {
+  const rowOf = (name: RegExp) => screen.getByRole('row', { name })
+  const selectedIds = (workspace: Awaited<ReturnType<typeof renderTree>>['workspace']) =>
+    [...workspace.getState().selectedIds].sort()
+  const press = async (keys: string) => {
+    grid().focus()
+    await userEvent.setup().keyboard(keys)
+  }
+
+  it('the grid is multiselectable and every row has aria-selected', async () => {
+    await renderTree()
+    expect(grid()).toHaveAttribute('aria-multiselectable', 'true')
+    const rows = screen.getAllByRole('row').filter((row) => row.id.startsWith('tree-row-'))
+    expect(rows).toHaveLength(4)
+    for (const row of rows) {
+      expect(['true', 'false']).toContain(row.getAttribute('aria-selected'))
+    }
+    // The header row has no selection state.
+    expect(screen.getAllByRole('row')[0]).not.toHaveAttribute('aria-selected')
+    expect(rowOf(/D:\\/)).toHaveAttribute('aria-selected', 'true')
+    expect(rowOf(/Videos/)).toHaveAttribute('aria-selected', 'false')
+  })
+
+  it('click selects one row and clears the others', async () => {
+    const user = userEvent.setup()
+    const { workspace } = await renderTree()
+    await user.click(rowOf(/Videos/))
+    await user.click(rowOf(/Photos/))
+    expect(selectedIds(workspace)).toEqual(['d2'])
+    expect(rowOf(/Videos/)).toHaveAttribute('aria-selected', 'false')
+    expect(rowOf(/Photos/)).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('ctrl click toggles a row without clearing the others', async () => {
+    const user = userEvent.setup()
+    const { workspace } = await renderTree()
+    await user.click(rowOf(/Videos/))
+    fireEvent.click(rowOf(/Photos/), { ctrlKey: true })
+    expect(selectedIds(workspace)).toEqual(['d1', 'd2'])
+    expect(workspace.getState().selectedId).toBe('d2')
+    fireEvent.click(rowOf(/Videos/), { ctrlKey: true })
+    expect(selectedIds(workspace)).toEqual(['d2'])
+    // Ctrl+click does not expand or collapse.
+    expect(rowOf(/Videos/)).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('shift click selects a range in visible order', async () => {
+    const user = userEvent.setup()
+    const { workspace } = await renderTree()
+    await user.click(rowOf(/Videos/))
+    fireEvent.click(screen.getByRole('row', { name: /\[3 files\]/ }), { shiftKey: true })
+    expect(selectedIds(workspace)).toEqual(['d1', 'd2', 'g0'])
+    expect(workspace.getState().selectedId).toBe('g0')
+    expect(workspace.getState().anchorId).toBe('d1')
+  })
+
+  it('shift click ignores collapsed descendants', async () => {
+    const user = userEvent.setup()
+    const { workspace } = await renderTree()
+    // Videos is collapsed: its children are not visible and are not part of the range.
+    await user.click(rowOf(/D:\\/))
+    fireEvent.click(screen.getByRole('row', { name: /\[3 files\]/ }), { shiftKey: true })
+    expect(selectedIds(workspace)).toEqual(['d0', 'd1', 'd2', 'g0'])
+    expect(rowOf(/Videos/)).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('ctrl shift click adds a range', async () => {
+    const user = userEvent.setup()
+    const { workspace } = await renderTree()
+    await user.click(rowOf(/D:\\/))
+    fireEvent.click(screen.getByRole('row', { name: /\[3 files\]/ }), { ctrlKey: true })
+    fireEvent.click(rowOf(/Videos/), { ctrlKey: true, shiftKey: true })
+    expect(selectedIds(workspace)).toEqual(['d0', 'd1', 'd2', 'g0'])
+  })
+
+  it('ctrl A selects all visible rows', async () => {
+    const { workspace } = await renderTree()
+    await press('{Control>}a{/Control}')
+    expect(selectedIds(workspace)).toEqual(['d0', 'd1', 'd2', 'g0'])
+    expect(workspace.getState().selectedId).toBe('d0')
+  })
+
+  it('shift arrow down extends the selection by one row', async () => {
+    const { workspace } = await renderTree()
+    await press('{Shift>}{ArrowDown}{/Shift}')
+    expect(selectedIds(workspace)).toEqual(['d0', 'd1'])
+    expect(workspace.getState().selectedId).toBe('d1')
+    await userEvent.setup().keyboard('{Shift>}{ArrowDown}{/Shift}')
+    expect(selectedIds(workspace)).toEqual(['d0', 'd1', 'd2'])
+  })
+
+  it('ctrl arrow moves the active row without changing the selection', async () => {
+    const { workspace } = await renderTree()
+    await press('{Control>}{ArrowDown}{ArrowDown}{/Control}')
+    expect(workspace.getState().selectedId).toBe('d2')
+    expect(selectedIds(workspace)).toEqual(['d0'])
+    expect(grid()).toHaveAttribute('aria-activedescendant', 'tree-row-d2')
+  })
+
+  it('space toggles the active row and ctrl space does too', async () => {
+    const { workspace } = await renderTree()
+    await press('{ArrowDown}')
+    expect(selectedIds(workspace)).toEqual(['d1'])
+    await userEvent.setup().keyboard(' ')
+    expect(selectedIds(workspace)).toEqual([])
+    expect(workspace.getState().selectedId).toBe('d1')
+    await userEvent.setup().keyboard(' ')
+    expect(selectedIds(workspace)).toEqual(['d1'])
+    await userEvent.setup().keyboard('{Control>} {/Control}')
+    expect(selectedIds(workspace)).toEqual([])
+  })
+
+  it('escape reduces a multi selection to the active row', async () => {
+    const { workspace } = await renderTree()
+    await press('{Shift>}{ArrowDown}{ArrowDown}{/Shift}')
+    expect(selectedIds(workspace)).toEqual(['d0', 'd1', 'd2'])
+    await userEvent.setup().keyboard('{Escape}')
+    expect(selectedIds(workspace)).toEqual(['d2'])
+    expect(workspace.getState().selectedId).toBe('d2')
+  })
+
+  it('the active row has a focus ring that differs from the selected style', async () => {
+    const { workspace } = await renderTree()
+    await press('{Control>}{ArrowDown}{/Control}')
+    expect(selectedIds(workspace)).toEqual(['d0'])
+    // d1 is active but not selected; d0 is selected but not active.
+    expect(rowOf(/Videos/)).toHaveAttribute('data-active')
+    expect(rowOf(/Videos/).className).not.toContain('bg-selection')
+    expect(rowOf(/D:\\/)).not.toHaveAttribute('data-active')
+    expect(rowOf(/D:\\/).className).toContain('bg-selection')
+    expect(document.querySelectorAll('[data-active]')).toHaveLength(1)
+  })
+
+  it('the selection survives a chunk reload', async () => {
+    const user = userEvent.setup()
+    const { api, workspace } = await renderTree()
+    await user.click(rowOf(/Videos/))
+    fireEvent.click(rowOf(/Photos/), { ctrlKey: true })
+    const calls = vi.mocked(api.getChildren).mock.calls.length
+    act(() => api.emitScanProgress(makeProgress()))
+    await waitFor(() => expect(vi.mocked(api.getChildren).mock.calls.length).toBeGreaterThan(calls))
+    expect(selectedIds(workspace)).toEqual(['d1', 'd2'])
+    expect(rowOf(/Videos/)).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('right click inside the selection opens the menu for all selected rows', async () => {
+    const user = userEvent.setup()
+    const { api, workspace } = await renderTree()
+    await user.click(rowOf(/Photos/))
+    fireEvent.click(rowOf(/Videos/), { ctrlKey: true })
+    fireEvent.contextMenu(rowOf(/Photos/), { clientX: 120, clientY: 80 })
+    await waitFor(() =>
+      expect(api.showContextMenu).toHaveBeenCalledWith('scan-1', ['d1', 'd2'], 120, 80, false),
+    )
+    // The set is unchanged; the clicked row is the active one.
+    expect(selectedIds(workspace)).toEqual(['d1', 'd2'])
+    expect(workspace.getState().selectedId).toBe('d2')
+  })
+
+  it('right click outside the selection selects that row and opens the menu for it', async () => {
+    const user = userEvent.setup()
+    const { api, workspace } = await renderTree()
+    await user.click(rowOf(/Videos/))
+    fireEvent.click(rowOf(/Photos/), { ctrlKey: true })
+    fireEvent.contextMenu(screen.getByRole('row', { name: /\[3 files\]/ }), {
+      clientX: 5,
+      clientY: 6,
+    })
+    await waitFor(() =>
+      expect(api.showContextMenu).toHaveBeenCalledWith('scan-1', ['g0'], 5, 6, false),
+    )
+    expect(selectedIds(workspace)).toEqual(['g0'])
+  })
+
+  it('shift F10 opens the menu for the whole selection at the active row', async () => {
+    const { api } = await renderTree()
+    await userEvent.setup().click(rowOf(/Videos/))
+    await press('{Shift>}{ArrowDown}{ArrowDown}{/Shift}')
+    await userEvent.setup().keyboard('{Shift>}{F10}{/Shift}')
+    await waitFor(() => expect(api.showContextMenu).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(api.showContextMenu).mock.calls[0]?.[1]).toEqual(['d1', 'd2', 'g0'])
+  })
+
+  it('Ctrl+C copies the paths of every selected row', async () => {
+    const { api } = await renderTree()
+    await press('{Shift>}{ArrowDown}{/Shift}')
+    await userEvent.setup().keyboard('{Control>}c{/Control}')
+    await waitFor(() => expect(api.copyNodePath).toHaveBeenCalledWith('scan-1', ['d0', 'd1']))
+  })
+
+  it('selecting more than 1000 rows announces the limit and opens no menu', async () => {
+    const { api, workspace } = await renderTree()
+    const ids = Array.from({ length: 1001 }, (_, i) => `f${i + 100}`)
+    act(() =>
+      workspace.getState().setSelection({ ids: new Set(ids), activeId: 'd0', anchorId: 'd0' }),
+    )
+    await press('{Shift>}{F10}{/Shift}')
+    await waitFor(() =>
+      expect(workspace.getState().announcement).toBe(
+        'Too many items selected (the limit is 1,000).',
+      ),
+    )
+    expect(api.showContextMenu).not.toHaveBeenCalled()
+  })
+
+  it('enter with several rows announces select a single item first', async () => {
+    const { api, workspace } = await renderTree()
+    await press('{Shift>}{ArrowDown}{/Shift}')
+    await userEvent.setup().keyboard('{Enter}')
+    expect(workspace.getState().announcement).toBe('Select a single item first.')
+    expect(api.openInExplorer).not.toHaveBeenCalled()
+    await userEvent.setup().keyboard('{Control>}n{/Control}')
+    expect(api.createFolder).not.toHaveBeenCalled()
   })
 })

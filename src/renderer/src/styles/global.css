@@ -90,6 +90,23 @@
       outline: 2px solid Highlight;
       outline-offset: -2px;
     }
+
+    /* The active row of the tree: a dashed inner ring in CanvasText, so it differs from the solid
+       Highlight outline of selected rows and survives on a Highlight background. */
+    [role='treegrid']:focus [role='row'][data-active]::after {
+      content: '';
+      position: absolute;
+      inset: 3px;
+      border: 2px dashed CanvasText;
+      pointer-events: none;
+    }
+  }
+
+  /* The active row of the tree (separate from the selected rows): a 2px inset ring in the accent
+     colour while the grid has focus. A selected row also keeps its fill and accent bar. */
+  [role='treegrid']:focus [role='row'][data-active] {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
 }
 

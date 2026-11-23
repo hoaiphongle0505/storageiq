@@ -20,6 +20,15 @@ import {
   shareOfParent,
   type SizeUnit,
 } from '../lib/format'
+import {
+  extendBy,
+  orderedIds,
+  rangeTo,
+  selectAll,
+  type Selection,
+  single,
+  toggle,
+} from '../lib/selection'
 import { buildVisibleModel, chunksFor, type VisibleRow } from '../lib/tree-view-model'
 import { type ColumnId, effectiveSort } from '../stores/workspace-store'
 import { useWorkspace } from '../stores/workspace-store-context'
@@ -44,6 +53,8 @@ export const COLUMNS: ReadonlyArray<{ id: ColumnId; label: string; numeric: bool
 const GRID_TEMPLATE =
   'minmax(var(--size-col-name-min),1fr) var(--size-col-size) var(--size-col-allocated) var(--size-col-files) var(--size-col-folders) var(--size-col-percent) var(--size-col-modified)'
 
+export const SINGLE_ITEM_MESSAGE = 'Select a single item first.'
+
 export const EMPTY_TREE_TEXT = 'Choose a drive or folder from Select to see what’s using the space.'
 
 export function rowDomId(id: NodeId): string {
@@ -65,9 +76,11 @@ interface RowProps {
   parent: TreeRow | null
   expanded: boolean
   selected: boolean
+  /** The active row: what `aria-activedescendant` names; drawn with a focus ring. */
+  active: boolean
   mode: SizeMode
   unit: SizeUnit
-  onSelect(id: NodeId): void
+  onSelect(id: NodeId, event: MouseEvent): void
   onToggle(id: NodeId, open: boolean): void
   onContextMenu(id: NodeId, event: MouseEvent): void
 }
@@ -79,6 +92,7 @@ function GridRow({
   parent,
   expanded,
   selected,
+  active,
   mode,
   unit,
   onSelect,
@@ -98,8 +112,13 @@ function GridRow({
       aria-posinset={line.index + 1}
       aria-expanded={hasChildren ? expanded : undefined}
       aria-selected={selected}
-      onClick={() => onSelect(row.id)}
-      onDoubleClick={() => hasChildren && onToggle(row.id, !expanded)}
+      data-active={active ? 'true' : undefined}
+      onClick={(event) => onSelect(row.id, event)}
+      onDoubleClick={(event) => {
+        // Shift and Ctrl clicks select; they never expand or collapse.
+        if (event.shiftKey || event.ctrlKey || event.metaKey) return
+        if (hasChildren) onToggle(row.id, !expanded)
+      }}
       onContextMenu={(event) => onContextMenu(row.id, event)}
       className={`absolute inset-x-0 grid cursor-default items-center tabular-nums select-none ${
         selected ? 'bg-selection shadow-[inset_2px_0_0_var(--accent)]' : 'hover:bg-row-hover'
@@ -187,9 +206,13 @@ function GridRow({
 /**
  * The column tree: an ARIA treegrid, virtualized by hand (only the lines in view, plus a few
  * above and below, are in the DOM; the scanner pages the rows in), sortable by every column.
- * Keyboard: ↑ ↓ Home End PageUp PageDown move, → expands or enters, ← collapses or goes up,
- * Enter opens in Explorer, Shift+F10 or the Menu key opens the Explorer context menu,
- * Ctrl+C copies the path and Ctrl+N creates a folder.
+ * Multi-select (APG): the active row is separate from the set of selected rows. Click selects one
+ * row, Ctrl+click toggles, Shift+click selects a range in visible order (Ctrl+Shift+click adds it).
+ * Keyboard: ↑ ↓ Home End PageUp PageDown move and select one row; with Shift they extend the range
+ * from the anchor; with Ctrl they move the active row only; Space (or Ctrl+Space) toggles the
+ * active row, Ctrl+A selects every visible row, Esc reduces to the active row. → expands or
+ * enters, ← collapses or goes up. Enter and Ctrl+N act on exactly one row; Shift+F10 or the Menu
+ * key opens the Explorer menu for the whole selection; Ctrl+C copies the selected paths.
  */
 export function TreeGrid() {
   const phase = useWorkspace((s) => s.phase)
@@ -197,6 +220,8 @@ export function TreeGrid() {
   const lists = useWorkspace((s) => s.lists)
   const expanded = useWorkspace((s) => s.expanded)
   const selectedId = useWorkspace((s) => s.selectedId)
+  const selectedIds = useWorkspace((s) => s.selectedIds)
+  const anchorId = useWorkspace((s) => s.anchorId)
   const scrollTarget = useWorkspace((s) => s.scrollTarget)
   const revision = useWorkspace((s) => s.revision)
   const mode = useWorkspace((s) => s.mode)
@@ -205,12 +230,13 @@ export function TreeGrid() {
   const sortDir = useWorkspace((s) => s.sortDir)
   const requestChunks = useWorkspace((s) => s.requestChunks)
   const setExpanded = useWorkspace((s) => s.setExpanded)
-  const select = useWorkspace((s) => s.select)
+  const setSelection = useWorkspace((s) => s.setSelection)
+  const announce = useWorkspace((s) => s.announce)
   const sortBy = useWorkspace((s) => s.sortBy)
   const openInExplorer = useWorkspace((s) => s.openInExplorer)
   const showContextMenu = useWorkspace((s) => s.showContextMenu)
   const createFolder = useWorkspace((s) => s.createFolder)
-  const copyPath = useWorkspace((s) => s.copyPath)
+  const copyPaths = useWorkspace((s) => s.copyPaths)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
@@ -265,20 +291,41 @@ export function TreeGrid() {
   const selectedIndex = selectedId === null ? -1 : model.indexOf(selectedId)
   const selectedLine = selectedIndex === -1 ? null : model.rowAt(selectedIndex)
 
-  const moveTo = (index: number) => {
-    const clamped = Math.max(0, Math.min(model.count - 1, index))
-    const line = model.rowAt(clamped)
-    if (line?.row) {
-      select(line.row.id)
-      ensureVisible(clamped)
+  const current: Selection = { ids: selectedIds, activeId: selectedId, anchorId }
+
+  /** Every loaded row in view order (loading lines are skipped). Built when a range needs it. */
+  const visibleIds = (): NodeId[] => {
+    const ids: NodeId[] = []
+    for (let i = 0; i < model.count; i += 1) {
+      const id = model.rowAt(i)?.row?.id
+      if (id !== undefined) ids.push(id)
     }
+    return ids
+  }
+
+  /** The rows an action takes: the selection in tree order, or the active row when it is empty. */
+  const actionRows = (): NodeId[] => {
+    if (selectedIds.size > 0) return orderedIds(current, visibleIds())
+    return selectedId === null ? [] : [selectedId]
+  }
+
+  /** Moves the active row to line `index` as the held modifier keys ask. */
+  const moveTo = (index: number, event: KeyboardEvent<HTMLDivElement>) => {
+    const clamped = Math.max(0, Math.min(model.count - 1, index))
+    const id = model.rowAt(clamped)?.row?.id
+    if (id === undefined) return
+    if (event.shiftKey && event.ctrlKey) setSelection(rangeTo(current, visibleIds(), id, true))
+    else if (event.shiftKey) setSelection(rangeTo(current, visibleIds(), id, false))
+    else if (event.ctrlKey) setSelection({ ...current, activeId: id })
+    else setSelection(single(id))
+    ensureVisible(clamped)
   }
 
   const openMenuForSelected = (extended: boolean) => {
     if (selectedId === null) return
     const element = document.getElementById(rowDomId(selectedId))
     const rect = element?.getBoundingClientRect()
-    void showContextMenu(selectedId, (rect?.left ?? 0) + 32, rect?.bottom ?? 0, extended)
+    void showContextMenu(actionRows(), (rect?.left ?? 0) + 32, rect?.bottom ?? 0, extended)
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -288,37 +335,73 @@ export function TreeGrid() {
     const row = selectedLine?.row ?? null
     const pageRows = Math.max(1, Math.floor(viewport / TREE_ROW_HEIGHT) - 1)
     const isExpanded = row !== null && expanded.has(row.id)
+    const several = selectedIds.size > 1
+    const key = event.key
     let handled = true
-    if (event.key === 'ArrowDown') moveTo(selectedIndex + 1)
-    else if (event.key === 'ArrowUp') moveTo(selectedIndex === -1 ? 0 : selectedIndex - 1)
-    else if (event.key === 'Home') moveTo(0)
-    else if (event.key === 'End') moveTo(model.count - 1)
-    else if (event.key === 'PageDown') moveTo(selectedIndex + pageRows)
-    else if (event.key === 'PageUp') moveTo(selectedIndex - pageRows)
-    else if (event.key === 'ArrowRight' && row !== null) {
-      if (row.childCount > 0 && !isExpanded) setExpanded(row.id, true)
-      else if (isExpanded) moveTo(selectedIndex + 1)
-    } else if (event.key === 'ArrowLeft' && row !== null) {
-      if (isExpanded) setExpanded(row.id, false)
-      else if (selectedLine?.parentId) {
-        const parentIndex = model.indexOf(selectedLine.parentId)
-        if (parentIndex !== -1) moveTo(parentIndex)
+    if (key === 'ArrowDown' || key === 'ArrowUp') {
+      const delta = key === 'ArrowDown' ? 1 : -1
+      if (event.shiftKey && !event.ctrlKey) {
+        setSelection(extendBy(current, visibleIds(), delta))
+        ensureVisible(selectedIndex + delta)
+      } else moveTo(selectedIndex === -1 ? 0 : selectedIndex + delta, event)
+    } else if (key === 'Home') moveTo(0, event)
+    else if (key === 'End') moveTo(model.count - 1, event)
+    else if (key === 'PageDown') moveTo(selectedIndex + pageRows, event)
+    else if (key === 'PageUp') moveTo(selectedIndex - pageRows, event)
+    else if (key === 'ArrowRight' && row !== null) {
+      if (!event.shiftKey) {
+        if (row.childCount > 0 && !isExpanded) setExpanded(row.id, true)
+        else if (isExpanded) moveTo(selectedIndex + 1, event)
       }
-    } else if (event.key === 'Enter' && row !== null) void openInExplorer(row.id)
-    else if ((event.key === 'F10' && event.shiftKey) || event.key === 'ContextMenu') {
+    } else if (key === 'ArrowLeft' && row !== null) {
+      if (!event.shiftKey) {
+        if (isExpanded) setExpanded(row.id, false)
+        else if (selectedLine?.parentId) {
+          const parentIndex = model.indexOf(selectedLine.parentId)
+          if (parentIndex !== -1) moveTo(parentIndex, event)
+        }
+      }
+    } else if (key === ' ' && row !== null) {
+      // Space and Ctrl+Space both toggle the active row.
+      setSelection(toggle(current, row.id))
+    } else if (event.ctrlKey && key.toLowerCase() === 'a') {
+      setSelection(selectAll(visibleIds(), current))
+    } else if (key === 'Escape') {
+      if (several && selectedId !== null) setSelection(single(selectedId))
+      else handled = false
+    } else if (key === 'Enter' && row !== null) {
+      if (several) announce(SINGLE_ITEM_MESSAGE)
+      else void openInExplorer(row.id)
+    } else if ((key === 'F10' && event.shiftKey) || key === 'ContextMenu') {
       openMenuForSelected(false)
-    } else if (event.ctrlKey && event.key.toLowerCase() === 'n' && row !== null) {
-      void createFolder(row.id)
-    } else if (event.ctrlKey && event.key.toLowerCase() === 'c' && row !== null) {
-      void copyPath(row.id)
+    } else if (event.ctrlKey && key.toLowerCase() === 'n' && row !== null) {
+      if (several) announce(SINGLE_ITEM_MESSAGE)
+      else void createFolder(row.id)
+    } else if (event.ctrlKey && key.toLowerCase() === 'c' && row !== null) {
+      void copyPaths(actionRows())
     } else handled = false
     if (handled) event.preventDefault()
   }
 
+  const onRowClick = (id: NodeId, event: MouseEvent) => {
+    const additive = event.ctrlKey || event.metaKey
+    if (event.shiftKey) setSelection(rangeTo(current, visibleIds(), id, additive))
+    else if (additive) setSelection(toggle(current, id))
+    else setSelection(single(id))
+  }
+
   const onRowContextMenu = (id: NodeId, event: MouseEvent) => {
     event.preventDefault()
-    select(id)
-    void showContextMenu(id, event.clientX, event.clientY, event.shiftKey)
+    let rows: NodeId[]
+    if (selectedIds.has(id)) {
+      // Inside the selection: the menu acts on all of it; the clicked row becomes the active one.
+      setSelection({ ...current, activeId: id })
+      rows = orderedIds(current, visibleIds())
+    } else {
+      setSelection(single(id))
+      rows = [id]
+    }
+    void showContextMenu(rows, event.clientX, event.clientY, event.shiftKey)
   }
 
   const sort = effectiveSort({ sortColumn, sortDir, mode })
@@ -355,10 +438,11 @@ export function TreeGrid() {
         rowIndex={i}
         parent={parent}
         expanded={expanded.has(line.row.id)}
-        selected={line.row.id === selectedId}
+        selected={selectedIds.has(line.row.id)}
+        active={line.row.id === selectedId}
         mode={mode}
         unit={unit}
-        onSelect={select}
+        onSelect={onRowClick}
         onToggle={setExpanded}
         onContextMenu={onRowContextMenu}
       />,
@@ -373,7 +457,7 @@ export function TreeGrid() {
       aria-label="Folder tree"
       aria-rowcount={model.count + 1}
       aria-colcount={COLUMNS.length}
-      aria-multiselectable="false"
+      aria-multiselectable="true"
       aria-activedescendant={
         activeRendered && selectedId !== null ? rowDomId(selectedId) : undefined
       }

@@ -24,7 +24,14 @@ import {
   type TreemapLayout,
 } from '@shared/tree-types'
 import type { SizeUnit } from '../lib/format'
-import { CHUNK_SIZE, type ChildLists, type ChunkRef, rowInList } from '../lib/tree-view-model'
+import { dropDescendants, type Selection, single } from '../lib/selection'
+import {
+  CHUNK_SIZE,
+  type ChildLists,
+  type ChunkRef,
+  rowIndexOf,
+  rowInList,
+} from '../lib/tree-view-model'
 
 /** `empty → scanning → done | canceled | failed`; any state can scan again. */
 export type ScanPhase = 'empty' | 'scanning' | 'done' | 'canceled' | 'failed'
@@ -55,6 +62,13 @@ export const NETWORK_PATH_ERROR =
 export const SCAN_CRASH_MESSAGE = 'The scan stopped unexpectedly. You can try again.'
 export const PATH_COPIED = 'Path copied.'
 export const GONE_MESSAGE = 'That item no longer exists. The list was refreshed.'
+export const BUSY_MESSAGE = 'Windows is still working on earlier actions. Try again in a moment.'
+export const TOO_MANY_MESSAGE = 'Too many items selected (the limit is 1,000).'
+/** Rows one Explorer action takes (the same limit as main). */
+export const MAX_ACTION_ITEMS = 1000
+/** A selection larger than this is not re-checked against the scanner; it shrinks to the active row. */
+export const MAX_PRUNED_SELECTION = 200
+const PRUNE_IN_FLIGHT = 8
 export const EXPAND_ALL_LEVELS = 64
 export const DEFAULT_TREEMAP_DEPTH = 1
 
@@ -108,7 +122,12 @@ export interface WorkspaceState {
   sortDir: SortDir
   lists: ChildLists
   expanded: ReadonlySet<NodeId>
+  /** The active row (focused; what the treemap shows). Always in `selectedIds`, or `selectedIds` is empty. */
   selectedId: NodeId | null
+  /** The selected rows. Holds ids, so it survives chunk reloads and revision bumps. */
+  selectedIds: ReadonlySet<NodeId>
+  /** Where a Shift range starts. */
+  anchorId: NodeId | null
   /** Ask the tree to scroll a row into view (seq changes on every request). */
   scrollTarget: { id: NodeId; seq: number } | null
   /** Bumps whenever the scanner's tree may have changed; loaded chunks older than it reload. */
@@ -135,14 +154,20 @@ export interface WorkspaceState {
   setExpanded(id: NodeId, open: boolean): void
   expandLevels(levels: number): Promise<void>
   select(id: NodeId): void
+  /** Sets the polite screen-reader message. */
+  announce(message: string): void
+  /** Replaces the selection; `selectedId` follows the active row and so does the treemap. */
+  setSelection(selection: Selection): void
   /** Selects a row that may be hidden: expands its ancestors and loads its chunk. */
   reveal(id: NodeId): Promise<void>
   /** Treemap double-click: reveal the row and show its children in the treemap. */
   drillInto(id: NodeId): Promise<void>
   requestChunks(refs: readonly ChunkRef[]): void
   openInExplorer(id: NodeId): Promise<void>
-  copyPath(id: NodeId): Promise<void>
-  showContextMenu(id: NodeId, x: number, y: number, extended: boolean): Promise<void>
+  /** Copies the paths of these rows, one per line (main resolves them). */
+  copyPaths(ids: readonly NodeId[]): Promise<void>
+  /** Shows the Explorer menu for these rows (1 to 1,000 after rows inside others are dropped). */
+  showContextMenu(ids: readonly NodeId[], x: number, y: number, extended: boolean): Promise<void>
   createFolder(id: NodeId): Promise<void>
   /** Lays out the treemap of `treemapRootId` for a canvas of `width` × `height` CSS px. */
   fetchTreemap(width: number, height: number): Promise<TreemapLayout | null>
@@ -293,12 +318,48 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
       set({ lists: {} })
     }
 
-    const handleOutcome = (outcome: ContextMenuOutcome) => {
+    /** Rows of the action that main could not act on (root, "[N files]", vanished rows). */
+    const skippedNote = (sent: number, acted: number): string => {
+      const skipped = sent - acted
+      return skipped > 0
+        ? ` Skipped ${skipped} ${skipped === 1 ? 'row' : 'rows'} that cannot be acted on.`
+        : ''
+    }
+
+    const handleOutcome = (outcome: ContextMenuOutcome, sent: number) => {
       if (outcome.kind === 'gone')
-        set({ selectedId: null, announcement: GONE_MESSAGE, banner: null })
-      if (outcome.kind === 'copied') set({ announcement: PATH_COPIED })
+        set({
+          selectedId: null,
+          selectedIds: new Set(),
+          anchorId: null,
+          announcement: GONE_MESSAGE,
+          banner: null,
+        })
+      if (outcome.kind === 'busy') set({ announcement: BUSY_MESSAGE })
+      if (outcome.kind === 'copied') {
+        set({
+          announcement:
+            (outcome.count === 1 ? PATH_COPIED : `Copied ${outcome.count} paths.`) +
+            skippedNote(sent, outcome.count),
+        })
+      }
       if (outcome.kind === 'created') set({ announcement: `Created “${outcome.name}”.` })
       if (outcome.kind === 'opened') set({ announcement: 'Opened in Explorer.' })
+      if (outcome.kind === 'shell') {
+        const working = `Windows is working on ${outcome.count} ${outcome.count === 1 ? 'item' : 'items'}…`
+        set({ announcement: working + skippedNote(sent, outcome.count) })
+        // The rows leave the tree when the operation ends; until then only the active row stays.
+        if (outcome.verb === 'delete') {
+          const active = get().selectedId
+          set({ selectedIds: active === null ? new Set() : new Set([active]) })
+        }
+      }
+    }
+
+    /** The rows an action sends: rows inside another selected row are not part of it. */
+    const actionIds = (ids: readonly NodeId[]): NodeId[] => {
+      const rows = rowIndexOf(get().lists)
+      return dropDescendants(ids, (id) => rows.get(id)?.parentId ?? null)
     }
 
     return {
@@ -319,6 +380,8 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
       lists: {},
       expanded: new Set<NodeId>(),
       selectedId: null,
+      selectedIds: new Set<NodeId>(),
+      anchorId: null,
       scrollTarget: null,
       revision: 0,
       treemapVisible: true,
@@ -374,6 +437,8 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
           drive: null,
           expanded: new Set([ROOT_NODE_ID]),
           selectedId: ROOT_NODE_ID,
+          selectedIds: new Set([ROOT_NODE_ID]),
+          anchorId: ROOT_NODE_ID,
           scrollTarget: null,
           treemapRootId: ROOT_NODE_ID,
           banner: null,
@@ -468,7 +533,21 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
       },
 
       select(id) {
-        set({ selectedId: id, treemapRootId: treemapRootFor(id) })
+        get().setSelection(single(id))
+      },
+
+      announce(message) {
+        set({ announcement: message })
+      },
+
+      setSelection(selection) {
+        const { activeId } = selection
+        set({
+          selectedId: activeId,
+          selectedIds: selection.ids,
+          anchorId: selection.anchorId,
+          ...(activeId === null ? {} : { treemapRootId: treemapRootFor(activeId) }),
+        })
       },
 
       async reveal(id) {
@@ -497,7 +576,12 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
             ),
         )
         const seq = (get().scrollTarget?.seq ?? 0) + 1
-        set({ selectedId: id, scrollTarget: { id, seq } })
+        set({
+          selectedId: id,
+          selectedIds: new Set([id]),
+          anchorId: id,
+          scrollTarget: { id, seq },
+        })
       },
 
       async drillInto(id) {
@@ -525,29 +609,40 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
         }
       },
 
-      async copyPath(id) {
+      async copyPaths(ids) {
         const { scanId } = get()
-        if (scanId === null) return
+        if (scanId === null || ids.length === 0) return
+        const sent = actionIds(ids)
+        if (sent.length > MAX_ACTION_ITEMS) {
+          set({ announcement: TOO_MANY_MESSAGE })
+          return
+        }
         try {
-          await api.copyNodePath(scanId, id)
-          set({ announcement: PATH_COPIED })
+          await api.copyNodePath(scanId, [...ids])
+          set({ announcement: ids.length === 1 ? PATH_COPIED : `Copied ${ids.length} paths.` })
         } catch (error) {
           fail(error)
         }
       },
 
-      async showContextMenu(id, x, y, extended) {
+      async showContextMenu(ids, x, y, extended) {
         const { scanId } = get()
-        if (scanId === null) return
+        if (scanId === null || ids.length === 0) return
+        const sent = actionIds(ids)
+        if (sent.length > MAX_ACTION_ITEMS) {
+          set({ announcement: TOO_MANY_MESSAGE })
+          return
+        }
         try {
           handleOutcome(
             await api.showContextMenu(
               scanId,
-              id,
+              sent,
               Math.max(0, Math.round(x)),
               Math.max(0, Math.round(y)),
               extended,
             ),
+            sent.length,
           )
         } catch (error) {
           fail(error)
@@ -686,6 +781,60 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
         () => undefined,
       )
     }
+    void pruneSelection()
+  }
+
+  /**
+   * After the tree changed: removes selected rows that no longer exist. Up to 200 rows are asked
+   * from the scanner (8 at a time); a larger selection keeps only the active row. A result that
+   * arrives after the scan or the revision changed is ignored (the next change prunes again).
+   * Known limitation: the scanner may renumber ids inside a refreshed folder, so rows there can be
+   * dropped here; a stale id is never kept, because main re-resolves every id it is sent.
+   */
+  async function pruneSelection(): Promise<void> {
+    const start = store.getState()
+    const { scanId, revision, selectedId } = start
+    if (scanId === null) return
+    const ids = [...start.selectedIds]
+    if (ids.length > MAX_PRUNED_SELECTION) {
+      store.setState({
+        selectedIds: selectedId === null ? new Set() : new Set([selectedId]),
+        anchorId: selectedId,
+      })
+      return
+    }
+    const checked =
+      selectedId !== null && !start.selectedIds.has(selectedId) ? [...ids, selectedId] : ids
+    if (checked.length === 0) return
+    const { key, dir } = effectiveSort(start)
+    const gone = new Set<NodeId>()
+    let next = 0
+    const lane = async (): Promise<void> => {
+      while (next < checked.length) {
+        const id = checked[next]
+        next += 1
+        if (id === undefined) return
+        try {
+          if ((await api.getNode(scanId, id, key, dir)) === null) gone.add(id)
+        } catch {
+          // The scanner is busy or gone: keep the row; the next change asks again.
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(PRUNE_IN_FLIGHT, checked.length) }, lane))
+    const now = store.getState()
+    if (now.scanId !== scanId || now.revision !== revision || gone.size === 0) return
+    const remaining = [...now.selectedIds].filter((id) => !gone.has(id))
+    const activeGone = now.selectedId !== null && gone.has(now.selectedId)
+    const activeId = activeGone ? (remaining[0] ?? null) : now.selectedId
+    store.setState({
+      selectedIds: new Set(remaining),
+      selectedId: activeId,
+      anchorId: now.anchorId !== null && gone.has(now.anchorId) ? activeId : now.anchorId,
+      ...(activeGone && activeId !== null
+        ? { treemapRootId: activeId.startsWith('f') ? now.treemapRootId : activeId }
+        : {}),
+    })
   }
 
   /** Main restarted the scan of the root itself: adopt the new scan like a user-started one. */
@@ -708,6 +857,8 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
       elapsedMs: 0,
       expanded: new Set([ROOT_NODE_ID]),
       selectedId: ROOT_NODE_ID,
+      selectedIds: new Set([ROOT_NODE_ID]),
+      anchorId: ROOT_NODE_ID,
       scrollTarget: null,
       treemapRootId: ROOT_NODE_ID,
       banner: null,

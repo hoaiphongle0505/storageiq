@@ -163,3 +163,87 @@ describe('item watcher', () => {
     expect(watcher.active).toBe(0)
   })
 })
+
+describe('watchMany', () => {
+  it('watchMany settles gone when every path is gone', async () => {
+    const present = new Set(['D:/a', 'D:/b'])
+    const pathExists = vi.fn(async (target: string) => present.has(target))
+    const watcher = setup(pathExists)
+    const onSettled = vi.fn()
+    watcher.watchMany({
+      key: 'k',
+      itemPaths: ['D:/a', 'D:/b'],
+      isCurrent: () => true,
+      onSettled,
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    present.delete('D:/a')
+    await vi.advanceTimersByTimeAsync(ITEM_POLL_INTERVAL_MS)
+    expect(onSettled).not.toHaveBeenCalled()
+    present.delete('D:/b')
+    await vi.advanceTimersByTimeAsync(ITEM_POLL_INTERVAL_MS)
+    expect(onSettled).toHaveBeenCalledTimes(1)
+    expect(onSettled).toHaveBeenCalledWith('gone', [])
+    expect(watcher.active).toBe(0)
+  })
+
+  it('watchMany reports the remaining paths on timeout', async () => {
+    const pathExists = vi.fn(async (target: string) => target === 'D:/stays')
+    const watcher = setup(pathExists)
+    const onSettled = vi.fn()
+    watcher.watchMany({
+      key: 'k',
+      itemPaths: ['D:/stays', 'D:/goes'],
+      isCurrent: () => true,
+      onSettled,
+    })
+    await vi.advanceTimersByTimeAsync(ITEM_WATCH_TIMEOUT_MS)
+    expect(onSettled).toHaveBeenCalledTimes(1)
+    expect(onSettled).toHaveBeenCalledWith('timeout', ['D:/stays'])
+  })
+
+  it('watchMany checks at most 16 paths at a time', async () => {
+    let inFlight = 0
+    let peak = 0
+    const pathExists = vi.fn(async () => {
+      inFlight += 1
+      peak = Math.max(peak, inFlight)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      inFlight -= 1
+      return true
+    })
+    const watcher = setup(pathExists)
+    watcher.watchMany({
+      key: 'k',
+      itemPaths: Array.from({ length: 100 }, (_, i) => `D:/f${i}`),
+      isCurrent: () => true,
+      onSettled: vi.fn(),
+    })
+    await vi.advanceTimersByTimeAsync(200)
+    expect(peak).toBe(16)
+    expect(pathExists.mock.calls.length).toBeGreaterThanOrEqual(100)
+    watcher.cancelAll()
+  })
+
+  it('watchMany refuses more than 1000 paths', () => {
+    const watcher = setup(async () => true)
+    expect(() =>
+      watcher.watchMany({
+        key: 'k',
+        itemPaths: Array.from({ length: 1001 }, (_, i) => `D:/f${i}`),
+        isCurrent: () => true,
+        onSettled: vi.fn(),
+      }),
+    ).toThrow(RangeError)
+    expect(watcher.active).toBe(0)
+  })
+
+  it('watch still behaves as before', async () => {
+    const pathExists = vi.fn(async () => false)
+    const watcher = setup(pathExists)
+    const onSettled = vi.fn()
+    watcher.watch({ key: 'k', itemPath: 'D:/a', isCurrent: () => true, onSettled })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(onSettled).toHaveBeenCalledWith('gone')
+  })
+})

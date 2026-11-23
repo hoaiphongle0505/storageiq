@@ -149,14 +149,31 @@ export function treemapArgs(
   ]
 }
 
+/** Most rows one Explorer action (menu, copy paths) takes. */
+export const MAX_ACTION_ITEMS = 1000
+
+/** An array of 1 to `max` valid node ids (not deduplicated). */
+export function nodeIdListArg(value: unknown, max: number): NodeId[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > max) {
+    throw new InvalidIpcArgumentsError(`expected 1 to ${max} tree node ids`)
+  }
+  return value.map((entry: unknown) => nodeIdArg(entry))
+}
+
+/** `[scanId, nodeIds]` */
+export function scanNodesArgs(args: readonly unknown[]): [string, NodeId[]] {
+  expectCount(args, 2)
+  return [scanIdArg(args[0]), nodeIdListArg(args[1], MAX_ACTION_ITEMS)]
+}
+
 /** `shell:context-menu` */
 export function contextMenuArgs(
   args: readonly unknown[],
-): [string, NodeId, number, number, boolean] {
+): [string, NodeId[], number, number, boolean] {
   expectCount(args, 5)
   return [
     scanIdArg(args[0]),
-    nodeIdArg(args[1]),
+    nodeIdListArg(args[1], MAX_ACTION_ITEMS),
     intArg(args[2], 0, MAX_WINDOW_COORDINATE, 'x'),
     intArg(args[3], 0, MAX_WINDOW_COORDINATE, 'y'),
     booleanArg(args[4], 'extended'),

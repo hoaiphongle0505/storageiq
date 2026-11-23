@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { Worker } from 'node:worker_threads'
 import {
   app,
   type BrowserWindow,
@@ -40,13 +41,10 @@ import { hardenWebContents } from './security/harden-web-contents'
 import { isTrustedRendererUrl } from './security/trusted-url'
 import { isTrustedIpcSender } from './security/trusted-sender'
 import { runSelfTest, SELF_TEST_FLAG, type SelfTestScan } from './self-test'
-import {
-  probeShellMenu,
-  type ShellMenuChoice,
-  type ShellMenuNative,
-  showShellMenu,
-} from './shell-menu/context-menu'
-import { createWinShellMenu } from './shell-menu/win-shell-menu'
+import type { ShellMenuHost, ShellMenuRequest } from './shell-menu/context-menu'
+import { createShellWorkerPool, type ShellWorkerPool } from './shell-menu/shell-worker-pool'
+import type { WorkerLike } from './shell-menu/shell-worker-pool'
+import { SHELL_WORKER_DATA } from './shell-menu/shell-worker-protocol'
 import { createUpdater, type Updater } from './updater/updater'
 import { createMainWindow } from './window'
 
@@ -54,6 +52,8 @@ const APP_USER_MODEL_ID = 'io.github.storageiq.app'
 const rendererRoot = path.join(__dirname, '../renderer')
 const preloadPath = path.join(__dirname, '../preload/index.js')
 const scannerPath = path.join(__dirname, 'scanner.js')
+/** The shell worker thread (a self-contained bundle, unpacked from the asar when packaged). */
+const shellWorkerPath = path.join(__dirname, 'shell-worker.js')
 const devServerUrl = app.isPackaged ? undefined : process.env['ELECTRON_RENDERER_URL']
 const isTrustedUrl = (url: string) => isTrustedRendererUrl(url, { rendererRoot, devServerUrl })
 
@@ -61,7 +61,7 @@ let mainWindow: BrowserWindow | null = null
 let quitting = false
 let updater: Updater | null = null
 let driveApi: Promise<DriveApi> | null = null
-let shellMenuNative: Promise<ShellMenuNative> | null = null
+let shellPool: ShellWorkerPool | null = null
 
 /** Loads koffi on first use; a failed load is retried on the next call. */
 function getDriveApi(): Promise<DriveApi> {
@@ -72,12 +72,31 @@ function getDriveApi(): Promise<DriveApi> {
   return driveApi
 }
 
-function getShellMenu(): Promise<ShellMenuNative> {
-  shellMenuNative ??= createWinShellMenu().catch((error: unknown) => {
-    shellMenuNative = null
-    throw error
+/** The pool of shell worker threads, created on first use. */
+function getShellPool(): ShellWorkerPool {
+  shellPool ??= createShellWorkerPool({
+    spawn: () => {
+      const worker = new Worker(packagedPath(shellWorkerPath), {
+        workerData: SHELL_WORKER_DATA,
+      })
+      return worker as unknown as WorkerLike
+    },
+    maxWorkers: 3,
+    idleMs: 30_000,
+    schedule: (callback, ms) => {
+      const timer = setTimeout(callback, ms)
+      timer.unref()
+      return () => clearTimeout(timer)
+    },
   })
-  return shellMenuNative
+  return shellPool
+}
+
+/** A worker thread loads a real file: inside app.asar it comes from app.asar.unpacked. */
+function packagedPath(file: string): string {
+  return file.includes('app.asar.unpacked')
+    ? file
+    : file.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')
 }
 
 async function listSystemDrives() {
@@ -102,29 +121,33 @@ async function volumeFor(root: string): Promise<ScanVolume> {
   }
 }
 
-function windowHandle(window: BrowserWindow | null): bigint {
-  return window === null ? 0n : window.getNativeWindowHandle().readBigUInt64LE(0)
-}
+/** E2E only (unpackaged + STORAGEIQ_TEST_HOOKS=1): the menu requests that main received. */
+const testMenuRequests: ShellMenuRequest[] | null =
+  !app.isPackaged && process.env['STORAGEIQ_TEST_HOOKS'] === '1' ? [] : null
 
-/** Shows the Explorer menu at window CSS pixel `x`, `y` (converted to screen pixels). */
-async function showContextMenuAt(
-  target: string,
-  x: number,
-  y: number,
-  extended: boolean,
-): Promise<ShellMenuChoice> {
+/**
+ * Starts the Explorer menu at window CSS pixel `x`, `y` (converted to screen pixels) on a shell
+ * worker thread; nothing here blocks the UI thread.
+ */
+function showContextMenuAt(request: ShellMenuRequest): ReturnType<ShellMenuHost['show']> {
+  if (testMenuRequests !== null) {
+    // E2E only: record the request instead of opening a native popup Playwright cannot drive.
+    testMenuRequests.push(request)
+    return {
+      chosen: Promise.resolve({ kind: 'dismissed' }),
+      finished: Promise.resolve({ ok: true }),
+    }
+  }
   const window = mainWindow
-  if (window === null || window.isDestroyed()) return { kind: 'dismissed' }
-  const native = await getShellMenu()
+  if (window === null || window.isDestroyed()) {
+    return {
+      chosen: Promise.resolve({ kind: 'dismissed' }),
+      finished: Promise.resolve({ ok: true }),
+    }
+  }
   const bounds = window.getContentBounds()
-  const point = screen.dipToScreenPoint({ x: bounds.x + x, y: bounds.y + y })
-  return showShellMenu(native, {
-    hwnd: windowHandle(window),
-    path: target,
-    x: Math.round(point.x),
-    y: Math.round(point.y),
-    extended,
-  })
+  const point = screen.dipToScreenPoint({ x: bounds.x + request.x, y: bounds.y + request.y })
+  return getShellPool().show({ ...request, x: Math.round(point.x), y: Math.round(point.y) })
 }
 
 function forkScanner(): ScannerChild {
@@ -235,7 +258,7 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
         fileExists: existsSync,
         scanRoot: process.resourcesPath,
         scanOnce,
-        probeShellMenu: async (target) => probeShellMenu(await getShellMenu(), 0n, target),
+        probeShellMenu: (target) => getShellPool().probe([target]),
         log: (line) => {
           process.stdout.write(`[self-test] ${line}\n`)
         },
@@ -257,6 +280,7 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
   app.on('before-quit', () => {
     quitting = true
     itemWatcher.cancelAll()
+    shellPool?.dispose()
     updater?.dispose()
     scanService.dispose() // kills the scanner; no event is sent during quit
   })
@@ -265,8 +289,9 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
   // without showing it, because Playwright cannot drive a native menu.
   if (!app.isPackaged && process.env['STORAGEIQ_TEST_HOOKS'] === '1') {
     Object.assign(globalThis, {
-      __storageiqProbeShellMenu: async (target: string) =>
-        probeShellMenu(await getShellMenu(), windowHandle(mainWindow), target),
+      __storageiqProbeShellMenu: (target: string) => getShellPool().probe([target]),
+      // The menu requests recorded instead of shown (see showContextMenuAt).
+      __storageiqMenuRequests: () => testMenuRequests,
     })
   }
 

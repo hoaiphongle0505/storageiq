@@ -178,3 +178,15 @@ export function chunksFor(model: VisibleModel, first: number, last: number): Chu
   for (const nodeId of model.missingLists) add(nodeId, 0)
   return [...needed.values()]
 }
+
+/** Every loaded row by id (the roots of the lists and all loaded chunks). */
+export function rowIndexOf(lists: ChildLists): Map<NodeId, TreeRow> {
+  const index = new Map<NodeId, TreeRow>()
+  for (const list of Object.values(lists)) {
+    index.set(list.parent.id, list.parent)
+    for (const chunk of Object.values(list.chunks)) {
+      for (const row of chunk.rows) index.set(row.id, row)
+    }
+  }
+  return index
+}

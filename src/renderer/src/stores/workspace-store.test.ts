@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DriveDetails, ScanStartResult } from '@shared/scan-types'
+import type { ContextMenuOutcome } from '@shared/ipc-contract'
 import { createFakeApi, TEST_DRIVE_DETAILS, TEST_DRIVES, TEST_PLACES } from '../test/fake-api'
 import { makeDone, makeFailed, makeProgress } from '../test/scan-fixtures'
 import {
   actionError,
+  BUSY_MESSAGE,
   createWorkspaceStore,
   driveRootOf,
   effectiveSort,
@@ -413,8 +415,8 @@ describe('tree data', () => {
 describe('actions on a row', () => {
   it('copies the path through main and announces it', async () => {
     const { api, store } = await scanning()
-    await store.getState().copyPath('d1')
-    expect(api.copyNodePath).toHaveBeenCalledWith('scan-1', 'd1')
+    await store.getState().copyPaths(['d1'])
+    expect(api.copyNodePath).toHaveBeenCalledWith('scan-1', ['d1'])
     expect(store.getState().announcement).toBe(PATH_COPIED)
   })
 
@@ -427,8 +429,8 @@ describe('actions on a row', () => {
       })),
     })
     const { store } = await scanning(api)
-    await store.getState().showContextMenu('d1', 10.6, 20.2, true)
-    expect(api.showContextMenu).toHaveBeenCalledWith('scan-1', 'd1', 11, 20, true)
+    await store.getState().showContextMenu(['d1'], 10.6, 20.2, true)
+    expect(api.showContextMenu).toHaveBeenCalledWith('scan-1', ['d1'], 11, 20, true)
     expect(store.getState().announcement).toBe('Created “New folder”.')
   })
 
@@ -436,7 +438,7 @@ describe('actions on a row', () => {
     const api = createFakeApi({ showContextMenu: vi.fn(async () => ({ kind: 'gone' as const })) })
     const { store } = await scanning(api)
     store.setState({ selectedId: 'd1' })
-    await store.getState().showContextMenu('d1', 1, 2, false)
+    await store.getState().showContextMenu(['d1'], 1, 2, false)
     const state = store.getState()
     expect(state.selectedId).toBeNull()
     expect(state.announcement).toBe(GONE_MESSAGE)
@@ -572,5 +574,166 @@ describe('the revision throttle while scanning', () => {
     store.dispose()
     vi.advanceTimersByTime(5_000)
     expect(store.getState().revision).toBe(before)
+  })
+})
+
+describe('multi-select', () => {
+  const TOTALS = { files: 1, folders: 1, bytes: 1, allocatedBytes: 1 }
+  const changed = (api: ReturnType<typeof createFakeApi>) =>
+    api.emitTreeChanged({ scanId: 'scan-1', nodeId: 'd1', totals: TOTALS })
+
+  it('setSelection keeps selectedId as the active row', async () => {
+    const { store } = await scanning()
+    store.getState().setSelection({ ids: new Set(['d1', 'd2']), activeId: 'd2', anchorId: 'd1' })
+    expect(store.getState()).toMatchObject({
+      selectedId: 'd2',
+      anchorId: 'd1',
+      treemapRootId: 'd2',
+    })
+    expect([...store.getState().selectedIds].sort()).toEqual(['d1', 'd2'])
+  })
+
+  it('select resets the set to one row', async () => {
+    const { store } = await scanning()
+    store.getState().setSelection({ ids: new Set(['d1', 'd2']), activeId: 'd2', anchorId: 'd1' })
+    store.getState().select('d1')
+    expect([...store.getState().selectedIds]).toEqual(['d1'])
+    expect(store.getState()).toMatchObject({ selectedId: 'd1', anchorId: 'd1' })
+  })
+
+  it('a new scan clears the selection to the root', async () => {
+    const { store } = await scanning()
+    store.getState().setSelection({ ids: new Set(['d1', 'd2']), activeId: 'd2', anchorId: 'd1' })
+    await store.getState().startScan('D:\\')
+    expect([...store.getState().selectedIds]).toEqual(['d0'])
+    expect(store.getState()).toMatchObject({ selectedId: 'd0', anchorId: 'd0' })
+  })
+
+  it('tree:changed prunes selected ids that no longer resolve', async () => {
+    const { api, store } = await scanning()
+    const original = createFakeApi()
+    vi.mocked(api.getNode).mockImplementation(async (scanId, nodeId, key, dir) =>
+      nodeId === 'd2' ? null : original.getNode(scanId, nodeId, key, dir),
+    )
+    store.getState().setSelection({ ids: new Set(['d1', 'd2']), activeId: 'd2', anchorId: 'd1' })
+    changed(api)
+    await flush()
+    expect([...store.getState().selectedIds]).toEqual(['d1'])
+    // The active row vanished: the first remaining selected row takes over.
+    expect(store.getState().selectedId).toBe('d1')
+  })
+
+  it('more than 200 selected ids collapse to the active row on tree:changed', async () => {
+    const { api, store } = await scanning()
+    const ids = Array.from({ length: 201 }, (_, i) => `f${i + 10}`)
+    store.getState().setSelection({ ids: new Set(ids), activeId: 'f10', anchorId: 'f10' })
+    vi.mocked(api.getNode).mockClear()
+    changed(api)
+    await flush()
+    expect([...store.getState().selectedIds]).toEqual(['f10'])
+    expect(api.getNode).not.toHaveBeenCalled()
+  })
+
+  it('a result that arrives after a new scan is ignored', async () => {
+    const pending = deferred<null>()
+    const { api, store } = await scanning()
+    vi.mocked(api.getNode).mockImplementation(() => pending.promise)
+    store.getState().setSelection({ ids: new Set(['d1', 'd2']), activeId: 'd2', anchorId: 'd1' })
+    changed(api)
+    await store.getState().startScan('D:\\')
+    pending.resolve(null)
+    await flush()
+    expect([...store.getState().selectedIds]).toEqual(['d0'])
+    expect(store.getState().selectedId).toBe('d0')
+  })
+
+  it('showContextMenu sends all ids in order', async () => {
+    const { api, store } = await scanning()
+    await store.getState().showContextMenu(['d2', 'g0', 'd1'], 5, 6, false)
+    expect(api.showContextMenu).toHaveBeenCalledWith('scan-1', ['d2', 'g0', 'd1'], 5, 6, false)
+  })
+
+  it('showContextMenu does not send rows inside another selected row', async () => {
+    const { api, store } = await scanning()
+    store.getState().requestChunks([
+      { nodeId: 'd0', chunk: 0 },
+      { nodeId: 'd1', chunk: 0 },
+    ])
+    await flush()
+    await store.getState().showContextMenu(['d1', 'd3', 'd2'], 5, 6, false)
+    expect(api.showContextMenu).toHaveBeenCalledWith('scan-1', ['d1', 'd2'], 5, 6, false)
+  })
+
+  it('more than 1000 rows announce the limit and send nothing', async () => {
+    const { api, store } = await scanning()
+    const ids = Array.from({ length: 1001 }, (_, i) => `f${i + 10}`)
+    await store.getState().showContextMenu(ids, 5, 6, false)
+    expect(api.showContextMenu).not.toHaveBeenCalled()
+    expect(store.getState().announcement).toBe('Too many items selected (the limit is 1,000).')
+  })
+
+  it('a busy outcome announces the busy message', async () => {
+    const api = createFakeApi({ showContextMenu: vi.fn(async () => ({ kind: 'busy' as const })) })
+    const { store } = await scanning(api)
+    await store.getState().showContextMenu(['d1'], 1, 2, false)
+    expect(store.getState().announcement).toBe(BUSY_MESSAGE)
+  })
+
+  it('a shell outcome announces that Windows is working on N items', async () => {
+    const outcome: ContextMenuOutcome = {
+      kind: 'shell',
+      verb: 'cut',
+      changed: true,
+      count: 3,
+      running: true,
+    }
+    const api = createFakeApi({ showContextMenu: vi.fn(async () => outcome) })
+    const { store } = await scanning(api)
+    await store.getState().showContextMenu(['d1', 'd2', 'g0'], 1, 2, false)
+    expect(store.getState().announcement).toBe('Windows is working on 3 items…')
+    vi.mocked(api.showContextMenu).mockResolvedValue({ ...outcome, count: 1 })
+    await store.getState().showContextMenu(['d1'], 1, 2, false)
+    expect(store.getState().announcement).toBe('Windows is working on 1 item…')
+  })
+
+  it('announces how many rows were skipped', async () => {
+    const outcome: ContextMenuOutcome = {
+      kind: 'shell',
+      verb: 'properties',
+      changed: false,
+      count: 1,
+      running: true,
+    }
+    const api = createFakeApi({ showContextMenu: vi.fn(async () => outcome) })
+    const { store } = await scanning(api)
+    await store.getState().showContextMenu(['d0', 'd2', 'g0'], 1, 2, false)
+    expect(store.getState().announcement).toBe(
+      'Windows is working on 1 item… Skipped 2 rows that cannot be acted on.',
+    )
+  })
+
+  it('a delete outcome reduces the selection to the active row', async () => {
+    const outcome: ContextMenuOutcome = {
+      kind: 'shell',
+      verb: 'delete',
+      changed: true,
+      count: 2,
+      running: true,
+    }
+    const api = createFakeApi({ showContextMenu: vi.fn(async () => outcome) })
+    const { store } = await scanning(api)
+    store.getState().setSelection({ ids: new Set(['d1', 'd2']), activeId: 'd2', anchorId: 'd1' })
+    await store.getState().showContextMenu(['d1', 'd2'], 1, 2, false)
+    expect([...store.getState().selectedIds]).toEqual(['d2'])
+    expect(store.getState().selectedId).toBe('d2')
+  })
+
+  it('copyPaths announces the count', async () => {
+    const { api, store } = await scanning()
+    await store.getState().copyPaths(['d1', 'd2', 'g0'])
+    expect(api.copyNodePath).toHaveBeenCalledWith('scan-1', ['d1', 'd2', 'g0'])
+    expect(store.getState().announcement).toBe('Copied 3 paths.')
+    await store.getState().copyPaths(['d1'])
+    expect(store.getState().announcement).toBe(PATH_COPIED)
   })
 })

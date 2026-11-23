@@ -48,10 +48,49 @@ export const NODES: Record<string, TreeNodeDetails> = {
     ancestorIds: ['d0', 'd1', 'g1'],
     locations: [],
   },
+  f10: {
+    row: row({ id: 'f10', parentId: 'g1', kind: 'file', name: 'c.jpg', files: 1, childCount: 0 }),
+    path: 'D:\\Data\\Photos\\c.jpg',
+    ancestorIds: ['d0', 'd1', 'g1'],
+    locations: [],
+  },
+  d2: {
+    row: row({ id: 'd2', name: 'Docs' }),
+    path: 'D:\\Data\\Docs',
+    ancestorIds: ['d0'],
+    locations: [{ parentId: 'd0', index: 1 }],
+  },
+  g2: {
+    row: row({ id: 'g2', parentId: 'd2', kind: 'files', name: '' }),
+    path: 'D:\\Data\\Docs',
+    ancestorIds: ['d0', 'd2'],
+    locations: [],
+  },
+  f9: {
+    row: row({ id: 'f9', parentId: 'g2', kind: 'file', name: 'b.txt', files: 1, childCount: 0 }),
+    path: 'D:\\Data\\Docs\\b.txt',
+    ancestorIds: ['d0', 'd2', 'g2'],
+    locations: [],
+  },
+  d3: {
+    row: row({ id: 'd3', parentId: 'd1', name: 'Raw' }),
+    path: 'D:\\Data\\Photos\\Raw',
+    ancestorIds: ['d0', 'd1'],
+    locations: [],
+  },
 }
 
 /** A scan service whose scanner answers from `NODES`. */
-export function fakeTreeService(options: { scanning?: boolean; current?: string | null } = {}) {
+export function fakeTreeService(
+  options: {
+    scanning?: boolean
+    current?: string | null
+    /** More nodes than `NODES`. */
+    extra?: Record<string, TreeNodeDetails>
+  } = {},
+) {
+  /** Looked up on every call, so a test may add to `NODES` while the service lives. */
+  const node = (id: string): TreeNodeDetails | null => options.extra?.[id] ?? NODES[id] ?? null
   const queries: ScannerQuery[] = []
   const start = vi.fn<(root: string, volume: ScanVolume) => { scanId: string }>(() => ({
     scanId: 'rescan-1',
@@ -67,7 +106,7 @@ export function fakeTreeService(options: { scanning?: boolean; current?: string 
       switch (query.kind) {
         case 'node':
         case 'refresh':
-          return NODES[query.nodeId] ?? null
+          return node(query.nodeId)
         case 'totals':
           return TOTALS
         case 'expand':
@@ -77,5 +116,5 @@ export function fakeTreeService(options: { scanning?: boolean; current?: string 
       }
     }) as TreeScanService['query'],
   }
-  return { service, queries, start, volumeFor }
+  return { service, queries, start, volumeFor, node }
 }

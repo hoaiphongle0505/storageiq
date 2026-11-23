@@ -1,11 +1,16 @@
 import { TriangleAlert } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { formatBytes, formatCount } from '../lib/format'
+import { useEffect, useMemo, useState } from 'react'
+import { formatBytes, formatCount, formatSize } from '../lib/format'
+import { selectionTotal } from '../lib/selection'
+import { rowIndexOf } from '../lib/tree-view-model'
 import { ANNOUNCE_INTERVAL_MS, useThrottledAnnouncement } from '../lib/use-throttled-announcement'
 import { useAppStore } from '../stores/app-store-context'
 import { useWorkspace } from '../stores/workspace-store-context'
 import { Dialog } from './Dialog'
 import { UnreadableList, unreadableSummary } from './UnreadableList'
+
+/** The selection summary reaches screen readers at most this often (ms). */
+const SELECTION_ANNOUNCE_INTERVAL_MS = 500
 
 function Divider() {
   return <span aria-hidden="true" className="h-3 w-px shrink-0 bg-line" />
@@ -21,6 +26,9 @@ export function StatusBar() {
   const errors = useWorkspace((s) => s.errors)
   const drive = useWorkspace((s) => s.drive)
   const announcement = useWorkspace((s) => s.announcement)
+  const selectedIds = useWorkspace((s) => s.selectedIds)
+  const lists = useWorkspace((s) => s.lists)
+  const unit = useWorkspace((s) => s.unit)
   const appInfo = useAppStore((s) => s.appInfo)
   const [showExcluded, setShowExcluded] = useState(false)
 
@@ -34,6 +42,16 @@ export function StatusBar() {
           ? 'The scan stopped.'
           : `Scan finished: ${formatCount(totals.files)} files.`
   const announced = useThrottledAnnouncement(progressText, ANNOUNCE_INTERVAL_MS)
+
+  // Several rows: how many, and their total Size (rows inside a selected folder are not added
+  // twice; rows that are not loaded yet are counted and make the total "at least").
+  const selectionText = useMemo(() => {
+    if (selectedIds.size < 2) return ''
+    const rows = rowIndexOf(lists)
+    const { count, bytes, unknown } = selectionTotal(selectedIds, (id) => rows.get(id) ?? null)
+    return `${formatCount(count)} items selected, total size ${unknown > 0 ? 'at least ' : ''}${formatSize(bytes, unit)}`
+  }, [selectedIds, lists, unit])
+  const announcedSelection = useThrottledAnnouncement(selectionText, SELECTION_ANNOUNCE_INTERVAL_MS)
   const excluded = totals.errorCount
 
   // A new scan replaces the list the dialog shows.
@@ -80,6 +98,8 @@ export function StatusBar() {
         ) : (
           <span>{formatCount(excluded)} excluded</span>
         ))}
+      {selectionText !== '' && <Divider />}
+      {selectionText !== '' && <span>{selectionText}</span>}
       {drive !== null && <Divider />}
       {drive !== null && (
         <span>
@@ -92,6 +112,7 @@ export function StatusBar() {
       )}
       <span className="sr-only" aria-live="polite">
         {announced}
+        {announcedSelection === '' ? '' : ` ${announcedSelection}`}
       </span>
       <span className="sr-only" role="status">
         {announcement}

@@ -1,83 +1,43 @@
-import { describe, expect, it, vi } from 'vitest'
-import {
-  type BuiltShellMenu,
-  probeShellMenu,
-  type ShellMenuNative,
-  showShellMenu,
-} from './context-menu'
-import { SHELL_FIRST_ID, STORAGEIQ_COMMAND_IDS } from './menu-commands'
+import { describe, expect, it } from 'vitest'
+import { chooseRoute, hideDestructiveVerbs, type MenuItemOps } from './context-menu'
 
-function fakeNative(chosenId: number, verb: string | null = 'delete') {
-  const menu: BuiltShellMenu = {
-    labels: vi.fn(() => ['&StorageIQ', 'New &folder\tCtrl+N', '', '&Open', 'P&roperties']),
-    track: vi.fn(() => chosenId),
-    verb: vi.fn(() => verb),
-    invoke: vi.fn(),
-    release: vi.fn(),
-  }
-  const native: ShellMenuNative = { build: vi.fn(() => menu) }
-  return { native, menu }
-}
-
-const request = { hwnd: 42n, path: 'D:\\Data\\a.jpg', x: 300, y: 200, extended: false }
-
-describe('showShellMenu', () => {
-  it('builds the menu for the path and returns dismissed when nothing is chosen', () => {
-    const { native, menu } = fakeNative(0)
-    expect(showShellMenu(native, request)).toEqual({ kind: 'dismissed' })
-    expect(native.build).toHaveBeenCalledWith(42n, 'D:\\Data\\a.jpg', false)
-    expect(menu.track).toHaveBeenCalledWith(300, 200)
-    expect(menu.invoke).not.toHaveBeenCalled()
-    expect(menu.release).toHaveBeenCalledTimes(1)
+describe('chooseRoute', () => {
+  it('uses the single route for one path', () => {
+    expect(chooseRoute(['D:\\Data\\a.txt'])).toBe('single')
   })
 
-  it('returns StorageIQ’s item without invoking the shell', () => {
-    const { native, menu } = fakeNative(STORAGEIQ_COMMAND_IDS['copy-path'])
-    expect(showShellMenu(native, request)).toEqual({ kind: 'storageiq', item: 'copy-path' })
-    expect(menu.invoke).not.toHaveBeenCalled()
+  it('uses one parent for paths in the same folder, ignoring case', () => {
+    expect(chooseRoute(['D:\\Data\\a.txt', 'd:\\data\\B.txt'])).toBe('parent')
   })
 
-  it('invokes a shell item by its offset and reports whether it may change files', () => {
-    const { native, menu } = fakeNative(SHELL_FIRST_ID + 9, 'delete')
-    expect(showShellMenu(native, { ...request, extended: true })).toEqual({
-      kind: 'shell',
-      verb: 'delete',
-      changed: true,
-    })
-    expect(menu.verb).toHaveBeenCalledWith(9)
-    expect(menu.invoke).toHaveBeenCalledWith(9, 300, 200)
-  })
-
-  it('reports read-only shell verbs as unchanged', () => {
-    const { native } = fakeNative(SHELL_FIRST_ID + 1, 'properties')
-    expect(showShellMenu(native, request)).toEqual({
-      kind: 'shell',
-      verb: 'properties',
-      changed: false,
-    })
-  })
-
-  it('releases the menu even when the shell command fails', () => {
-    const { native, menu } = fakeNative(SHELL_FIRST_ID + 2)
-    vi.mocked(menu.invoke).mockImplementation(() => {
-      throw new Error('InvokeCommand failed')
-    })
-    expect(() => showShellMenu(native, request)).toThrow('InvokeCommand failed')
-    expect(menu.release).toHaveBeenCalledTimes(1)
+  it('uses the default menu route when the parents differ', () => {
+    expect(chooseRoute(['D:\\Data\\a.txt', 'D:\\Data\\Sub\\b.txt'])).toBe('default')
+    expect(chooseRoute(['D:\\Data\\Sub', 'D:\\Data\\Sub\\b.txt'])).toBe('default')
+    expect(chooseRoute(['D:\\a.txt', 'E:\\a.txt'])).toBe('default')
   })
 })
 
-describe('probeShellMenu', () => {
-  it('returns the labels and destroys the menu without showing it', () => {
-    const { native, menu } = fakeNative(0)
-    expect(probeShellMenu(native, 0n, 'C:\\')).toEqual([
-      '&StorageIQ',
-      'New &folder\tCtrl+N',
-      '',
-      '&Open',
-      'P&roperties',
-    ])
-    expect(menu.track).not.toHaveBeenCalled()
-    expect(menu.release).toHaveBeenCalledTimes(1)
+describe('hideDestructiveVerbs', () => {
+  it('removes only delete, cut and rename of the shell items, last first', () => {
+    const items: Array<{ id: number; verb?: string | null }> = [
+      { id: 0 }, // StorageIQ submenu
+      { id: 0x100, verb: 'open' },
+      { id: 0x101, verb: 'cut' },
+      { id: 0x102, verb: 'copy' },
+      { id: 0x103, verb: 'Delete' },
+      { id: 0x104, verb: 'rename' },
+      { id: 0x105, verb: null },
+      { id: 4 }, // a StorageIQ item below the shell range
+    ]
+    const ops: MenuItemOps = {
+      count: () => items.length,
+      idAt: (position) => items[position]?.id ?? 0,
+      verbOf: (offset) => items.find((item) => item.id === 0x100 + offset)?.verb ?? null,
+      removeAt: (position) => {
+        items.splice(position, 1)
+      },
+    }
+    expect(hideDestructiveVerbs(ops)).toBe(3)
+    expect(items.map((item) => item.id)).toEqual([0, 0x100, 0x102, 0x105, 4])
   })
 })

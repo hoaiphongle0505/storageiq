@@ -122,6 +122,22 @@ describe('<Ribbon />', () => {
     expect(api.createFolder).toHaveBeenCalledWith('scan-1', 'd0')
   })
 
+  it('Open in Explorer and New folder are disabled while several rows are selected', async () => {
+    const { api, workspace } = renderRibbon()
+    await act(() => workspace.getState().startScan('D:\\'))
+    act(() => api.emitScanDone(makeDone()))
+    expect(command('Open in Explorer')).not.toHaveAttribute('aria-disabled')
+    act(() =>
+      workspace
+        .getState()
+        .setSelection({ ids: new Set(['d0', 'd1']), activeId: 'd1', anchorId: 'd0' }),
+    )
+    expect(command('Open in Explorer')).toHaveAttribute('aria-disabled', 'true')
+    expect(command('New folder')).toHaveAttribute('aria-disabled', 'true')
+    act(() => workspace.getState().select('d1'))
+    expect(command('Open in Explorer')).not.toHaveAttribute('aria-disabled')
+  })
+
   it('File holds About and Exit; View toggles the treemap', async () => {
     const user = userEvent.setup()
     const { api, onAbout, workspace } = renderRibbon()

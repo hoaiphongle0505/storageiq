@@ -1,5 +1,5 @@
 /** StorageIQ's own items at the top of the Explorer context menu. */
-export type StorageIQMenuItem = 'refresh' | 'copy-path' | 'open' | 'new-folder'
+export type StorageIQMenuItem = 'refresh' | 'copy-path' | 'open' | 'new-folder' | 'delete'
 
 /** Command ids of StorageIQ's items. The shell's items start at `SHELL_FIRST_ID`. */
 export const STORAGEIQ_COMMAND_IDS: Readonly<Record<StorageIQMenuItem, number>> = {
@@ -7,6 +7,7 @@ export const STORAGEIQ_COMMAND_IDS: Readonly<Record<StorageIQMenuItem, number>> 
   'copy-path': 2,
   open: 3,
   'new-folder': 4,
+  delete: 5,
 }
 
 /** `IContextMenu::QueryContextMenu` gets ids from here to `SHELL_LAST_ID`. */
@@ -20,7 +21,37 @@ export const STORAGEIQ_MENU_LABELS = {
   'copy-path': '&Copy path',
   open: '&Open in Explorer',
   'new-folder': 'New &folder\tCtrl+N',
+  delete: 'Delete (move to &Recycle Bin)',
 } as const
+
+/** One StorageIQ item of the menu, and whether it sits in the StorageIQ submenu. */
+export interface StorageIQMenuEntry {
+  item: StorageIQMenuItem
+  label: string
+  inSubmenu: boolean
+}
+
+/**
+ * The StorageIQ items shown above the shell's own items. One row: Refresh, Copy path and Open in
+ * Explorer in the StorageIQ submenu, then New folder. Several rows: Refresh and Copy paths only
+ * (Open in Explorer and New folder act on exactly one row). `sameFolder` is accepted for callers
+ * that know it; the set does not depend on it today.
+ */
+export function storageiqMenuLabels(count: number, sameFolder: boolean): StorageIQMenuEntry[] {
+  void sameFolder
+  if (count > 1) {
+    return [
+      { item: 'refresh', label: STORAGEIQ_MENU_LABELS.refresh, inSubmenu: true },
+      { item: 'copy-path', label: '&Copy paths', inSubmenu: true },
+    ]
+  }
+  return [
+    { item: 'refresh', label: STORAGEIQ_MENU_LABELS.refresh, inSubmenu: true },
+    { item: 'copy-path', label: STORAGEIQ_MENU_LABELS['copy-path'], inSubmenu: true },
+    { item: 'open', label: STORAGEIQ_MENU_LABELS.open, inSubmenu: true },
+    { item: 'new-folder', label: STORAGEIQ_MENU_LABELS['new-folder'], inSubmenu: false },
+  ]
+}
 
 /** What `TrackPopupMenuEx` returned, in StorageIQ's terms. */
 export type MenuCommand =

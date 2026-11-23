@@ -10,6 +10,7 @@ import {
   noArgs,
   oneString,
   scanNodeArgs,
+  scanNodesArgs,
   treemapArgs,
 } from './parse-args'
 import {
@@ -48,7 +49,7 @@ function createHandlers(overrides: Partial<IpcHandlerMap> = {}): IpcHandlerMap {
     'shell:open-in-explorer': { parseArgs: scanNodeArgs, handle: () => undefined },
     'shell:context-menu': { parseArgs: contextMenuArgs, handle: () => ({ kind: 'dismissed' }) },
     'folder:create': { parseArgs: scanNodeArgs, handle: () => ({ parentId: 'd0', name: 'x' }) },
-    'clipboard:copy-path': { parseArgs: scanNodeArgs, handle: () => undefined },
+    'clipboard:copy-path': { parseArgs: scanNodesArgs, handle: () => undefined },
     ...overrides,
   }
 }
