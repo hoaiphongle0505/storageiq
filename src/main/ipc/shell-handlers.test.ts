@@ -7,6 +7,7 @@ import {
   SECOND_REFRESH_DELAY_MS,
   type ShellHandlerDeps,
 } from './shell-handlers'
+import { createFolderRefresher } from './tree-handlers'
 import { fakeTreeService, NODES, SCAN } from './test/fake-tree-service'
 import { NOT_IN_SCAN_MESSAGE, SCAN_RUNNING_MESSAGE } from './tree-handlers'
 
@@ -188,5 +189,34 @@ describe('clipboard:copy-path', () => {
       Promise.resolve().then(() => handlers['clipboard:copy-path'].handle(event, 'other', 'd1')),
     ).rejects.toThrow(NOT_IN_SCAN_MESSAGE)
     expect(deps.writeClipboard).not.toHaveBeenCalled()
+  })
+})
+
+describe('menu refresh of the scan root', () => {
+  it('announces the new scan with scan:restarted before its progress', async () => {
+    const fake = fakeTreeService()
+    const events: Array<[string, unknown]> = []
+    const refreshFolder = createFolderRefresher(
+      fake.service,
+      (channel, payload) => {
+        events.push([channel, payload])
+      },
+      fake.volumeFor,
+    )
+    const handlers = createShellHandlers({
+      scanService: fake.service,
+      refreshFolder,
+      openPath: async () => '',
+      showItemInFolder: () => undefined,
+      writeClipboard: () => undefined,
+      readdir: async () => [],
+      mkdir: async () => undefined,
+      showShellMenu: async () => ({ kind: 'shell', verb: 'delete', changed: true }),
+      later: () => undefined,
+    })
+    await handlers['shell:context-menu'].handle(event, SCAN, 'd1', 0, 0, false)
+    await vi.waitFor(() =>
+      expect(events).toEqual([['scan:restarted', { scanId: 'rescan-1', root: 'D:\\Data' }]]),
+    )
   })
 })

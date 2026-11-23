@@ -303,17 +303,4 @@ describe('createScanService', () => {
     )
     expect(t.timers).toHaveLength(0)
   })
-
-  it('rescan starts a new scan of the current root with the same volume', () => {
-    const t = setup()
-    expect(t.service.rescan()).toBeNull()
-    const volume: ScanVolume = { clusterBytes: 8192, freeBytes: 5 }
-    t.service.start('D:\\', volume)
-    expect(t.service.rescan()).toEqual({ scanId: 'scan-2' })
-    expect(t.child().posted.slice(1)).toEqual([
-      { type: 'cancel', scanId: 'scan-1' },
-      { type: 'start', scanId: 'scan-2', root: 'D:\\', volume },
-    ])
-    expect(t.service.currentScan()).toEqual({ scanId: 'scan-2', root: 'D:\\' })
-  })
 })

@@ -86,6 +86,12 @@ export interface ScanFailed {
   message: string
 }
 
+/** `scan:restarted`: main started a new scan of the same root (a root refresh); follow `scanId`. */
+export interface ScanRestarted {
+  scanId: string
+  root: string
+}
+
 export interface ScanStartResult {
   scanId: string
 }

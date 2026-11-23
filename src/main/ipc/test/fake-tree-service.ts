@@ -1,5 +1,5 @@
 import { vi } from 'vitest'
-import type { ScannerQuery } from '@shared/scanner-protocol'
+import type { ScannerQuery, ScanVolume } from '@shared/scanner-protocol'
 import type { TreeNodeDetails, TreeRow, TreeTotals } from '@shared/tree-types'
 import type { TreeScanService } from '../tree-handlers'
 
@@ -53,12 +53,15 @@ export const NODES: Record<string, TreeNodeDetails> = {
 /** A scan service whose scanner answers from `NODES`. */
 export function fakeTreeService(options: { scanning?: boolean; current?: string | null } = {}) {
   const queries: ScannerQuery[] = []
-  const rescan = vi.fn(() => ({ scanId: 'rescan-1' }))
+  const start = vi.fn<(root: string, volume: ScanVolume) => { scanId: string }>(() => ({
+    scanId: 'rescan-1',
+  }))
+  const volumeFor = vi.fn(async (): Promise<ScanVolume> => ({ clusterBytes: 8192, freeBytes: 77 }))
   const service: TreeScanService = {
     currentScan: () =>
       options.current === null ? null : { scanId: options.current ?? SCAN, root: 'D:\\Data' },
     isScanning: () => options.scanning ?? false,
-    rescan,
+    start,
     query: vi.fn(async (query: ScannerQuery) => {
       queries.push(query)
       switch (query.kind) {
@@ -74,5 +77,5 @@ export function fakeTreeService(options: { scanning?: boolean; current?: string 
       }
     }) as TreeScanService['query'],
   }
-  return { service, queries, rescan }
+  return { service, queries, start, volumeFor }
 }

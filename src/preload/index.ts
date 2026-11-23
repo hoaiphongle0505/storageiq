@@ -31,6 +31,7 @@ const api: StorageIQApi = {
   onScanProgress: (listener) => subscribe(ipcRenderer, 'scan:progress', listener),
   onScanDone: (listener) => subscribe(ipcRenderer, 'scan:done', listener),
   onScanFailed: (listener) => subscribe(ipcRenderer, 'scan:failed', listener),
+  onScanRestarted: (listener) => subscribe(ipcRenderer, 'scan:restarted', listener),
   onTreeChanged: (listener) => subscribe(ipcRenderer, 'tree:changed', listener),
 }
 

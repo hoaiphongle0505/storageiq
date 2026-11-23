@@ -20,7 +20,7 @@ function setup(options: Parameters<typeof fakeTreeService>[0] = {}) {
   const sendEvent: SendEvent = (channel, payload) => {
     events.push([channel, payload])
   }
-  const refreshFolder = createFolderRefresher(fake.service, sendEvent)
+  const refreshFolder = createFolderRefresher(fake.service, sendEvent, fake.volumeFor)
   const handlers = createTreeHandlers({ scanService: fake.service, refreshFolder })
   return { ...fake, events, handlers, refreshFolder }
 }
@@ -119,16 +119,17 @@ describe('folderIdOf', () => {
 
 describe('refreshing the scan root', () => {
   it('starts a normal scan of the root instead of a hidden refresh', async () => {
-    const { refreshFolder, rescan, queries, events } = setup()
+    const { refreshFolder, start, volumeFor, queries, events } = setup()
     await expect(refreshFolder(SCAN, 'd0')).resolves.toBeNull()
-    expect(rescan).toHaveBeenCalledTimes(1)
+    expect(volumeFor).toHaveBeenCalledWith('D:\\Data')
+    expect(start).toHaveBeenCalledWith('D:\\Data', { clusterBytes: 8192, freeBytes: 77 })
     expect(queries.some((query) => query.kind === 'refresh')).toBe(false)
-    expect(events).toEqual([])
+    expect(events).toEqual([['scan:restarted', { scanId: 'rescan-1', root: 'D:\\Data' }]])
   })
 
   it('treats a file or "[N files]" row directly under the root the same way', async () => {
     const fake = fakeTreeService()
-    const refresh = createFolderRefresher(fake.service, () => undefined)
+    const refresh = createFolderRefresher(fake.service, () => undefined, fake.volumeFor)
     // g0 is the root's own "[N files]" row; it maps to folder d0.
     NODES['g0'] = { ...NODES['g1']!, row: { ...NODES['g1']!.row, id: 'g0', parentId: 'd0' } }
     try {
@@ -136,13 +137,14 @@ describe('refreshing the scan root', () => {
     } finally {
       delete NODES['g0']
     }
-    expect(fake.rescan).toHaveBeenCalledTimes(1)
+    expect(fake.start).toHaveBeenCalledTimes(1)
   })
 
   it('does not rescan the root while a scan runs', async () => {
-    const { refreshFolder, rescan } = setup({ scanning: true })
+    const { refreshFolder, start, events } = setup({ scanning: true })
     await expect(refreshFolder(SCAN, 'd0')).rejects.toThrow(SCAN_RUNNING_MESSAGE)
-    expect(rescan).not.toHaveBeenCalled()
+    expect(start).not.toHaveBeenCalled()
+    expect(events).toEqual([])
   })
 })
 

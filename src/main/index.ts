@@ -272,7 +272,7 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
         readFile: (file) => readFile(file, 'utf8'),
         writeFile: (file, text) => writeFile(file, text, 'utf8'),
       })
-      const refreshFolder = createFolderRefresher(scanService, sendEvent)
+      const refreshFolder = createFolderRefresher(scanService, sendEvent, volumeFor)
 
       const handlers = {
         ...createAppHandlers({

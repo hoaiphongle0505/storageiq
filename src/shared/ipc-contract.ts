@@ -5,6 +5,7 @@ import type {
   ScanDone,
   ScanFailed,
   ScanProgress,
+  ScanRestarted,
   ScanStartResult,
 } from './scan-types'
 import type {
@@ -104,6 +105,7 @@ export interface IpcEventContract {
   'scan:progress': ScanProgress
   'scan:done': ScanDone
   'scan:failed': ScanFailed
+  'scan:restarted': ScanRestarted
   'tree:changed': TreeChanged
 }
 
@@ -170,5 +172,7 @@ export interface StorageIQApi {
   onScanProgress(listener: (progress: ScanProgress) => void): Unsubscribe
   onScanDone(listener: (done: ScanDone) => void): Unsubscribe
   onScanFailed(listener: (failed: ScanFailed) => void): Unsubscribe
+  /** Main started a new scan of the same root; sent before any progress for the new scanId. */
+  onScanRestarted(listener: (restarted: ScanRestarted) => void): Unsubscribe
   onTreeChanged(listener: (changed: TreeChanged) => void): Unsubscribe
 }
