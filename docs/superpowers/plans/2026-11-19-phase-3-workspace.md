@@ -30,7 +30,7 @@ Carried forward from Phases 1 and 2a (binding):
 - Copy is plain language and uses typographic punctuation (`’`, `…`, `—`). The exact UI strings are the ones in this plan's code.
 - Run Vitest **from PowerShell or cmd, not Git Bash** (Windows path semantics). Commands below are PowerShell.
 - Before launching Electron (dev, E2E, packaged checks): `Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue`. E2E needs an interactive desktop session.
-- Commits: one per task, conventional-commit message, ending with the trailer `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Stage **explicit paths only** (`git add <path> …`, `git rm <path> …`); never `git add -A`, `git add .` or `git commit -a`.
+- Commits: one per task, conventional-commit message, with **no** AI attribution trailer (no `Co-Authored-By` line). Stage **explicit paths only** (`git add <path> …`, `git rm <path> …`); never `git add -A`, `git add .` or `git commit -a`.
 - UI tasks (5, 6, 8): the modern-web-guidance "menu", "toolbar" and "tabs" guides and the canvas-accessibility search were applied while writing this plan; the code below already follows them (see each component's doc comment). After Task 8, `impeccable detect --json src/renderer` must print `[]`.
 - **Integration window (read before Task 4):** Task 4 switches the shared contract (scan types, scanner protocol, IPC) for every process at once. Some files written in Task 4 import modules that Tasks 5–8 create (`src/main/index.ts` imports the Explorer-menu module of Task 7; the old renderer still imports the 2a scan types). From Task 4 until the end of Task 8, `npm run typecheck` and the unscoped `npx vitest run` are **expected to fail**; each of those tasks runs its own scoped tests, which must pass. `npm run typecheck:node` is green again after Task 7, and every gate is green after Task 8. Vitest compiles each test file on its own (no type check), so scoped tests run before the whole project typechecks.
 
@@ -719,8 +719,6 @@ Expected: all green (the 2a screens still render with the remapped utilities).
 git add design/tokens.json design/tokens.css design/components.md design/contrast-report.txt scripts/build-tokens.mjs src/renderer/src/styles/global.css src/main/window-options.ts src/main/window-options.test.ts DESIGN.md .prettierignore package.json package-lock.json
 git commit -m @'
 feat(design): workspace design tokens, Tailwind mapping, components and contrast report
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 '@
 ```
 
@@ -1784,8 +1782,6 @@ Expected: all green.
 git add src/shared/tree-types.ts src/worker/scanner/tree-store.ts src/worker/scanner/tree-store.test.ts src/worker/scanner/walk.ts src/worker/scanner/test/fake-walk-fs.ts
 git commit -m @'
 feat(scanner): columnar tree store with files and allocated size
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 '@
 ```
 
@@ -2894,8 +2890,6 @@ Expected: all green.
 git add src/worker/scanner/tree-queries.ts src/worker/scanner/tree-queries.test.ts src/worker/scanner/treemap.ts src/worker/scanner/treemap.test.ts src/worker/scanner/tree-store.perf.test.ts vitest.config.mts vitest.perf.config.mts tsconfig.node.json package.json
 git commit -m @'
 feat(scanner): children pages, node details, expand ids, squarified treemap; 1M-file perf limits
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 '@
 ```
 
@@ -7285,8 +7279,6 @@ Expected: lint clean.
 git add src/shared/scan-types.ts src/shared/scanner-protocol.ts src/shared/ipc-contract.ts src/worker/scanner/scanner-host.ts src/worker/scanner/scanner-host.test.ts src/main/ipc src/main/scan/scan-service.ts src/main/scan/scan-service.test.ts src/main/drives src/main/places src/main/shell-menu/menu-commands.ts src/main/shell-menu/menu-commands.test.ts src/main/self-test.ts src/main/self-test.test.ts src/main/index.ts src/preload/index.ts
 git commit -m @'
 feat(ipc): tree, treemap, drive, places, shell and clipboard channels; scanner queries
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 '@
 ```
 
@@ -10420,8 +10412,6 @@ Expected: lint clean.
 git add src/renderer/src/lib src/renderer/src/stores src/renderer/src/test src/renderer/src/env.d.ts src/renderer/src/components/MenuButton.tsx src/renderer/src/components/RibbonButton.tsx src/renderer/src/components/SelectMenu.tsx src/renderer/src/components/SelectMenu.test.tsx src/renderer/src/components/Ribbon.tsx src/renderer/src/components/Ribbon.test.tsx
 git commit -m @'
 feat(renderer): workspace store, ribbon and Select menu; remove the 2a screens
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 '@
 ```
 
@@ -11081,8 +11071,6 @@ Expected: lint clean.
 git add src/renderer/src/components/TreeGrid.tsx src/renderer/src/components/TreeGrid.test.tsx
 git commit -m @'
 feat(renderer): virtualized column tree with sort, keyboard and live updates
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 '@
 ```
 
@@ -11717,8 +11705,6 @@ Expected: lint clean.
 git add src/main/shell-menu/context-menu.ts src/main/shell-menu/context-menu.test.ts src/main/shell-menu/win-shell-menu.ts
 git commit -m @'
 feat(shell): native Explorer context menu with StorageIQ items (koffi COM)
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 '@
 ```
 
@@ -12916,8 +12902,6 @@ Expected: `[]`.
 git add src/renderer/src/lib/treemap-draw.ts src/renderer/src/lib/treemap-draw.test.ts src/renderer/src/components/TreemapPane.tsx src/renderer/src/components/TreemapPane.test.tsx src/renderer/src/components/LevelBar.tsx src/renderer/src/components/Splitter.tsx src/renderer/src/components/Splitter.test.tsx src/renderer/src/components/StatusBar.tsx src/renderer/src/components/StatusBar.test.tsx src/renderer/src/components/Banner.tsx src/renderer/src/components/Dialog.tsx src/renderer/src/components/UnreadableList.tsx src/renderer/src/App.tsx src/renderer/src/App.test.tsx src/renderer/src/main.tsx
 git commit -m @'
 feat(renderer): treemap pane with levels, splitter, status bar and the workspace shell
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 '@
 ```
 
@@ -14124,8 +14108,6 @@ git rm e2e/scan.spec.ts
 git add e2e/support/launch.ts e2e/support/fixture.ts e2e/support/workspace.ts e2e/app.spec.ts e2e/workspace.spec.ts e2e/metrics.spec.ts e2e/screenshots.spec.ts eslint.config.mjs .github/workflows/ci.yml scripts/report-metrics.mjs scripts/check-packaged-app.mjs .gitignore .prettierignore README.md docs/ROADMAP.md PRODUCT.md
 git commit -m @'
 test(e2e): workspace end to end; CI perf gate and metrics; docs for roadmap v3
-
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 '@
 ```
 
