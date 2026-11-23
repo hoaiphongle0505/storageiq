@@ -2,6 +2,7 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { formatShare } from '../lib/format'
 import { createFakeApi, fakeTreemap } from '../test/fake-api'
 import { renderWithStores } from '../test/render'
 import { LevelBar } from './LevelBar'
@@ -81,6 +82,31 @@ describe('<TreemapPane />', () => {
     fireEvent.doubleClick(canvas, { clientX: 50, clientY: 50 })
     await waitFor(() => expect(workspace.getState().treemapRootId).toBe('d1'))
     expect(workspace.getState().selectedId).toBe('d1')
+  })
+
+  it('shows the legend under the treemap', async () => {
+    const { canvas } = await renderPane()
+    const list = await screen.findByRole('list', { name: 'File types in this folder' })
+    expect(list).toHaveTextContent('Video')
+    expect(list).toHaveTextContent('Images')
+    expect(list).toHaveTextContent(`Video${formatShare(2 / (2 + 0.75))}`)
+    expect(list).toHaveTextContent(`Images${formatShare(0.75 / (2 + 0.75))}`)
+    const levelBar = screen.getByRole('toolbar', { name: 'Treemap levels' })
+    expect(canvas.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(list.compareDocumentPosition(levelBar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('does not show the previous folder’s file types while another layout is pending', async () => {
+    const { api, workspace } = await renderPane()
+    await screen.findByRole('list', { name: 'File types in this folder' })
+    vi.mocked(api.getTreemap).mockImplementationOnce(() => new Promise(() => undefined))
+    act(() => workspace.getState().select('d1'))
+    await waitFor(() =>
+      expect(api.getTreemap).toHaveBeenLastCalledWith('scan-1', 'd1', 'size', 1, 400, 200),
+    )
+    expect(
+      screen.queryByRole('list', { name: 'File types in this folder' }),
+    ).not.toBeInTheDocument()
   })
 
   it('lays out again when the tree selection, the Mode or the level changes', async () => {

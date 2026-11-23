@@ -56,4 +56,12 @@ describe('<Splitter />', () => {
     fireEvent.pointerMove(separator, { clientY: 440, pointerId: 1 })
     expect(onChange).not.toHaveBeenCalled()
   })
+
+  it('keeps a visible focus cue in forced colours', () => {
+    render(<Splitter value={260} min={120} max={900} onChange={vi.fn()} />)
+    const { className } = screen.getByRole('separator')
+    expect(className).toContain('outline-hidden')
+    expect(className).not.toContain('outline-none')
+    expect(className).toContain('forced-colors:focus-visible:outline-[Highlight]')
+  })
 })

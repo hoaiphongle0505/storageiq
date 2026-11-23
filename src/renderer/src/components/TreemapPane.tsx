@@ -208,7 +208,7 @@ export function TreemapPane({ height }: { height: number }) {
           />
         )}
       </div>
-      <TreemapLegend layout={shown?.layout ?? null} />
+      <TreemapLegend layout={clickable ? layout : null} />
       <LevelBar />
     </section>
   )

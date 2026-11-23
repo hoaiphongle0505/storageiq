@@ -215,7 +215,7 @@ All: `h-8 px-3.5 rounded-control`, `label` 13 px weight 500, focus = global ring
 
 ### 5.7 Splitter
 
-6 px tall hit area, `bg-app`. A 1 px `line` rule through the middle (`before:` pseudo) and a centred 32 × 4 px grip `rounded-pill bg-line-strong` (`after:` pseudo). Hover: rule `line-strong`. Focus-visible and while dragging: rule 2 px `accent`, grip `accent`; no outline (the rule is the indicator, 3:1 against `surface-app`). Cursor `row-resize`.
+6 px tall hit area, `bg-app`. A 1 px `line` rule through the middle (`before:` pseudo) and a centred 32 × 4 px grip `rounded-pill bg-line-strong` (`after:` pseudo). Hover: rule `line-strong`. Focus-visible and while dragging: rule 2 px `accent`, grip `accent`; no visible outline in normal colours (the rule is the indicator, 3:1 against `surface-app`), but the element keeps a transparent outline (`outline-hidden`) and, under `forced-colors: active`, a 2 px `Highlight` focus outline, because forced colours strip the pseudo-element backgrounds and the focus cue must survive. Cursor `row-resize`.
 
 ### 5.8 Status bar
 
