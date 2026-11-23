@@ -1,8 +1,11 @@
+import { lstat } from 'node:fs/promises'
 import path from 'node:path'
 import type { ContextMenuOutcome, CreateFolderResult } from '@shared/ipc-contract'
 import { type NodeId, ROOT_NODE_ID, type TreeNodeDetails } from '@shared/tree-types'
 import type { ShellMenuChoice } from '../shell-menu/context-menu'
 import { nextNewFolderName } from '../shell-menu/menu-commands'
+import { isShellPathGone } from '../shell-menu/win-shell-menu'
+import type { ItemWatcher } from './item-watcher'
 import { contextMenuArgs, scanNodeArgs } from './parse-args'
 import type { IpcHandlerMap } from './register'
 import {
@@ -18,8 +21,25 @@ export type ShellHandlers = Pick<
   'shell:open-in-explorer' | 'shell:context-menu' | 'folder:create' | 'clipboard:copy-path'
 >
 
-/** A shell command may finish after InvokeCommand returns (a delete with a progress dialog). */
+/** For verbs that leave the item in place: the folder is rescanned once more after this delay. */
 export const SECOND_REFRESH_DELAY_MS = 1500
+
+/** Verbs after which the item may leave its folder, possibly well after InvokeCommand returns. */
+const ITEM_LEAVING_VERBS: readonly (string | null)[] = ['delete', 'cut', 'rename', null]
+
+/**
+ * Whether `target` exists. Only a missing path (ENOENT, ENOTDIR) is reported as absent: any other
+ * error (a permission problem) keeps the item, so a live item is never reported as gone.
+ */
+export async function itemExists(target: string): Promise<boolean> {
+  try {
+    await lstat(target)
+    return true
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | null)?.code
+    return !(code === 'ENOENT' || code === 'ENOTDIR')
+  }
+}
 
 export interface ShellHandlerDeps {
   scanService: TreeScanService
@@ -34,8 +54,12 @@ export interface ShellHandlerDeps {
   mkdir(folder: string): Promise<void>
   /** Shows the native Explorer menu at window CSS pixel `x`, `y` and runs the shell choice. */
   showShellMenu(target: string, x: number, y: number, extended: boolean): Promise<ShellMenuChoice>
-  /** `setTimeout`, injectable for tests. */
-  later(callback: () => void, ms: number): void
+  /** Whether the path still exists on disk (`fs.promises.lstat`). */
+  pathExists(target: string): Promise<boolean>
+  /** Polls for an item that a shell command is removing, and owns the delayed refresh timers. */
+  watcher: ItemWatcher
+  /** `console.warn`. */
+  warn(message: string, error: unknown): void
 }
 
 export function createShellHandlers(deps: ShellHandlerDeps): ShellHandlers {
@@ -63,18 +87,55 @@ export function createShellHandlers(deps: ShellHandlerDeps): ShellHandlers {
     return { parentId, name }
   }
 
-  /** After a shell command that may change the disk: rescan the item's folder, twice. */
-  const refreshAfterShell = (scanId: string, details: TreeNodeDetails): void => {
-    const target: NodeId =
-      details.row.kind === 'folder'
-        ? (details.ancestorIds.at(-1) ?? details.row.id)
-        : folderIdOf(details)
-    const refresh = () => {
-      deps.refreshFolder(scanId, target).catch(() => undefined)
+  /** The folder to rescan after something happened to this item. */
+  const containingFolder = (details: TreeNodeDetails): NodeId =>
+    details.row.kind === 'folder'
+      ? (details.ancestorIds.at(-1) ?? details.row.id)
+      : folderIdOf(details)
+
+  /** A refresh nobody awaits: a failure is logged, never thrown. */
+  const refreshQuietly = (scanId: string, target: NodeId): void => {
+    deps
+      .refreshFolder(scanId, target)
+      .catch((error: unknown) => deps.warn('Refresh after shell command failed', error))
+  }
+
+  /** The item no longer exists: rescan its folder so the stale row goes away. */
+  const goneOutcome = (scanId: string, details: TreeNodeDetails): ContextMenuOutcome => {
+    refreshQuietly(scanId, containingFolder(details))
+    return { kind: 'gone' }
+  }
+
+  /** After a shell command that changed files: rescan now, and again once the change settles. */
+  const refreshAfterShell = (
+    scanId: string,
+    details: TreeNodeDetails,
+    verb: string | null,
+  ): void => {
+    const target = containingFolder(details)
+    const key = `${scanId}:${details.row.id}`
+    const isCurrent = () => scanService.currentScan()?.scanId === scanId
+    // A root rescan is a full scan: never queue a second one.
+    const isRoot = target === ROOT_NODE_ID
+    if (ITEM_LEAVING_VERBS.includes(verb)) {
+      if (!isRoot) refreshQuietly(scanId, target)
+      deps.watcher.watch({
+        key,
+        itemPath: details.path,
+        isCurrent,
+        onSettled: () => refreshQuietly(scanId, target),
+      })
+      return
     }
-    refresh()
-    // A root rescan is a full scan: never queue a second full pass.
-    if (target !== ROOT_NODE_ID) deps.later(refresh, SECOND_REFRESH_DELAY_MS)
+    refreshQuietly(scanId, target)
+    if (!isRoot) {
+      deps.watcher.later({
+        key,
+        isCurrent,
+        run: () => refreshQuietly(scanId, target),
+        ms: SECOND_REFRESH_DELAY_MS,
+      })
+    }
   }
 
   return {
@@ -89,10 +150,17 @@ export function createShellHandlers(deps: ShellHandlerDeps): ShellHandlers {
       parseArgs: contextMenuArgs,
       handle: async (_event, scanId, nodeId, x, y, extended): Promise<ContextMenuOutcome> => {
         const details = await resolveScanNode(scanService, scanId, nodeId)
-        const choice = await deps.showShellMenu(details.path, x, y, extended)
+        if (!(await deps.pathExists(details.path))) return goneOutcome(scanId, details)
+        let choice: ShellMenuChoice
+        try {
+          choice = await deps.showShellMenu(details.path, x, y, extended)
+        } catch (error) {
+          if (isShellPathGone(error)) return goneOutcome(scanId, details)
+          throw error
+        }
         if (choice.kind === 'dismissed') return { kind: 'dismissed' }
         if (choice.kind === 'shell') {
-          if (choice.changed) refreshAfterShell(scanId, details)
+          if (choice.changed) refreshAfterShell(scanId, details, choice.verb)
           return { kind: 'shell', verb: choice.verb, changed: choice.changed }
         }
         switch (choice.item) {

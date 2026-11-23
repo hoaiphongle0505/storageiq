@@ -34,6 +34,7 @@ export type SelectFolderResult = { canceled: true } | { canceled: false; path: s
 /** What the native context menu did, so the renderer can follow up. */
 export type ContextMenuOutcome =
   | { kind: 'dismissed' }
+  | { kind: 'gone' }
   | { kind: 'refreshed'; nodeId: NodeId }
   | { kind: 'copied' }
   | { kind: 'opened' }

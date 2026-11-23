@@ -6,6 +6,27 @@ import {
   STORAGEIQ_MENU_LABELS,
 } from './menu-commands'
 
+/** A shell call that returned a failing HRESULT; `hresult` is the unsigned 32-bit value. */
+export class ShellMenuError extends Error {
+  readonly hresult: number
+  readonly step: string
+
+  constructor(step: string, hresult: number) {
+    const unsigned = hresult >>> 0
+    super(`${step} failed (0x${unsigned.toString(16)})`)
+    this.name = 'ShellMenuError'
+    this.step = step
+    this.hresult = unsigned
+  }
+}
+
+/** ERROR_FILE_NOT_FOUND and ERROR_PATH_NOT_FOUND as HRESULTs: the item no longer exists. */
+export const SHELL_PATH_GONE_HRESULTS: readonly number[] = [0x80070002, 0x80070003]
+
+export function isShellPathGone(error: unknown): boolean {
+  return error instanceof ShellMenuError && SHELL_PATH_GONE_HRESULTS.includes(error.hresult)
+}
+
 // Win32 and COM constants (shobjidl_core.h, winuser.h, objbase.h).
 const COINIT_APARTMENTTHREADED = 0x2
 const S_OK = 0
@@ -202,8 +223,7 @@ export async function createWinShellMenu(): Promise<ShellMenuNative> {
     build(hwnd, path, extended): BuiltShellMenu {
       const pidl: unknown[] = [null]
       let hr = Number(SHParseDisplayName(path, null, pidl, 0, null))
-      if (failed(hr) || !pidl[0])
-        throw new Error(`SHParseDisplayName failed (0x${(hr >>> 0).toString(16)})`)
+      if (failed(hr) || !pidl[0]) throw new ShellMenuError('SHParseDisplayName', hr >>> 0)
       const folder: unknown[] = [null]
       const child: unknown[] = [null]
       let contextMenu: unknown = null
@@ -213,7 +233,7 @@ export async function createWinShellMenu(): Promise<ShellMenuNative> {
       let submenu: unknown = null
       try {
         hr = Number(SHBindToParent(pidl[0], guid(IID_IShellFolder), folder, child))
-        if (failed(hr)) throw new Error(`SHBindToParent failed (0x${(hr >>> 0).toString(16)})`)
+        if (failed(hr)) throw new ShellMenuError('SHBindToParent', hr >>> 0)
         const out: unknown[] = [null]
         hr = Number(
           koffi.call(
@@ -228,7 +248,7 @@ export async function createWinShellMenu(): Promise<ShellMenuNative> {
             out,
           ),
         )
-        if (failed(hr)) throw new Error(`GetUIObjectOf failed (0x${(hr >>> 0).toString(16)})`)
+        if (failed(hr)) throw new ShellMenuError('GetUIObjectOf', hr >>> 0)
         contextMenu = out[0]
         menu3 = queryInterface(contextMenu, IID_IContextMenu3)
         menu2 = menu3 === null ? queryInterface(contextMenu, IID_IContextMenu2) : null
@@ -273,7 +293,7 @@ export async function createWinShellMenu(): Promise<ShellMenuNative> {
             flags,
           ),
         )
-        if (failed(hr)) throw new Error(`QueryContextMenu failed (0x${(hr >>> 0).toString(16)})`)
+        if (failed(hr)) throw new ShellMenuError('QueryContextMenu', hr >>> 0)
       } catch (error) {
         if (menu) DestroyMenu(menu)
         if (submenu) DestroyMenu(submenu)
@@ -404,7 +424,7 @@ export async function createWinShellMenu(): Promise<ShellMenuNative> {
               info,
             ),
           )
-          if (failed(hr)) throw new Error(`InvokeCommand failed (0x${(hr >>> 0).toString(16)})`)
+          if (failed(hr)) throw new ShellMenuError('InvokeCommand', hr >>> 0)
         },
 
         release() {

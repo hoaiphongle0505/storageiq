@@ -8,6 +8,7 @@ import {
   driveRootOf,
   effectiveSort,
   FOLDER_PICKER_ERROR,
+  GONE_MESSAGE,
   NETWORK_PATH_ERROR,
   PATH_COPIED,
   SCAN_CRASH_MESSAGE,
@@ -325,6 +326,18 @@ describe('actions on a row', () => {
     await store.getState().showContextMenu('d1', 10.6, 20.2, true)
     expect(api.showContextMenu).toHaveBeenCalledWith('scan-1', 'd1', 11, 20, true)
     expect(store.getState().announcement).toBe('Created “New folder”.')
+  })
+
+  it('gone outcome clears the selection and announces it', async () => {
+    const api = createFakeApi({ showContextMenu: vi.fn(async () => ({ kind: 'gone' as const })) })
+    const { store } = await scanning(api)
+    store.setState({ selectedId: 'd1' })
+    await store.getState().showContextMenu('d1', 1, 2, false)
+    const state = store.getState()
+    expect(state.selectedId).toBeNull()
+    expect(state.announcement).toBe(GONE_MESSAGE)
+    expect(state.banner).toBeNull()
+    expect(GONE_MESSAGE).not.toMatch(/0x/)
   })
 
   it('creates a folder, opens in Explorer, and reports failures', async () => {

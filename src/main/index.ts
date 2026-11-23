@@ -30,7 +30,8 @@ import { createDriveHandlers } from './ipc/drive-handlers'
 import { type IpcHandlerMap, registerIpcHandlers } from './ipc/register'
 import { createScanHandlers } from './ipc/scan-handlers'
 import { createEventSender } from './ipc/send-event'
-import { createShellHandlers } from './ipc/shell-handlers'
+import { createItemWatcher } from './ipc/item-watcher'
+import { createShellHandlers, itemExists } from './ipc/shell-handlers'
 import { createFolderRefresher, createTreeHandlers } from './ipc/tree-handlers'
 import { createRecentScans, listPlaces, RECENT_SCANS_FILE } from './places/places'
 import { createScanService, type ScannerChild } from './scan/scan-service'
@@ -140,6 +141,14 @@ function forkScanner(): ScannerChild {
 }
 
 const sendEvent = createEventSender(() => mainWindow)
+const itemWatcher = createItemWatcher({
+  pathExists: itemExists,
+  schedule: (callback, ms) => {
+    const timer = setTimeout(callback, ms)
+    return () => clearTimeout(timer)
+  },
+  now: Date.now,
+})
 const scanService = createScanService({
   forkScanner,
   sendEvent,
@@ -242,6 +251,7 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
   app.on('window-all-closed', () => app.quit())
   app.on('before-quit', () => {
     quitting = true
+    itemWatcher.cancelAll()
     scanService.dispose() // kills the scanner; no event is sent during quit
   })
 
@@ -324,9 +334,9 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
             await mkdir(folder)
           },
           showShellMenu: showContextMenuAt,
-          later: (callback, ms) => {
-            setTimeout(callback, ms)
-          },
+          pathExists: itemExists,
+          watcher: itemWatcher,
+          warn: (message, error) => console.warn(message, error),
         }),
       } satisfies IpcHandlerMap
 

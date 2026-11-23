@@ -53,6 +53,7 @@ export const NETWORK_PATH_ERROR =
   'StorageIQ can’t scan network locations. Please choose a drive or a folder on this PC.'
 export const SCAN_CRASH_MESSAGE = 'The scan stopped unexpectedly. You can try again.'
 export const PATH_COPIED = 'Path copied.'
+export const GONE_MESSAGE = 'That item no longer exists. The list was refreshed.'
 export const EXPAND_ALL_LEVELS = 64
 export const DEFAULT_TREEMAP_DEPTH = 1
 
@@ -247,6 +248,8 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
     }
 
     const handleOutcome = (outcome: ContextMenuOutcome) => {
+      if (outcome.kind === 'gone')
+        set({ selectedId: null, announcement: GONE_MESSAGE, banner: null })
       if (outcome.kind === 'copied') set({ announcement: PATH_COPIED })
       if (outcome.kind === 'created') set({ announcement: `Created “${outcome.name}”.` })
       if (outcome.kind === 'opened') set({ announcement: 'Opened in Explorer.' })

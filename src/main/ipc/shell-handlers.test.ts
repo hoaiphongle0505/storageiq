@@ -1,6 +1,8 @@
 import type { IpcMainInvokeEvent } from 'electron'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ShellMenuChoice } from '../shell-menu/context-menu'
+import { ShellMenuError } from '../shell-menu/win-shell-menu'
+import { createItemWatcher, ITEM_POLL_INTERVAL_MS, ITEM_WATCH_TIMEOUT_MS } from './item-watcher'
 import { InvalidIpcArgumentsError } from './parse-args'
 import {
   createShellHandlers,
@@ -13,11 +15,26 @@ import { NOT_IN_SCAN_MESSAGE, SCAN_RUNNING_MESSAGE } from './tree-handlers'
 
 const event = {} as IpcMainInvokeEvent
 
+beforeEach(() => {
+  vi.useFakeTimers()
+})
+afterEach(() => {
+  vi.useRealTimers()
+})
+
 function setup(
   options: { choice?: ShellMenuChoice; scanning?: boolean; existing?: string[] } = {},
 ) {
   const fake = fakeTreeService({ scanning: options.scanning ?? false })
-  const timers: Array<{ callback: () => void; ms: number }> = []
+  const pathExists = vi.fn(async () => true)
+  const watcher = createItemWatcher({
+    pathExists,
+    schedule: (callback, ms) => {
+      const timer = setTimeout(callback, ms)
+      return () => clearTimeout(timer)
+    },
+    now: () => Date.now(),
+  })
   const deps: ShellHandlerDeps = {
     scanService: fake.service,
     refreshFolder: vi.fn(async (_scanId: string, nodeId: string) => NODES[nodeId] ?? null),
@@ -29,11 +46,11 @@ function setup(
     showShellMenu: vi.fn(
       async (): Promise<ShellMenuChoice> => options.choice ?? { kind: 'dismissed' },
     ),
-    later: (callback, ms) => {
-      timers.push({ callback, ms })
-    },
+    pathExists,
+    watcher,
+    warn: vi.fn(),
   }
-  return { deps, timers, handlers: createShellHandlers(deps) }
+  return { deps, fake, pathExists, watcher, handlers: createShellHandlers(deps) }
 }
 
 describe('shell:open-in-explorer', () => {
@@ -111,28 +128,118 @@ describe('shell:context-menu', () => {
     expect(t.deps.mkdir).toHaveBeenCalledWith('D:\\Data\\Photos\\New folder (2)')
   })
 
-  it('rescans the parent folder now and again shortly after a shell command that changes files', async () => {
-    const { handlers, deps, timers } = setup({
+  it('delete that completes late: the folder is refreshed after the item disappears', async () => {
+    const { handlers, deps, pathExists, watcher } = setup({
+      choice: { kind: 'shell', verb: 'delete', changed: true },
+    })
+    await handlers['shell:context-menu'].handle(event, SCAN, 'f7', 0, 0, false)
+    expect(deps.refreshFolder).toHaveBeenCalledTimes(1)
+    expect(deps.refreshFolder).toHaveBeenCalledWith(SCAN, 'd1')
+    await vi.advanceTimersByTimeAsync(1_500)
+    expect(deps.refreshFolder).toHaveBeenCalledTimes(1)
+    pathExists.mockResolvedValue(false)
+    await vi.advanceTimersByTimeAsync(ITEM_POLL_INTERVAL_MS)
+    expect(deps.refreshFolder).toHaveBeenCalledTimes(2)
+    expect(deps.refreshFolder).toHaveBeenLastCalledWith(SCAN, 'd1')
+    expect(watcher.active).toBe(0)
+  })
+
+  it('delete that never finishes is refreshed once at the timeout', async () => {
+    const { handlers, deps } = setup({ choice: { kind: 'shell', verb: 'delete', changed: true } })
+    await handlers['shell:context-menu'].handle(event, SCAN, 'f7', 0, 0, false)
+    await vi.advanceTimersByTimeAsync(ITEM_WATCH_TIMEOUT_MS)
+    expect(deps.refreshFolder).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(deps.refreshFolder).toHaveBeenCalledTimes(2)
+  })
+
+  it('root-level delete does not queue two full rescans', async () => {
+    const { handlers, deps, pathExists, watcher } = setup({
       choice: { kind: 'shell', verb: 'delete', changed: true },
     })
     await expect(
       Promise.resolve(handlers['shell:context-menu'].handle(event, SCAN, 'd1', 0, 0, false)),
     ).resolves.toEqual({ kind: 'shell', verb: 'delete', changed: true })
-    // The parent is the scan root: one rescan, no delayed second full pass.
+    expect(deps.refreshFolder).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1_000)
+    pathExists.mockResolvedValue(false)
+    await vi.advanceTimersByTimeAsync(ITEM_POLL_INTERVAL_MS)
     expect(deps.refreshFolder).toHaveBeenCalledTimes(1)
     expect(deps.refreshFolder).toHaveBeenCalledWith(SCAN, 'd0')
-    expect(timers).toEqual([])
+    expect(watcher.active).toBe(0)
   })
 
-  it('rescans a non-root parent folder now and again shortly after', async () => {
-    const { handlers, deps, timers } = setup({
+  it('a verb that leaves the item in place still refreshes twice', async () => {
+    const { handlers, deps, pathExists } = setup({
+      choice: { kind: 'shell', verb: 'paste', changed: true },
+    })
+    await handlers['shell:context-menu'].handle(event, SCAN, 'f7', 0, 0, false)
+    expect(deps.refreshFolder).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(SECOND_REFRESH_DELAY_MS)
+    expect(deps.refreshFolder).toHaveBeenCalledTimes(2)
+    expect(deps.refreshFolder).toHaveBeenLastCalledWith(SCAN, 'd1')
+    // Only the gone pre-check ran; the watcher never polled.
+    expect(pathExists).toHaveBeenCalledTimes(1)
+  })
+
+  it('a second menu on a missing path refreshes and returns gone', async () => {
+    const { handlers, deps, pathExists } = setup({ choice: { kind: 'dismissed' } })
+    pathExists.mockResolvedValue(false)
+    await expect(
+      Promise.resolve(handlers['shell:context-menu'].handle(event, SCAN, 'f7', 0, 0, false)),
+    ).resolves.toEqual({ kind: 'gone' })
+    expect(deps.showShellMenu).not.toHaveBeenCalled()
+    expect(deps.refreshFolder).toHaveBeenCalledTimes(1)
+    expect(deps.refreshFolder).toHaveBeenCalledWith(SCAN, 'd1')
+  })
+
+  it.each([0x80070002, 0x80070003])(
+    'a shell menu that reports file-not-found returns gone (0x%x)',
+    async (hresult) => {
+      const { handlers, deps } = setup()
+      vi.mocked(deps.showShellMenu).mockRejectedValue(
+        new ShellMenuError('SHParseDisplayName', hresult),
+      )
+      await expect(
+        Promise.resolve(handlers['shell:context-menu'].handle(event, SCAN, 'f7', 0, 0, false)),
+      ).resolves.toEqual({ kind: 'gone' })
+      expect(deps.refreshFolder).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('any other menu error still rejects', async () => {
+    const { handlers, deps } = setup()
+    const error = new ShellMenuError('GetUIObjectOf', 0x80004005)
+    vi.mocked(deps.showShellMenu).mockRejectedValue(error)
+    await expect(
+      Promise.resolve().then(() =>
+        handlers['shell:context-menu'].handle(event, SCAN, 'f7', 0, 0, false),
+      ),
+    ).rejects.toBe(error)
+    expect(deps.refreshFolder).not.toHaveBeenCalled()
+  })
+
+  it('the watcher is cancelled when a new scan starts', async () => {
+    const { handlers, deps, fake, watcher } = setup({
       choice: { kind: 'shell', verb: 'delete', changed: true },
     })
     await handlers['shell:context-menu'].handle(event, SCAN, 'f7', 0, 0, false)
-    expect(deps.refreshFolder).toHaveBeenCalledWith(SCAN, 'd1')
-    expect(timers.map((timer) => timer.ms)).toEqual([SECOND_REFRESH_DELAY_MS])
-    timers[0]?.callback()
-    expect(deps.refreshFolder).toHaveBeenCalledTimes(2)
+    expect(watcher.active).toBe(1)
+    fake.service.currentScan = () => ({ scanId: 'another-scan', root: 'D:\\Data' })
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(deps.refreshFolder).toHaveBeenCalledTimes(1)
+    expect(watcher.active).toBe(0)
+  })
+
+  it('refresh failures are logged, not swallowed', async () => {
+    const { handlers, deps } = setup({ choice: { kind: 'shell', verb: 'paste', changed: true } })
+    const failure = new Error('rescan failed')
+    vi.mocked(deps.refreshFolder).mockRejectedValue(failure)
+    await expect(
+      Promise.resolve(handlers['shell:context-menu'].handle(event, SCAN, 'f7', 0, 0, false)),
+    ).resolves.toEqual({ kind: 'shell', verb: 'paste', changed: true })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(deps.warn).toHaveBeenCalledWith('Refresh after shell command failed', failure)
   })
 
   it('rescans a file’s own folder after a change, and nothing after a read-only verb', async () => {
@@ -143,7 +250,7 @@ describe('shell:context-menu', () => {
     t = setup({ choice: { kind: 'shell', verb: 'properties', changed: false } })
     await t.handlers['shell:context-menu'].handle(event, SCAN, 'f7', 0, 0, false)
     expect(t.deps.refreshFolder).not.toHaveBeenCalled()
-    expect(t.timers).toEqual([])
+    expect(t.watcher.active).toBe(0)
   })
 })
 
@@ -212,9 +319,17 @@ describe('menu refresh of the scan root', () => {
       readdir: async () => [],
       mkdir: async () => undefined,
       showShellMenu: async () => ({ kind: 'shell', verb: 'delete', changed: true }),
-      later: () => undefined,
+      // The item is already gone, so the watcher settles at once and rescans the root.
+      pathExists: async () => false,
+      watcher: createItemWatcher({
+        pathExists: async () => false,
+        schedule: () => () => undefined,
+        now: () => 0,
+      }),
+      warn: () => undefined,
     })
     await handlers['shell:context-menu'].handle(event, SCAN, 'd1', 0, 0, false)
+    await vi.advanceTimersByTimeAsync(0)
     await vi.waitFor(() =>
       expect(events).toEqual([['scan:restarted', { scanId: 'rescan-1', root: 'D:\\Data' }]]),
     )
