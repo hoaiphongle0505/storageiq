@@ -169,5 +169,14 @@ describe('<Ribbon />', () => {
     // Colour glyphs (Refresh, Percent) are marked so forced colours leave them alone.
     expect(command('Refresh').querySelector('svg')).toHaveAttribute('data-color-icon')
     expect(command('Stop').querySelector('svg')).not.toHaveAttribute('data-color-icon')
+    // High contrast: an inline style, because Griffel's unlayered rule beats a layered one.
+    expect(command('Refresh').querySelector('svg')?.getAttribute('style')).toContain(
+      'forced-color-adjust: none',
+    )
+    expect(command('Stop').querySelector('svg')?.getAttribute('style') ?? '').not.toContain(
+      'forced-color-adjust',
+    )
+    // A disabled button dims colour and tinted glyphs too (they ignore currentColor).
+    expect(command('Refresh').className).toContain('aria-disabled:[&_svg]:opacity-40')
   })
 })

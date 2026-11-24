@@ -6,12 +6,16 @@ import type {
   SortKey,
   TreemapLayout,
   TreeNodeDetails,
+  TreeNodePath,
   TreePage,
   TreeTotals,
 } from './tree-types'
 
 /** Name of the scanner utilityProcess; it is the `name` in `app.getAppMetrics()`. */
 export const SCANNER_SERVICE_NAME = 'StorageIQ scanner'
+
+/** Most ids one `paths` query takes. */
+export const MAX_PATH_QUERY_IDS = 64
 
 /** Used when main could not read the drive's cluster size (the NTFS default). */
 export const DEFAULT_CLUSTER_BYTES = 4096
@@ -29,6 +33,8 @@ export type ScannerQuery =
     }
   | { kind: 'node'; scanId: string; nodeId: NodeId; sortKey: SortKey; sortDir: SortDir }
   | { kind: 'expand'; scanId: string; nodeId: NodeId; levels: number }
+  /** Row and path of up to `MAX_PATH_QUERY_IDS` ids in one message (no sorting; for icons). */
+  | { kind: 'paths'; scanId: string; nodeIds: NodeId[] }
   | {
       kind: 'treemap'
       scanId: string
@@ -46,6 +52,7 @@ export interface ScannerQueryResults {
   children: TreePage | null
   node: TreeNodeDetails | null
   expand: NodeId[]
+  paths: Array<TreeNodePath | null>
   treemap: TreemapLayout | null
   refresh: TreeNodeDetails | null
   totals: TreeTotals | null

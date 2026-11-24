@@ -3,6 +3,7 @@ import { createIconCache, NEGATIVE_TTL_MS } from './icon-cache'
 import { normalizeFolderPath } from './icon-keys'
 import {
   ICON_IDLE_MS,
+  ICON_LOAD_TIMEOUT_MS,
   ICON_MAX_ITEMS_PER_MESSAGE,
   ICON_QUEUE_MAX,
   ICON_WORKER_TIMEOUT_MS,
@@ -11,7 +12,7 @@ import {
   type IconWorkItem,
 } from './icon-worker-protocol'
 
-export { ICON_IDLE_MS, ICON_QUEUE_MAX, ICON_WORKER_TIMEOUT_MS }
+export { ICON_IDLE_MS, ICON_LOAD_TIMEOUT_MS, ICON_QUEUE_MAX, ICON_WORKER_TIMEOUT_MS }
 
 /** The part of a `worker_threads` Worker the service uses; tests pass a fake. */
 export interface IconWorkerLike {
@@ -21,6 +22,8 @@ export interface IconWorkerLike {
   on(event: 'exit', listener: (code: number) => void): void
   terminate(): Promise<number>
 }
+
+const isPathKey = (key: string): boolean => key.startsWith('f:') || key.startsWith('drive:')
 
 export interface IconServiceDeps {
   spawn(): IconWorkerLike
@@ -38,6 +41,8 @@ export interface IconRequestResult {
   images: Record<string, IconImage>
   /** Requested keys that have no image (not found, worker busy, timed out, disposed). */
   missing: string[]
+  /** Missing keys the worker skipped for its time budget (worth asking again soon). */
+  skipped: string[]
 }
 
 export interface IconService {
@@ -58,7 +63,8 @@ export interface IconService {
 interface Job {
   build(id: number): IconWorkerRequest
   /** `null`: no answer (timeout, crash, dropped, disposed). */
-  finish(reply: IconWorkerReply | null): void
+  /** `lost`: the worker timed out or died while serving this job (not dropped or disposed). */
+  finish(reply: IconWorkerReply | null, lost?: boolean): void
 }
 
 interface Slot {
@@ -79,7 +85,7 @@ interface Slot {
  */
 export function createIconService(deps: IconServiceDeps): IconService {
   const cache = createIconCache(deps.maxEntries, deps.maxPathKeys)
-  const inflight = new Map<string, Promise<IconImage | null>>()
+  const inflight = new Map<string, Promise<IconImage | 'skipped' | null>>()
   const queue: Job[] = []
   let slot: Slot | null = null
   let current: { job: Job; id: number; cancelTimeout: () => void } | null = null
@@ -110,6 +116,11 @@ export function createIconService(deps: IconServiceDeps): IconService {
       if (created.dead) return
       if (reply.type === 'ready') {
         created.ready = true
+        // The request clock starts now: koffi's cold load is not the request's fault.
+        if (current !== null && slot === created) {
+          current.cancelTimeout()
+          current.cancelTimeout = deps.schedule(timedOut, ICON_WORKER_TIMEOUT_MS)
+        }
         return
       }
       if (current === null || current.id !== reply.id) return
@@ -118,19 +129,19 @@ export function createIconService(deps: IconServiceDeps): IconService {
     const died = (): void => {
       if (created.dead) return
       discard(created)
-      if (current !== null) completeCurrent(null)
+      if (current !== null) completeCurrent(null, true)
     }
     worker.on('error', died)
     worker.on('exit', died)
     return created
   }
 
-  const completeCurrent = (reply: IconWorkerReply | null): void => {
+  const completeCurrent = (reply: IconWorkerReply | null, lost = false): void => {
     const running = current
     if (running === null) return
     current = null
     running.cancelTimeout()
-    running.job.finish(reply?.type === 'failed' ? null : reply)
+    running.job.finish(reply?.type === 'failed' ? null : reply, lost || reply?.type === 'failed')
     pump()
   }
 
@@ -138,7 +149,7 @@ export function createIconService(deps: IconServiceDeps): IconService {
     const running = current
     if (running === null) return
     if (slot !== null) discard(slot)
-    completeCurrent(null)
+    completeCurrent(null, true)
   }
 
   const pump = (): void => {
@@ -160,7 +171,16 @@ export function createIconService(deps: IconServiceDeps): IconService {
     nextId += 1
     try {
       slot ??= spawnSlot()
-      current = { job, id, cancelTimeout: deps.schedule(timedOut, ICON_WORKER_TIMEOUT_MS) }
+      const started = slot
+      current = {
+        job,
+        id,
+        // Before `ready` only the (longer) load deadline runs; `ready` restarts the request clock.
+        cancelTimeout: deps.schedule(
+          timedOut,
+          started.ready ? ICON_WORKER_TIMEOUT_MS : ICON_LOAD_TIMEOUT_MS,
+        ),
+      }
       slot.worker.postMessage(job.build(id))
     } catch {
       if (slot !== null) discard(slot)
@@ -182,22 +202,28 @@ export function createIconService(deps: IconServiceDeps): IconService {
   /** Sends `items` and settles each key's promise from the answer. */
   const lookup = (
     items: IconWorkItem[],
-    settle: Map<string, (image: IconImage | null) => void>,
+    settle: Map<string, (image: IconImage | 'skipped' | null) => void>,
+    negativeOnLoss: boolean,
   ): void => {
     enqueue({
       build: (id) => ({ type: 'get', id, items }),
-      finish: (reply) => {
+      finish: (reply, lost) => {
         const results = new Map(
           reply?.type === 'icons' ? reply.results.map((result) => [result.key, result]) : [],
         )
         for (const { key } of items) {
           const result = results.get(key)
-          let image: IconImage | null = null
+          let image: IconImage | 'skipped' | null = null
           if (result?.image) {
             image = result.image
             cache.set(key, image)
-          } else if (result !== undefined && result.skipped !== true) {
+          } else if (result?.skipped === true) {
+            image = 'skipped'
+          } else if (result !== undefined) {
             // Windows had no icon for it: do not ask again for a minute.
+            cache.setMissing(key, deps.now())
+          } else if (lost === true && negativeOnLoss && isPathKey(key)) {
+            // A hung or crashed lookup: a path that blocks must not be retried on every scroll.
             cache.setMissing(key, deps.now())
           }
           settle.get(key)?.(image)
@@ -211,14 +237,18 @@ export function createIconService(deps: IconServiceDeps): IconService {
     async request(targets) {
       const images: Record<string, IconImage> = {}
       const missing: string[] = []
+      const skipped: string[] = []
       const waits: Array<Promise<void>> = []
       const toSend: IconWorkItem[] = []
-      const settle = new Map<string, (image: IconImage | null) => void>()
+      const settle = new Map<string, (image: IconImage | 'skipped' | null) => void>()
       const seen = new Set<string>()
-      const record = (key: string, promise: Promise<IconImage | null>): void => {
+      const record = (key: string, promise: Promise<IconImage | 'skipped' | null>): void => {
         waits.push(
           promise.then((image) => {
-            if (image === null) missing.push(key)
+            if (image === 'skipped') {
+              missing.push(key)
+              skipped.push(key)
+            } else if (image === null) missing.push(key)
             else images[key] = image
           }),
         )
@@ -233,7 +263,7 @@ export function createIconService(deps: IconServiceDeps): IconService {
           const pending = inflight.get(item.key)
           if (pending !== undefined) record(item.key, pending)
           else {
-            const promise = new Promise<IconImage | null>((resolve) =>
+            const promise = new Promise<IconImage | 'skipped' | null>((resolve) =>
               settle.set(item.key, resolve),
             )
             inflight.set(item.key, promise)
@@ -242,11 +272,18 @@ export function createIconService(deps: IconServiceDeps): IconService {
           }
         }
       }
-      for (let i = 0; i < toSend.length; i += ICON_MAX_ITEMS_PER_MESSAGE) {
-        lookup(toSend.slice(i, i + ICON_MAX_ITEMS_PER_MESSAGE), settle)
+      // Cheap type lookups go first and in their own messages: a per-file call that hangs on a
+      // dead share must not take the type icons of the same request down with it.
+      for (const group of [
+        toSend.filter((item) => item.target.kind !== 'path'),
+        toSend.filter((item) => item.target.kind === 'path'),
+      ]) {
+        for (let i = 0; i < group.length; i += ICON_MAX_ITEMS_PER_MESSAGE) {
+          lookup(group.slice(i, i + ICON_MAX_ITEMS_PER_MESSAGE), settle, true)
+        }
       }
       await Promise.all(waits)
-      return { images, missing }
+      return { images, missing, skipped }
     },
 
     knownFolders() {

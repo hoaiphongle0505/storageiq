@@ -37,6 +37,8 @@ export type IconWorkerReply =
 export const ICON_REQUEST_BUDGET_MS = 2_500
 /** The main-side client gives up on a request after this long and discards the worker. */
 export const ICON_WORKER_TIMEOUT_MS = 6_000
+/** Before the worker reports `ready` (koffi still loading) it is given this long. */
+export const ICON_LOAD_TIMEOUT_MS = 20_000
 /** Requests waiting for the worker (an older one is dropped with an empty answer). */
 export const ICON_QUEUE_MAX = 8
 /** An idle worker is ended after this long. */

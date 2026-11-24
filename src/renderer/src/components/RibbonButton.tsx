@@ -2,7 +2,7 @@ import type { FluentIcon } from '../lib/icons'
 
 /** Large ribbon command: icon above a short label (WCAG 2.5.8: well over 24 × 24 px). */
 export const RIBBON_BUTTON_CLASS =
-  'flex min-h-15 min-w-14 flex-col items-center justify-start gap-1 rounded-[9px] px-2 pt-1.5 pb-1 text-xs leading-4 font-small text-ink transition-colors duration-[120ms] [&_svg]:text-ink-muted hover:bg-row-hover hover:[&_svg]:text-ink aria-expanded:bg-row-hover aria-pressed:bg-accent-subtle aria-pressed:font-semibold aria-pressed:text-accent aria-pressed:shadow-[inset_0_0_0_1px_var(--accent)] aria-pressed:[&_svg]:text-accent aria-disabled:cursor-default aria-disabled:text-ink-subtle aria-disabled:[&_svg]:text-ink-subtle aria-disabled:hover:bg-transparent aria-disabled:hover:[&_svg]:text-ink-subtle'
+  'flex min-h-15 min-w-14 flex-col items-center justify-start gap-1 rounded-[9px] px-2 pt-1.5 pb-1 text-xs leading-4 font-small text-ink transition-colors duration-[120ms] [&_svg]:text-ink-muted hover:bg-row-hover hover:[&_svg]:text-ink aria-expanded:bg-row-hover aria-pressed:bg-accent-subtle aria-pressed:font-semibold aria-pressed:text-accent aria-pressed:shadow-[inset_0_0_0_1px_var(--accent)] aria-pressed:[&_svg]:text-accent aria-disabled:cursor-default aria-disabled:text-ink-subtle aria-disabled:[&_svg]:text-ink-subtle aria-disabled:[&_svg]:opacity-40 aria-disabled:hover:bg-transparent aria-disabled:hover:[&_svg]:text-ink-subtle'
 
 /** Small ribbon toggle (the unit buttons). */
 export const RIBBON_SMALL_CLASS =

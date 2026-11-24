@@ -16,9 +16,9 @@ const OUTPUT = path.join(ROOT, 'out', 'THIRD_PARTY_NOTICES.txt')
 const BUNDLED_DEV_DEPENDENCIES = ['react', 'react-dom', 'zustand', '@fluentui/react-icons']
 
 // Packages that ship no licence file: their licence text, as published in their repository.
-const MIT_MICROSOFT = `MIT License
+const MIT_FLUENT_ICONS = `MIT License
 
-Copyright (c) Microsoft Corporation.
+Copyright (c) 2020 Microsoft Corporation
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -37,7 +37,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.`
-const FALLBACK_LICENSE_TEXT = { '@fluentui/react-icons': MIT_MICROSOFT }
+const FALLBACK_LICENSE_TEXT = { '@fluentui/react-icons': MIT_FLUENT_ICONS }
 const LICENSE_FILE = /^(licen[cs]e|copying|notice)(\.|$)/i
 
 function readJson(file) {

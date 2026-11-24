@@ -266,7 +266,12 @@ export async function createWinIcons(): Promise<WinIcons> {
     const info: { hIcon?: unknown } = {}
     const result = SHGetFileInfoW(path, attributes, info, koffi.sizeof(SHFILEINFOW), flags | size)
     // A returned icon must be destroyed even when the conversion fails: bitmapFromIcon does it.
-    if (!result || !info.hIcon) return null
+    if (!info.hIcon) return null
+    if (!result) {
+      // Windows reported no icon but set a handle: never leak it.
+      DestroyIcon(info.hIcon)
+      return null
+    }
     return bitmapFromIcon(gdi, info.hIcon)
   }
 

@@ -198,6 +198,26 @@ describe('the renderer icon cache', () => {
     expect(listener).not.toHaveBeenCalled()
   })
 
+  it('ids from a rejected call can be requested again', async () => {
+    const getIcons = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('ipc'))
+      .mockResolvedValue({
+        keys: { f1: 'ext:txt' },
+        images: { 'ext:txt': image('txt') },
+        pending: [],
+      })
+    const cache = createIconCache({ getIcons })
+    cache.request('scan-1', ['f1'])
+    vi.advanceTimersByTime(ICON_BATCH_DELAY_MS)
+    await flush()
+    cache.request('scan-1', ['f1'])
+    vi.advanceTimersByTime(ICON_BATCH_DELAY_MS)
+    await flush()
+    expect(getIcons).toHaveBeenCalledTimes(2)
+    expect(cache.imageOf('f1')).toEqual(image('txt'))
+  })
+
   it('a failing call is swallowed and the placeholders stay', async () => {
     const getIcons = vi.fn().mockRejectedValue(new Error('main said no'))
     const cache = createIconCache({ getIcons })

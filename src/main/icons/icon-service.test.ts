@@ -5,6 +5,7 @@ import type { IconWorkerReply, IconWorkerRequest } from './icon-worker-protocol'
 import {
   createIconService,
   ICON_IDLE_MS,
+  ICON_LOAD_TIMEOUT_MS,
   ICON_QUEUE_MAX,
   ICON_WORKER_TIMEOUT_MS,
   type IconWorkerLike,
@@ -133,9 +134,10 @@ describe('createIconService', () => {
     const first = service.request([target('ext:txt')])
     await flush()
     workers[0]!.answer()
-    await expect(first).resolves.toEqual({ images: { 'ext:txt': IMAGE }, missing: [] })
+    await expect(first).resolves.toEqual({ images: { 'ext:txt': IMAGE }, skipped: [], missing: [] })
     await expect(service.request([target('ext:txt')])).resolves.toEqual({
       images: { 'ext:txt': IMAGE },
+      skipped: [],
       missing: [],
     })
     expect(workers).toHaveLength(1)
@@ -185,7 +187,7 @@ describe('createIconService', () => {
     const first = service.request([target('f:0123456789ab', { kind: 'path', path: 'C:\\a.exe' })])
     await flush()
     workers[0]!.answer(0, ['f:0123456789ab'])
-    await expect(first).resolves.toEqual({ images: {}, missing: ['f:0123456789ab'] })
+    await expect(first).resolves.toEqual({ images: {}, skipped: [], missing: ['f:0123456789ab'] })
     const second = await service.request([
       target('f:0123456789ab', { kind: 'path', path: 'C:\\a.exe' }),
     ])
@@ -202,7 +204,11 @@ describe('createIconService', () => {
     const first = service.request([target('f:0123456789ab', { kind: 'path', path: 'C:\\a.exe' })])
     await flush()
     workers[0]!.answer(0, [], ['f:0123456789ab'])
-    await expect(first).resolves.toEqual({ images: {}, missing: ['f:0123456789ab'] })
+    await expect(first).resolves.toEqual({
+      images: {},
+      skipped: ['f:0123456789ab'],
+      missing: ['f:0123456789ab'],
+    })
     void service.request([target('f:0123456789ab', { kind: 'path', path: 'C:\\a.exe' })])
     await flush()
     expect(workers[0]!.posted).toHaveLength(2)
@@ -215,7 +221,7 @@ describe('createIconService', () => {
     advance(ICON_WORKER_TIMEOUT_MS - 1)
     expect(workers[0]!.terminated).toBe(0)
     advance(1)
-    await expect(stuck).resolves.toEqual({ images: {}, missing: ['ext:txt'] })
+    await expect(stuck).resolves.toEqual({ images: {}, skipped: [], missing: ['ext:txt'] })
     expect(workers[0]!.terminated).toBe(1)
     const next = service.request([target('ext:txt')])
     await flush()
@@ -228,8 +234,10 @@ describe('createIconService', () => {
     const { service, workers, advance, flush } = setup(false)
     const stuck = service.request([target('ext:txt')])
     await flush()
-    advance(ICON_WORKER_TIMEOUT_MS)
-    await expect(stuck).resolves.toEqual({ images: {}, missing: ['ext:txt'] })
+    advance(ICON_WORKER_TIMEOUT_MS) // koffi is still loading: the request clock has not started
+    expect(workers[0]!.exitMessages).toBe(0)
+    advance(ICON_LOAD_TIMEOUT_MS - ICON_WORKER_TIMEOUT_MS)
+    await expect(stuck).resolves.toEqual({ images: {}, skipped: [], missing: ['ext:txt'] })
     expect(workers[0]!.terminated).toBe(0)
     expect(workers[0]!.exitMessages).toBe(1)
     void service.request([target('ext:txt')])
@@ -237,16 +245,53 @@ describe('createIconService', () => {
     expect(workers).toHaveLength(2)
   })
 
+  it('the request clock starts when the worker reports ready', async () => {
+    const { service, workers, advance, flush } = setup(false)
+    const request = service.request([target('ext:txt')])
+    await flush()
+    advance(ICON_LOAD_TIMEOUT_MS - 1000) // a slow cold load, still within the load deadline
+    workers[0]!.ready()
+    advance(ICON_WORKER_TIMEOUT_MS - 1)
+    expect(workers[0]!.terminated).toBe(0)
+    workers[0]!.answer(0)
+    await expect(request).resolves.toMatchObject({ images: { 'ext:txt': IMAGE } })
+  })
+
+  it('a timed-out per-file key is not retried within the negative TTL, and type keys of the same request still answer', async () => {
+    const { service, workers, advance, flush } = setup()
+    const file = { kind: 'path', path: 'C:\\Share\\hang.exe' } as const
+    const mixed = service.request([target('f:0123456789ab', file), target('ext:txt')])
+    await flush()
+    // The type key went out first, in its own message, and is answered.
+    expect(workers[0]!.items(0)).toEqual(['ext:txt'])
+    workers[0]!.answer(0)
+    await flush()
+    expect(workers[0]!.items(1)).toEqual(['f:0123456789ab'])
+    advance(ICON_WORKER_TIMEOUT_MS) // the per-file lookup hangs
+    const result = await mixed
+    expect(result.images['ext:txt']).toEqual(IMAGE)
+    expect(result.missing).toEqual(['f:0123456789ab'])
+    expect(result.skipped).toEqual([])
+    const posted = workers.flatMap((worker) => worker.posted).length
+    const again = await service.request([target('f:0123456789ab', file)])
+    expect(again.missing).toEqual(['f:0123456789ab'])
+    expect(workers.flatMap((worker) => worker.posted)).toHaveLength(posted)
+    advance(NEGATIVE_TTL_MS)
+    void service.request([target('f:0123456789ab', file)])
+    await flush()
+    expect(workers.flatMap((worker) => worker.posted)).toHaveLength(posted + 1)
+  })
+
   it('a worker that exits mid-request answers empty and never throws', async () => {
     const { service, workers, flush } = setup()
     const crashed = service.request([target('ext:txt')])
     await flush()
     workers[0]!.crash()
-    await expect(crashed).resolves.toEqual({ images: {}, missing: ['ext:txt'] })
+    await expect(crashed).resolves.toEqual({ images: {}, skipped: [], missing: ['ext:txt'] })
     const errored = service.request([target('ext:pdf')])
     await flush()
     workers[1]!.fail()
-    await expect(errored).resolves.toEqual({ images: {}, missing: ['ext:pdf'] })
+    await expect(errored).resolves.toEqual({ images: {}, skipped: [], missing: ['ext:pdf'] })
   })
 
   it('an idle worker is terminated after 60 seconds and respawned on demand', async () => {
@@ -275,7 +320,7 @@ describe('createIconService', () => {
     await flush()
     // Eight are waiting; the ninth displaces the oldest one.
     const ninth = service.request([target('ext:q9')])
-    await expect(queued[0]).resolves.toEqual({ images: {}, missing: ['ext:q1'] })
+    await expect(queued[0]).resolves.toEqual({ images: {}, skipped: [], missing: ['ext:q1'] })
     expect(workers[0]!.posted).toHaveLength(1)
     workers[0]!.answer(0)
     await expect(inFlight).resolves.toMatchObject({ images: { 'ext:q0': IMAGE } })
@@ -292,15 +337,17 @@ describe('createIconService', () => {
     const path = { kind: 'path', path: 'C:\\a.exe' } as const
     const first = service.request([target('ext:txt'), target('f:0123456789ab', path)])
     await flush()
-    workers[0]!.answer(0)
+    workers[0]!.answer(0) // type keys go first, in their own message
+    await flush()
+    workers[0]!.answer(1)
     await first
     service.newScan()
     const again = await service.request([target('ext:txt')])
     expect(again.images['ext:txt']).toEqual(IMAGE)
-    expect(workers[0]!.posted).toHaveLength(1)
+    expect(workers[0]!.posted).toHaveLength(2)
     void service.request([target('f:0123456789ab', path)])
     await flush()
-    expect(workers[0]!.posted).toHaveLength(2)
+    expect(workers[0]!.posted).toHaveLength(3)
   })
 
   it('dispose terminates the worker and answers pending requests empty', async () => {
@@ -310,11 +357,12 @@ describe('createIconService', () => {
     const waiting = service.request([target('ext:pdf')])
     await flush()
     service.dispose()
-    await expect(running).resolves.toEqual({ images: {}, missing: ['ext:txt'] })
-    await expect(waiting).resolves.toEqual({ images: {}, missing: ['ext:pdf'] })
+    await expect(running).resolves.toEqual({ images: {}, skipped: [], missing: ['ext:txt'] })
+    await expect(waiting).resolves.toEqual({ images: {}, skipped: [], missing: ['ext:pdf'] })
     expect(workers[0]!.terminated).toBe(1)
     await expect(service.request([target('ext:doc')])).resolves.toEqual({
       images: {},
+      skipped: [],
       missing: ['ext:doc'],
     })
     expect(workers).toHaveLength(1)

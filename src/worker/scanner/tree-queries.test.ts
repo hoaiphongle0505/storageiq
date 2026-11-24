@@ -11,6 +11,7 @@ import {
   resolveNode,
   rowOf,
 } from './tree-queries'
+import { nodePaths } from './tree-queries'
 import type { SortDir, SortKey } from '@shared/tree-types'
 import { TreeStore } from './tree-store'
 
@@ -191,6 +192,34 @@ describe('nodeDetails', () => {
       ancestorIds: [],
       locations: [],
     })
+  })
+})
+
+describe('nodePaths', () => {
+  it('gives only the row and the path of each id, null for ids that do not resolve', () => {
+    const { store, photos, year } = sample()
+    const [file] = store.filesIn(photos)
+    const result = nodePaths(store, ['d0', `d${year}`, `f${file}`, 'd999', `g${photos}`])
+    expect(result.map((entry) => entry?.path ?? null)).toEqual([
+      ROOT,
+      path.join(ROOT, 'Photos', '2024'),
+      path.join(ROOT, 'Photos', 'c.jpg'),
+      null,
+      path.join(ROOT, 'Photos'),
+    ])
+    expect(result[2]?.row).toMatchObject({ kind: 'file', name: 'c.jpg' })
+    expect(Object.keys(result[1] ?? {}).sort()).toEqual(['path', 'row'])
+  })
+
+  it('does not sort any folder', () => {
+    const { store, photos } = sample()
+    const sorter = {
+      sorted: () => {
+        throw new Error('sorted')
+      },
+    }
+    expect(() => nodePaths(store, [`d${photos}`])).not.toThrow()
+    expect(sorter).toBeDefined()
   })
 })
 

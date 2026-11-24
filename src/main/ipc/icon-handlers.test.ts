@@ -12,7 +12,9 @@ const IMAGE: IconImage = { small: 'data:image/png;base64,AA', large: 'data:image
 
 type Asked = Array<{ key: string; target: NativeTarget }>
 
-function fakeIcons(options: { missing?: string[]; fails?: boolean; known?: string[] } = {}) {
+function fakeIcons(
+  options: { missing?: string[]; skipped?: string[]; fails?: boolean; known?: string[] } = {},
+) {
   const calls: Asked[] = []
   const icons: IconServiceLike = {
     request: vi.fn(async (targets) => {
@@ -24,7 +26,7 @@ function fakeIcons(options: { missing?: string[]; fails?: boolean; known?: strin
         if (options.missing?.includes(key)) missing.push(key)
         else images[key] = IMAGE
       }
-      return { images, missing }
+      return { images, missing, skipped: options.skipped ?? [] }
     }),
     knownFolders: vi.fn(async () => new Set(options.known ?? [])),
     newScan: vi.fn(),
@@ -70,12 +72,14 @@ describe('icons:for-nodes', () => {
   it('resolves every id through the scan and passes only scanner paths to the service', async () => {
     const { forNodes, calls, queries } = setup()
     await forNodes(['f7', 'f9', 'f20'])
-    expect(
-      queries.filter((q) => q.kind === 'node').map((q) => (q as { nodeId: string }).nodeId),
-    ).toEqual(expect.arrayContaining(['f7', 'f9', 'f20']))
+    // One cheap batched query for all ids; no per-id node lookup (no sorting in the scanner).
+    expect(queries.filter((q) => q.kind === 'node')).toHaveLength(0)
+    const paths = queries.filter((q) => q.kind === 'paths')
+    expect(paths).toHaveLength(1)
+    expect((paths[0] as { nodeIds: string[] }).nodeIds).toEqual(['f7', 'f9', 'f20'])
     const targets = calls[0]!
-    const paths = targets.flatMap((t) => (t.target.kind === 'path' ? [t.target.path] : []))
-    expect(paths).toEqual(['D:\\Data\\Tools\\Setup.EXE'])
+    const filePaths = targets.flatMap((t) => (t.target.kind === 'path' ? [t.target.path] : []))
+    expect(filePaths).toEqual(['D:\\Data\\Tools\\Setup.EXE'])
     expect(targets.map((t) => t.key).filter((k) => !k.startsWith('f:'))).toEqual([
       'ext:jpg',
       'ext:txt',
@@ -85,7 +89,9 @@ describe('icons:for-nodes', () => {
   it('dedupes ids', async () => {
     const { forNodes, queries } = setup()
     const batch = await forNodes(['f7', 'f7', 'f7'])
-    expect(queries.filter((q) => q.kind === 'node')).toHaveLength(1)
+    const paths = queries.filter((q) => q.kind === 'paths')
+    expect(paths).toHaveLength(1)
+    expect((paths[0] as { nodeIds: string[] }).nodeIds).toEqual(['f7'])
     expect(Object.keys(batch.keys)).toEqual(['f7'])
   })
 
@@ -154,16 +160,25 @@ describe('icons:for-nodes', () => {
     expect(calls[0]!.some((t) => t.target.kind === 'path')).toBe(false)
   })
 
-  it('a per-file row the worker could not answer gets its type icon and is pending', async () => {
+  it('a per-file row the worker skipped for its budget gets its type icon and is pending', async () => {
     const first = setup()
     const key = (await first.forNodes(['f20'])).keys['f20']!
-    const { forNodes, calls } = setup({}, { missing: [key] })
+    const { forNodes, calls } = setup({}, { missing: [key], skipped: [key] })
     const batch = await forNodes(['f20', 'f7'])
     expect(batch.pending).toEqual(['f20'])
     expect(batch.keys['f20']).toBe('ext:exe')
     expect(batch.images['ext:exe']).toEqual(IMAGE)
     expect(calls).toHaveLength(2)
     expect(calls[1]).toEqual([{ key: 'ext:exe', target: { kind: 'file', ext: 'exe' } }])
+  })
+
+  it('a per-file row whose lookup was lost (timeout) gets its type icon but is not pending', async () => {
+    const first = setup()
+    const key = (await first.forNodes(['f20'])).keys['f20']!
+    const { forNodes } = setup({}, { missing: [key] })
+    const batch = await forNodes(['f20'])
+    expect(batch.pending).toEqual([])
+    expect(batch.keys['f20']).toBe('ext:exe')
   })
 
   it('an icons call never rejects when the service fails', async () => {

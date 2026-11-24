@@ -57,7 +57,13 @@ const FOLDER_FILL = 'var(--icon-folder)'
 /** A glyph that keeps Fluent's own colours (marked so high contrast leaves it alone). */
 function colour(Icon: FluentIcon): FluentIcon {
   const Coloured: FluentIcon = (props) =>
-    createElement(Icon, { ...props, 'data-color-icon': '' } as FluentIconsProps)
+    createElement(Icon, {
+      ...props,
+      'data-color-icon': '',
+      // Inline, because Griffel's own unlayered `forced-color-adjust: auto` beats any layered
+      // stylesheet rule: in high contrast the colour glyphs must keep their fills.
+      style: { forcedColorAdjust: 'none', ...props.style },
+    } as FluentIconsProps)
   return Coloured
 }
 

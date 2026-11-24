@@ -6,6 +6,7 @@ import {
   type SortKey,
   type TreeLocation,
   type TreeNodeDetails,
+  type TreeNodePath,
   type TreePage,
   type TreeRow,
 } from '@shared/tree-types'
@@ -519,6 +520,24 @@ export function nodeDetails(
     ancestorIds: chain.slice(0, -1).map(nodeIdOf),
     locations,
   }
+}
+
+/**
+ * The row and path of each id, in order (`null` for an id that does not resolve). A cheap batch
+ * lookup: no ancestors, no sorting, no sibling search.
+ */
+export function nodePaths(
+  store: TreeStore,
+  nodeIds: readonly NodeId[],
+): Array<TreeNodePath | null> {
+  return nodeIds.map((id) => {
+    const ref = resolveNode(store, id)
+    if (ref === null) return null
+    return {
+      row: rowOf(store, ref),
+      path: ref.kind === 'file' ? store.filePath(ref.index) : store.folderPath(ref.index),
+    }
+  })
 }
 
 /**

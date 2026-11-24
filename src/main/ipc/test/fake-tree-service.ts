@@ -107,6 +107,11 @@ export function fakeTreeService(
         case 'node':
         case 'refresh':
           return node(query.nodeId)
+        case 'paths':
+          return query.nodeIds.map((id) => {
+            const found = node(id)
+            return found === null ? null : { row: found.row, path: found.path }
+          })
         case 'totals':
           return TOTALS
         case 'expand':

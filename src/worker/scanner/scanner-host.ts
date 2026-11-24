@@ -6,11 +6,13 @@ import type {
   ScannerRequest,
   ScanVolume,
 } from '@shared/scanner-protocol'
+import { MAX_PATH_QUERY_IDS } from '@shared/scanner-protocol'
 import { SIZE_MODES, SORT_KEYS, type SizeMode, type SortKey } from '@shared/tree-types'
 import {
   ChildSorter,
   childrenPage,
   expandIds,
+  nodePaths,
   folderOf,
   nodeDetails,
   resolveNode,
@@ -111,6 +113,11 @@ function parseQuery(value: unknown): ScannerQuery | null {
       if (!str(nodeId) || !SIZE_MODES.includes(mode as SizeMode)) return null
       if (!int(depth) || !int(width) || !int(height)) return null
       return { kind: 'treemap', scanId, nodeId, mode: mode as SizeMode, depth, width, height }
+    }
+    case 'paths': {
+      const ids = value['nodeIds']
+      if (!Array.isArray(ids) || ids.length > MAX_PATH_QUERY_IDS || !ids.every(str)) return null
+      return { kind: 'paths', scanId, nodeIds: ids as string[] }
     }
     case 'refresh':
       return str(nodeId) ? { kind: 'refresh', scanId, nodeId } : null
@@ -230,7 +237,11 @@ export function createScannerHost(deps: ScannerHostDeps): ScannerHost {
       return next
     }
     if (store === null || sorter === null || storeScanId !== query.scanId) {
-      return query.kind === 'expand' ? [] : null
+      return query.kind === 'expand'
+        ? []
+        : query.kind === 'paths'
+          ? query.nodeIds.map(() => null)
+          : null
     }
     switch (query.kind) {
       case 'children':
@@ -245,6 +256,8 @@ export function createScannerHost(deps: ScannerHostDeps): ScannerHost {
         )
       case 'node':
         return nodeDetails(store, sorter, query.nodeId, query.sortKey, query.sortDir)
+      case 'paths':
+        return nodePaths(store, query.nodeIds)
       case 'expand':
         return expandIds(store, query.nodeId, query.levels)
       case 'treemap':

@@ -69,6 +69,12 @@ export interface TreeLocation {
   index: number
 }
 
+/** What the icon lookup needs of a row: the row itself and its path (no ancestors, no sorting). */
+export interface TreeNodePath {
+  row: TreeRow
+  path: string
+}
+
 export interface TreeNodeDetails {
   row: TreeRow
   /** Full path on disk. */

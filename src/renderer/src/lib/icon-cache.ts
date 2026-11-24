@@ -141,7 +141,11 @@ export function createIconCache(deps: IconCacheDeps): IconCache {
       if (sentFor === generation) flush()
       else if (unsent.length > 0 || retryQueue.size > 0) schedule()
     }
-    deps.getIcons(sentScan, chunk).then(done, () => done(null))
+    deps.getIcons(sentScan, chunk).then(done, () => {
+      // A rejected call (IPC error): these rows may be asked for again on the next render.
+      if (sentFor === generation) for (const id of chunk) asked.delete(id)
+      done(null)
+    })
   }
 
   const schedule = (): void => {

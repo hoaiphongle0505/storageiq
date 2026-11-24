@@ -1,5 +1,5 @@
 import type { IconBatch, IconImage } from '@shared/ipc-contract'
-import type { NodeId, TreeNodeDetails } from '@shared/tree-types'
+import type { NodeId, TreeNodePath } from '@shared/tree-types'
 import {
   folderKeyFor,
   iconKeyFor,
@@ -10,7 +10,6 @@ import {
 } from '../icons/icon-keys'
 import type { IconRequestResult } from '../icons/icon-service'
 import type { IconWorkItem } from '../icons/icon-worker-protocol'
-import { mapLimit } from './map-limit'
 import { iconNodesArgs, iconTypesArgs } from './parse-args'
 import type { IpcHandlerMap } from './register'
 import type { TreeScanService } from './tree-handlers'
@@ -23,9 +22,6 @@ export interface IconServiceLike {
   knownFolders(): Promise<ReadonlySet<string>>
   newScan(): void
 }
-
-/** Nodes resolved at the same time. */
-const RESOLVE_IN_FLIGHT = 8
 
 const isDriveRootPath = (target: string): boolean => /^[A-Za-z]:\\$/.test(target)
 
@@ -52,30 +48,28 @@ export function createIconHandlers(deps: {
   const { scanService, icons } = deps
   let lastScanId: string | null = null
 
-  const resolve = async (scanId: string, nodeId: NodeId): Promise<TreeNodeDetails | null> => {
+  /** Row and path of every id in one cheap scanner message (no ancestors, no sorting). */
+  const resolve = async (
+    scanId: string,
+    nodeIds: NodeId[],
+  ): Promise<Array<TreeNodePath | null>> => {
     try {
-      return await scanService.query({
-        kind: 'node',
-        scanId,
-        nodeId,
-        sortKey: 'size',
-        sortDir: 'desc',
-      })
+      return await scanService.query({ kind: 'paths', scanId, nodeIds })
     } catch {
-      return null
+      return nodeIds.map(() => null)
     }
   }
 
   const request = async (targets: readonly IconWorkItem[]): Promise<IconRequestResult> => {
-    if (targets.length === 0) return { images: {}, missing: [] }
+    if (targets.length === 0) return { images: {}, missing: [], skipped: [] }
     try {
       return await icons.request(targets)
     } catch {
-      return { images: {}, missing: targets.map((target) => target.key) }
+      return { images: {}, missing: targets.map((target) => target.key), skipped: [] }
     }
   }
 
-  const classify = (details: TreeNodeDetails, known: ReadonlySet<string>): Wanted | null => {
+  const classify = (details: TreeNodePath, known: ReadonlySet<string>): Wanted | null => {
     const { row, path } = details
     if (row.kind === 'files') return null
     const typeKey = typeKeyOf(row, row.parentId === null && isDriveRootPath(path))
@@ -125,10 +119,8 @@ export function createIconHandlers(deps: {
           lastScanId = scanId
           icons.newScan()
         }
-        const nodes = await mapLimit([...new Set(nodeIds)], RESOLVE_IN_FLIGHT, (id) =>
-          resolve(scanId, id),
-        )
-        const found = nodes.filter((node): node is TreeNodeDetails => node !== null)
+        const nodes = await resolve(scanId, [...new Set(nodeIds)])
+        const found = nodes.filter((node): node is TreeNodePath => node !== null)
         const needsKnown = found.some((node) => node.row.kind === 'folder')
         const known: ReadonlySet<string> = needsKnown
           ? await icons.knownFolders().catch(() => new Set<string>())
@@ -139,6 +131,7 @@ export function createIconHandlers(deps: {
         for (const item of wanted) unique.set(item.key, { key: item.key, target: item.target })
         const first = await request([...unique.values()])
         Object.assign(batch.images, first.images)
+        const skipped = new Set(first.skipped)
 
         const fallbacks = new Map<string, IconWorkItem>()
         for (const item of wanted) {
@@ -154,10 +147,10 @@ export function createIconHandlers(deps: {
           const fallback = item.fallback
           if (!own && fallback !== null && batch.images[fallback.key] !== undefined) {
             batch.keys[item.id] = fallback.key
-            if (item.perFile) batch.pending.push(item.id)
+            if (item.perFile && skipped.has(item.key)) batch.pending.push(item.id)
           } else {
             batch.keys[item.id] = item.key
-            if (!own && item.perFile) batch.pending.push(item.id)
+            if (!own && item.perFile && skipped.has(item.key)) batch.pending.push(item.id)
           }
         }
         return batch
