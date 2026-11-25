@@ -14,7 +14,12 @@ function setup(overrides: Partial<AppHandlerDeps> = {}) {
     app: { getName: () => 'StorageIQ', getVersion: () => '0.1.0', quit },
     dialog: { showOpenDialog },
     getMainWindow: () => fakeWindow,
-    runtime: { platform: 'win32', arch: 'x64', electronVersion: '38.0.0' },
+    runtime: {
+      platform: 'win32',
+      arch: 'x64',
+      electronVersion: '38.0.0',
+      chromeVersion: '140.0.0',
+    },
     installUpdate,
     ...overrides,
   }
@@ -52,6 +57,8 @@ describe('app:get-info', () => {
       platform: 'win32',
       arch: 'x64',
       electronVersion: '38.0.0',
+      chromeVersion: '140.0.0',
+      channel: 'Stable',
     })
   })
 })
@@ -93,5 +100,18 @@ describe('argument validation', () => {
     const { handlers } = setup()
     expect(() => handlers['app:get-info'].parseArgs(['x'])).toThrow(InvalidIpcArgumentsError)
     expect(() => handlers['dialog:select-folder'].parseArgs([{}])).toThrow(InvalidIpcArgumentsError)
+  })
+})
+
+describe('app:get-info', () => {
+  it('adds the Chromium version and the channel', () => {
+    const beta = setup({
+      app: { getName: () => 'StorageIQ', getVersion: () => '0.2.0-beta.1', quit: vi.fn() },
+    })
+    expect(beta.handlers['app:get-info'].handle(event)).toMatchObject({
+      chromeVersion: '140.0.0',
+      channel: 'Beta',
+    })
+    expect(setup().handlers['app:get-info'].handle(event)).toMatchObject({ channel: 'Stable' })
   })
 })

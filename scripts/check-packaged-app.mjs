@@ -22,6 +22,10 @@ if (!existsSync(path.join(resources, 'THIRD_PARTY_NOTICES.txt'))) {
   console.error('resources/THIRD_PARTY_NOTICES.txt is missing from the packaged app.')
   process.exit(1)
 }
+if (!existsSync(path.join(resources, 'CHANGELOG.md'))) {
+  console.error('resources/CHANGELOG.md is missing from the packaged app.')
+  process.exit(1)
+}
 const unpackedMain = path.join(resources, 'app.asar.unpacked', 'out', 'main')
 const unpackedFiles = existsSync(unpackedMain) ? readdirSync(unpackedMain) : []
 if (unpackedFiles.join() !== 'icon-worker.js,shell-worker.js,walker.js') {

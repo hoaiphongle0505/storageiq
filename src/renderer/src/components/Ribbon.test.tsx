@@ -17,10 +17,10 @@ const toolbar = () => screen.getByRole('toolbar')
 const command = (name: RegExp | string) => within(toolbar()).getByRole('button', { name })
 
 describe('<Ribbon />', () => {
-  it('has File, Home, Scan and View tabs with Home selected', () => {
+  it('has File, Home, Scan, View and Help tabs with Home selected', () => {
     renderRibbon()
     const tabs = screen.getAllByRole('tab')
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['File', 'Home', 'Scan', 'View'])
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['File', 'Home', 'Scan', 'View', 'Help'])
     expect(screen.getByRole('tab', { name: 'Home' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tabpanel')).toHaveAccessibleName('Home')
     expect(toolbar()).toHaveAccessibleName('Home commands')
@@ -138,17 +138,102 @@ describe('<Ribbon />', () => {
     expect(command('Open in Explorer')).not.toHaveAttribute('aria-disabled')
   })
 
-  it('File holds About and Exit; View toggles the treemap', async () => {
+  it('the File tab keeps Exit and no longer has About; View toggles the treemap', async () => {
     const user = userEvent.setup()
-    const { api, onAbout, workspace } = renderRibbon()
+    const { api, workspace } = renderRibbon()
     await user.click(screen.getByRole('tab', { name: 'File' }))
-    await user.click(command('About'))
-    expect(onAbout).toHaveBeenCalled()
+    expect(within(toolbar()).queryByRole('button', { name: 'About' })).not.toBeInTheDocument()
     await user.click(command('Exit'))
     expect(api.quit).toHaveBeenCalled()
     await user.click(screen.getByRole('tab', { name: 'View' }))
     await user.click(command('Treemap'))
     expect(workspace.getState().treemapVisible).toBe(false)
+  })
+
+  it('the Help tab is last and shows the Help and Version groups', async () => {
+    const user = userEvent.setup()
+    renderRibbon()
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs[tabs.length - 1]).toHaveTextContent('Help')
+    await user.click(screen.getByRole('tab', { name: 'Help' }))
+    expect(toolbar()).toHaveAccessibleName('Help commands')
+    expect(within(toolbar()).getByRole('group', { name: 'Help' })).toBeInTheDocument()
+    expect(within(toolbar()).getByRole('group', { name: 'Version' })).toBeInTheDocument()
+    for (const name of ['Help', 'Report a problem', 'About', 'Check for updates', "What's new"]) {
+      expect(command(name)).toBeInTheDocument()
+    }
+  })
+
+  it('Help and Report a problem call openLink with help and issues', async () => {
+    const user = userEvent.setup()
+    const { api } = renderRibbon()
+    await user.click(screen.getByRole('tab', { name: 'Help' }))
+    await user.click(command('Help'))
+    await user.click(command('Report a problem'))
+    expect(api.openLink).toHaveBeenNthCalledWith(1, 'help')
+    expect(api.openLink).toHaveBeenNthCalledWith(2, 'issues')
+  })
+
+  it('About opens the About dialog', async () => {
+    const user = userEvent.setup()
+    const { onAbout } = renderRibbon()
+    await user.click(screen.getByRole('tab', { name: 'Help' }))
+    await user.click(command('About'))
+    expect(onAbout).toHaveBeenCalledTimes(1)
+  })
+
+  it('Check for updates calls checkForUpdates and opens the About dialog', async () => {
+    const user = userEvent.setup()
+    const { api, onAbout } = renderRibbon()
+    await user.click(screen.getByRole('tab', { name: 'Help' }))
+    await user.click(command('Check for updates'))
+    expect(api.checkForUpdates).toHaveBeenCalledTimes(1)
+    expect(onAbout).toHaveBeenCalledTimes(1)
+  })
+
+  it("What's new opens the history target", async () => {
+    const user = userEvent.setup()
+    const { workspace } = renderRibbon()
+    await user.click(screen.getByRole('tab', { name: 'Help' }))
+    await user.click(command("What's new"))
+    expect(workspace.getState().whatsNew).toEqual({ kind: 'history' })
+  })
+
+  it('the Help tab and the Check for updates button show a dot while an update is available, downloading or ready', async () => {
+    const user = userEvent.setup()
+    const { api } = renderRibbon()
+    for (const state of [
+      { kind: 'available' as const, version: '0.3.0' },
+      { kind: 'downloading' as const, version: '0.3.0', percent: 5 },
+      { kind: 'ready' as const, version: '0.3.0' },
+    ]) {
+      act(() => api.emitUpdateState(state))
+      const tab = screen.getByRole('tab', { name: 'Help, update available' })
+      expect(tab.querySelector('[data-testid="notification-dot"]')).not.toBeNull()
+      expect(tab).toHaveTextContent(/^Help$/)
+      await user.click(tab)
+      const button = command('Check for updates, update available')
+      expect(button.querySelector('[data-testid="notification-dot"]')).toHaveAttribute(
+        'aria-hidden',
+        'true',
+      )
+      expect(button).toHaveAttribute('title', 'Check whether a newer StorageIQ is available')
+    }
+  })
+
+  it('no dot when idle, checking, up-to-date or error', async () => {
+    const user = userEvent.setup()
+    const { api } = renderRibbon()
+    for (const state of [
+      { kind: 'idle' as const },
+      { kind: 'checking' as const },
+      { kind: 'up-to-date' as const },
+      { kind: 'error' as const, message: 'x' },
+    ]) {
+      act(() => api.emitUpdateState(state))
+      await user.click(screen.getByRole('tab', { name: 'Help' }))
+      expect(document.querySelector('[data-testid="notification-dot"]')).toBeNull()
+    }
   })
 
   it('its icons are aria-hidden svgs and its accessible name is unchanged', () => {

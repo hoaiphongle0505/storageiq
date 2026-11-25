@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  aboutLinkArg,
   childrenArgs,
   contextMenuArgs,
   expandArgs,
@@ -237,5 +238,16 @@ describe('icon arguments', () => {
     )
     expect(() => iconTypesArgs([[]])).toThrow(InvalidIpcArgumentsError)
     expect(() => iconTypesArgs(['dir'])).toThrow(InvalidIpcArgumentsError)
+  })
+})
+
+describe('aboutLinkArg', () => {
+  it('accepts only the five fixed keys as the single argument', () => {
+    for (const key of ['repo', 'license', 'releases', 'help', 'issues']) {
+      expect(aboutLinkArg([key])).toEqual([key])
+    }
+    for (const bad of [[], ['x'], ['https://a.example'], ['repo', 'repo'], [1]]) {
+      expect(() => aboutLinkArg(bad)).toThrow(InvalidIpcArgumentsError)
+    }
   })
 })

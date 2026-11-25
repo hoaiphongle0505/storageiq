@@ -4,9 +4,11 @@ import { SIZE_UNITS, type SizeUnit } from '../lib/format'
 import {
   type FluentIcon,
   IconAbout,
+  IconCheckUpdates,
   IconChevronDown,
   IconExit,
   IconExpand,
+  IconHelp,
   IconModeAllocated,
   IconModeFiles,
   IconModePercent,
@@ -14,23 +16,31 @@ import {
   IconNewFolder,
   IconOpenFolder,
   IconRefresh,
+  IconReportProblem,
   IconStop,
   IconTreemap,
+  IconWhatsNew,
 } from '../lib/icons'
 import { useFocusgroupFallback } from '../lib/use-focusgroup'
 import { EXPAND_ALL_LEVELS } from '../stores/workspace-store'
 import { useWorkspace } from '../stores/workspace-store-context'
 import { MenuButton } from './MenuButton'
-import { RIBBON_BUTTON_CLASS, RIBBON_SMALL_CLASS, RibbonButton } from './RibbonButton'
+import {
+  NotificationDot,
+  RIBBON_BUTTON_CLASS,
+  RIBBON_SMALL_CLASS,
+  RibbonButton,
+} from './RibbonButton'
 import { SelectMenu } from './SelectMenu'
 
-export type RibbonTab = 'file' | 'home' | 'scan' | 'view'
+export type RibbonTab = 'file' | 'home' | 'scan' | 'view' | 'help'
 
 const TABS: Array<{ id: RibbonTab; label: string }> = [
   { id: 'file', label: 'File' },
   { id: 'home', label: 'Home' },
   { id: 'scan', label: 'Scan' },
   { id: 'view', label: 'View' },
+  { id: 'help', label: 'Help' },
 ]
 
 const MODES: Array<{ mode: SizeMode; label: string; icon: FluentIcon; title: string }> = [
@@ -71,7 +81,7 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-/** The window's command ribbon: tabs File, Home, Scan and View over a toolbar of groups. */
+/** The window's command ribbon: tabs File, Home, Scan, View and Help over a toolbar of groups. */
 export function Ribbon({ onAbout }: { onAbout(): void }) {
   const [tab, setTab] = useState<RibbonTab>('home')
   const tablistRef = useRef<HTMLDivElement>(null)
@@ -96,6 +106,12 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
   const createFolder = useWorkspace((s) => s.createFolder)
   const setTreemapVisible = useWorkspace((s) => s.setTreemapVisible)
   const quit = useWorkspace((s) => s.quit)
+  const checkForUpdates = useWorkspace((s) => s.checkForUpdates)
+  const openLink = useWorkspace((s) => s.openLink)
+  const openWhatsNew = useWorkspace((s) => s.openWhatsNew)
+  const updateKind = useWorkspace((s) => s.updateState.kind)
+  const updatePending =
+    updateKind === 'available' || updateKind === 'downloading' || updateKind === 'ready'
 
   const scanning = phase === 'scanning'
   const hasTree = phase !== 'empty' && phase !== 'failed'
@@ -212,10 +228,47 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
     </Group>
   )
 
+  const helpPanel = (
+    <>
+      <Group label="Help">
+        <RibbonButton
+          label="Help"
+          icon={IconHelp}
+          title="Open the StorageIQ guide in your browser"
+          onClick={() => void openLink('help')}
+        />
+        <RibbonButton
+          label="Report a problem"
+          icon={IconReportProblem}
+          title="Open the issue form in your browser"
+          onClick={() => void openLink('issues')}
+        />
+      </Group>
+      <Group label="Version">
+        <RibbonButton label="About" icon={IconAbout} title="About StorageIQ" onClick={onAbout} />
+        <RibbonButton
+          label="Check for updates"
+          icon={IconCheckUpdates}
+          title="Check whether a newer StorageIQ is available"
+          badge={updatePending}
+          onClick={() => {
+            void checkForUpdates()
+            onAbout()
+          }}
+        />
+        <RibbonButton
+          label="What's new"
+          icon={IconWhatsNew}
+          title="See what changed in each version"
+          onClick={() => openWhatsNew({ kind: 'history' })}
+        />
+      </Group>
+    </>
+  )
+
   const panels: Record<RibbonTab, ReactNode> = {
     file: (
       <Group label="App">
-        <RibbonButton label="About" icon={IconAbout} title="About StorageIQ" onClick={onAbout} />
         <RibbonButton
           label="Exit"
           icon={IconExit}
@@ -253,6 +306,7 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
         </Group>
       </>
     ),
+    help: helpPanel,
   }
 
   const active = TABS.find((entry) => entry.id === tab) ?? { id: 'home', label: 'Home' }
@@ -273,11 +327,15 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
             type="button"
             role="tab"
             aria-selected={tab === entry.id}
+            aria-label={entry.id === 'help' && updatePending ? 'Help, update available' : undefined}
             onClick={() => setTab(entry.id)}
             onFocus={() => setTab(entry.id)}
             className="relative min-h-6 rounded-control px-3 text-[13px] leading-[18px] font-medium text-ink-muted transition-colors duration-[120ms] after:absolute after:inset-x-2 after:bottom-0.5 after:h-0.5 after:rounded-[1px] after:bg-accent after:opacity-0 hover:bg-row-hover hover:text-ink aria-selected:font-semibold aria-selected:text-ink aria-selected:after:opacity-100 forced-colors:aria-selected:underline forced-colors:aria-selected:decoration-2 forced-colors:aria-selected:decoration-[Highlight] forced-colors:aria-selected:underline-offset-4"
           >
             {entry.label}
+            {entry.id === 'help' && updatePending && (
+              <NotificationDot className="top-0.5 right-0.5" />
+            )}
           </button>
         ))}
       </div>

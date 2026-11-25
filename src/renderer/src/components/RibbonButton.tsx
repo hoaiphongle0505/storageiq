@@ -17,6 +17,19 @@ export interface RibbonButtonProps {
   disabled?: boolean
   /** Tooltip; also the accessible description of what the command does. */
   title?: string
+  /** An update-available dot at the icon's top right; adds ", update available" to the name. */
+  badge?: boolean
+}
+
+/** The 8 px notification dot (decorative: the badge also extends the accessible name). */
+export function NotificationDot({ className = '' }: { className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      data-testid="notification-dot"
+      className={`pointer-events-none absolute size-2 rounded-full bg-accent forced-colors:bg-[Highlight] ${className}`}
+    />
+  )
 }
 
 /**
@@ -30,11 +43,13 @@ export function RibbonButton({
   pressed,
   disabled,
   title,
+  badge,
 }: RibbonButtonProps) {
   return (
     <button
       type="button"
       title={title}
+      aria-label={badge ? `${label}, update available` : undefined}
       aria-pressed={pressed}
       aria-disabled={disabled ? 'true' : undefined}
       onClick={() => {
@@ -42,7 +57,10 @@ export function RibbonButton({
       }}
       className={RIBBON_BUTTON_CLASS}
     >
-      <Icon aria-hidden="true" focusable={false} />
+      <span className="relative inline-flex">
+        <Icon aria-hidden="true" focusable={false} />
+        {badge && <NotificationDot className="-top-0.5 -right-1" />}
+      </span>
       <span>{label}</span>
     </button>
   )

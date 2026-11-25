@@ -15,6 +15,7 @@ export function Dialog({
   children: ReactNode
 }) {
   const ref = useRef<HTMLDialogElement>(null)
+  const closeRef = useRef<HTMLButtonElement>(null)
   const titleId = useId()
   // Captured during the first render, before the dialog moves focus (and once under StrictMode).
   const [opener] = useState<Element | null>(() => document.activeElement)
@@ -27,6 +28,8 @@ export function Dialog({
     } else {
       dialog.setAttribute('open', '')
     }
+    // Explicit, so the Close button has focus in every engine (jsdom ignores autoFocus here).
+    closeRef.current?.focus()
     return () => {
       // If the opener went away, fall back to the ribbon tab that is selected.
       const target =
@@ -53,7 +56,7 @@ export function Dialog({
         </h2>
         <div className="min-h-0 overflow-auto">{children}</div>
         <div className="flex justify-end">
-          <Button variant="secondary" onClick={onClose} autoFocus>
+          <Button ref={closeRef} variant="secondary" onClick={onClose} autoFocus>
             Close
           </Button>
         </div>

@@ -10,6 +10,7 @@ import {
   InvalidIpcArgumentsError,
   nodeArgs,
   noArgs,
+  aboutLinkArg,
   oneString,
   scanNodeArgs,
   scanNodesArgs,
@@ -30,6 +31,8 @@ const appInfo: AppInfo = {
   platform: 'win32',
   arch: 'x64',
   electronVersion: '38.0.0',
+  chromeVersion: '140.0.0',
+  channel: 'Stable',
 }
 
 function createHandlers(overrides: Partial<IpcHandlerMap> = {}): IpcHandlerMap {
@@ -53,6 +56,15 @@ function createHandlers(overrides: Partial<IpcHandlerMap> = {}): IpcHandlerMap {
     },
     'icons:for-types': { parseArgs: iconTypesArgs, handle: () => ({}) },
     'update:install': { parseArgs: noArgs, handle: () => undefined },
+    'update:get-state': { parseArgs: noArgs, handle: () => ({ kind: 'idle' }) },
+    'update:check': { parseArgs: noArgs, handle: () => ({ kind: 'idle' }) },
+    'update:download': { parseArgs: noArgs, handle: () => undefined },
+    'update:get-release-notes': { parseArgs: noArgs, handle: () => null },
+    'app:get-changelog': { parseArgs: noArgs, handle: () => [] },
+    'app:open-notices': { parseArgs: noArgs, handle: () => ({ opened: true }) },
+    'app:open-link': { parseArgs: aboutLinkArg, handle: () => undefined },
+    'app:get-whats-new-due': { parseArgs: noArgs, handle: () => null },
+    'app:mark-whats-new-seen': { parseArgs: noArgs, handle: () => undefined },
     'shell:open-in-explorer': { parseArgs: scanNodeArgs, handle: () => undefined },
     'shell:context-menu': { parseArgs: contextMenuArgs, handle: () => ({ kind: 'dismissed' }) },
     'folder:create': { parseArgs: scanNodeArgs, handle: () => ({ parentId: 'd0', name: 'x' }) },
@@ -94,7 +106,12 @@ describe('registerIpcHandlers', () => {
     const ipc = createFakeIpc()
     registerIpcHandlers(ipc, createHandlers(), isTrusted)
     expect([...ipc.listeners.keys()].sort()).toEqual([
+      'app:get-changelog',
       'app:get-info',
+      'app:get-whats-new-due',
+      'app:mark-whats-new-seen',
+      'app:open-link',
+      'app:open-notices',
       'app:quit',
       'clipboard:copy-path',
       'dialog:select-folder',
@@ -113,6 +130,10 @@ describe('registerIpcHandlers', () => {
       'tree:node',
       'tree:refresh',
       'treemap:layout',
+      'update:check',
+      'update:download',
+      'update:get-release-notes',
+      'update:get-state',
       'update:install',
     ])
   })
@@ -135,6 +156,34 @@ describe('registerIpcHandlers', () => {
     expect(parseArgs).not.toHaveBeenCalled()
     expect(handle).not.toHaveBeenCalled()
   })
+
+  it.each([
+    ['update:get-state', []],
+    ['update:check', []],
+    ['update:download', []],
+    ['update:get-release-notes', []],
+    ['app:get-changelog', []],
+    ['app:open-notices', []],
+    ['app:open-link', ['repo']],
+    ['app:get-whats-new-due', []],
+    ['app:mark-whats-new-seen', []],
+  ])(
+    'refuses an untrusted sender on every update and about channel (%s)',
+    async (channel, args) => {
+      const ipc = createFakeIpc()
+      const handle = vi.fn(() => undefined)
+      const parseArgs = vi.fn((a: readonly unknown[]) => a as never)
+      registerIpcHandlers(
+        ipc,
+        createHandlers({ [channel]: { parseArgs, handle } } as Partial<IpcHandlerMap>),
+        isTrusted,
+      )
+      await expect(call(ipc, channel, 'https://evil.example/', args)).rejects.toThrow(
+        UntrustedSenderError,
+      )
+      expect(handle).not.toHaveBeenCalled()
+    },
+  )
 
   it('refuses an untrusted sender on update:install', async () => {
     const ipc = createFakeIpc()

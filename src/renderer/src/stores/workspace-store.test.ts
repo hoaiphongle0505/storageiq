@@ -265,38 +265,92 @@ describe('a scan', () => {
 })
 
 describe('updates', () => {
-  it('update:ready sets updateReady', () => {
+  it('update:state events set updateState', () => {
     const api = createFakeApi()
     const store = createWorkspaceStore(api)
-    expect(store.getState().updateReady).toBeNull()
-    api.emitUpdateReady({ version: '0.2.0' })
-    expect(store.getState().updateReady).toEqual({ version: '0.2.0' })
+    expect(store.getState().updateState).toEqual({ kind: 'idle' })
+    api.emitUpdateState({ kind: 'available', version: '0.2.0' })
+    expect(store.getState().updateState).toEqual({ kind: 'available', version: '0.2.0' })
   })
 
-  it('installUpdate calls the api', async () => {
+  it('startup pulls the state and subscribes', async () => {
+    const api = createFakeApi({
+      getUpdateState: vi.fn(async () => ({ kind: 'ready' as const, version: '0.3.0' })),
+    })
+    const store = createWorkspaceStore(api)
+    expect(api.onUpdateState).toHaveBeenCalledTimes(1)
+    await flush()
+    expect(api.getUpdateState).toHaveBeenCalledTimes(1)
+    expect(store.getState().updateState).toEqual({ kind: 'ready', version: '0.3.0' })
+  })
+
+  it('dismissUpdate remembers the version and a newer version shows again', () => {
     const api = createFakeApi()
     const store = createWorkspaceStore(api)
+    api.emitUpdateState({ kind: 'available', version: '0.2.0' })
+    store.getState().dismissUpdate()
+    expect(store.getState().dismissedUpdateVersion).toBe('0.2.0')
+    api.emitUpdateState({ kind: 'available', version: '0.3.0' })
+    expect(store.getState().dismissedUpdateVersion).not.toBe('0.3.0')
+    // idle states cannot be dismissed
+    api.emitUpdateState({ kind: 'idle' })
+    store.getState().dismissUpdate()
+    expect(store.getState().dismissedUpdateVersion).toBe('0.2.0')
+  })
+
+  it('checkForUpdates, downloadUpdate and installUpdate call the api', async () => {
+    const api = createFakeApi()
+    const store = createWorkspaceStore(api)
+    await store.getState().checkForUpdates()
+    await store.getState().downloadUpdate()
     await store.getState().installUpdate()
+    expect(api.checkForUpdates).toHaveBeenCalledTimes(1)
+    expect(api.downloadUpdate).toHaveBeenCalledTimes(1)
     expect(api.installUpdate).toHaveBeenCalledTimes(1)
     expect(store.getState().banner).toBeNull()
   })
 
-  it('an install failure shows the error banner', async () => {
-    const api = createFakeApi({ installUpdate: vi.fn().mockRejectedValue(new Error('nope')) })
+  it('a failing update call does not throw', async () => {
+    const api = createFakeApi({
+      installUpdate: vi.fn().mockRejectedValue(new Error('nope')),
+      checkForUpdates: vi.fn().mockRejectedValue(new Error('nope')),
+      downloadUpdate: vi.fn().mockRejectedValue(new Error('nope')),
+      getUpdateState: vi.fn().mockRejectedValue(new Error('nope')),
+      getWhatsNewDue: vi.fn().mockRejectedValue(new Error('nope')),
+    })
     const store = createWorkspaceStore(api)
-    await store.getState().installUpdate()
+    await flush()
+    await expect(store.getState().installUpdate()).resolves.toBeUndefined()
     expect(store.getState().banner).toEqual({
       tone: 'error',
       message: actionError(new Error('nope')),
     })
+    await expect(store.getState().checkForUpdates()).resolves.toBeUndefined()
+    await expect(store.getState().downloadUpdate()).resolves.toBeUndefined()
   })
 
-  it('dismissUpdate clears updateReady', () => {
+  it("a due What's new entry opens once, marks it seen at once and is not opened twice", async () => {
+    const entry = { version: '0.2.0', date: null, sections: [] }
+    const api = createFakeApi({ getWhatsNewDue: vi.fn(async () => entry) })
+    const store = createWorkspaceStore(api)
+    await flush()
+    expect(store.getState().whatsNew).toEqual({ kind: 'installed', version: '0.2.0' })
+    expect(api.markWhatsNewSeen).toHaveBeenCalledTimes(1)
+    expect(api.getWhatsNewDue).toHaveBeenCalledTimes(1)
+    store.getState().closeWhatsNew()
+    expect(store.getState().whatsNew).toBeNull()
+    await flush()
+    expect(api.getWhatsNewDue).toHaveBeenCalledTimes(1)
+  })
+
+  it('no due entry opens nothing', async () => {
     const api = createFakeApi()
     const store = createWorkspaceStore(api)
-    api.emitUpdateReady({ version: '0.2.0' })
-    store.getState().dismissUpdate()
-    expect(store.getState().updateReady).toBeNull()
+    await flush()
+    expect(store.getState().whatsNew).toBeNull()
+    expect(api.markWhatsNewSeen).not.toHaveBeenCalled()
+    store.getState().openWhatsNew({ kind: 'history' })
+    expect(store.getState().whatsNew).toEqual({ kind: 'history' })
   })
 })
 

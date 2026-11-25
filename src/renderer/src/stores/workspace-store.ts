@@ -1,5 +1,12 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
-import type { ContextMenuOutcome, StorageIQApi, UpdateReady } from '@shared/ipc-contract'
+import type {
+  AboutLink,
+  ChangelogEntry,
+  ContextMenuOutcome,
+  ReleaseNotes,
+  StorageIQApi,
+  UpdateState,
+} from '@shared/ipc-contract'
 import type {
   DriveDetails,
   DriveInfo,
@@ -137,8 +144,12 @@ export interface WorkspaceState {
   /** The folder the treemap shows. */
   treemapRootId: NodeId | null
   banner: Banner | null
-  /** A downloaded update waiting for a restart; null when none or dismissed. */
-  updateReady: UpdateReady | null
+  /** The updater's state; main owns it, this mirrors it. */
+  updateState: UpdateState
+  /** The update version whose banner was dismissed (session memory only). */
+  dismissedUpdateVersion: string | null
+  /** The open What's new dialog, if any. */
+  whatsNew: WhatsNewTarget | null
   /** Short polite message for screen readers (copied, created, …). */
   announcement: string
   folderPickerOpen: boolean
@@ -174,9 +185,21 @@ export interface WorkspaceState {
   setTreemapDepth(depth: number): void
   setTreemapVisible(visible: boolean): void
   dismissBanner(): void
+  checkForUpdates(): Promise<void>
+  downloadUpdate(): Promise<void>
   installUpdate(): Promise<void>
-  /** Hides the update banner for this session. */
+  /** Hides the banner for the announced version; a newer version shows it again. */
   dismissUpdate(): void
+  openWhatsNew(target: WhatsNewTarget): void
+  closeWhatsNew(): void
+  /** Opens one of the fixed project links in the browser; main owns the URLs. */
+  openLink(link: AboutLink): Promise<void>
+  /** Opens the third-party notices file; false when it was not found. */
+  openNotices(): Promise<boolean>
+  /** The bundled changelog, newest first; empty when it cannot be read. */
+  loadChangelog(): Promise<ChangelogEntry[]>
+  /** Plain-text release notes of the announced update; rejects when the call fails. */
+  loadReleaseNotes(): Promise<ReleaseNotes | null>
   quit(): Promise<void>
 }
 
@@ -197,6 +220,10 @@ type ScanEvent =
   | { kind: 'progress'; payload: ScanProgress }
   | { kind: 'done'; payload: ScanDone }
   | { kind: 'failed'; payload: ScanFailed }
+
+/** What the What's new dialog shows. */
+export type WhatsNewTarget =
+  { kind: 'history' } | { kind: 'installed'; version: string } | { kind: 'update'; version: string }
 
 export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
   /** Events that arrived while `scan:start` was still in flight (scan ID not known yet). */
@@ -395,7 +422,9 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
       treemapDepth: DEFAULT_TREEMAP_DEPTH,
       treemapRootId: null,
       banner: null,
-      updateReady: null,
+      updateState: { kind: 'idle' },
+      dismissedUpdateVersion: null,
+      whatsNew: null,
       announcement: '',
       folderPickerOpen: false,
 
@@ -709,8 +738,65 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
         }
       },
 
+      async checkForUpdates() {
+        try {
+          // The reply and the pushed event carry the same state; the event keeps order.
+          set({ updateState: await api.checkForUpdates() })
+        } catch (error) {
+          fail(error)
+        }
+      },
+
+      async downloadUpdate() {
+        try {
+          await api.downloadUpdate()
+        } catch (error) {
+          fail(error)
+        }
+      },
+
       dismissUpdate() {
-        set({ updateReady: null })
+        const { updateState } = get()
+        if (updateState.kind === 'available' || updateState.kind === 'ready') {
+          set({ dismissedUpdateVersion: updateState.version })
+        }
+      },
+
+      openWhatsNew(target) {
+        set({ whatsNew: target })
+      },
+
+      closeWhatsNew() {
+        set({ whatsNew: null })
+      },
+
+      async openLink(link) {
+        try {
+          await api.openLink(link)
+        } catch (error) {
+          fail(error)
+        }
+      },
+
+      async openNotices() {
+        try {
+          return (await api.openNotices()).opened
+        } catch (error) {
+          fail(error)
+          return false
+        }
+      },
+
+      async loadChangelog() {
+        try {
+          return await api.getChangelog()
+        } catch {
+          return []
+        }
+      },
+
+      loadReleaseNotes() {
+        return api.getReleaseNotes()
       },
 
       async quit() {
@@ -887,14 +973,42 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
     }
   }
 
+  let pushedUpdateState = false
   const unsubscribers = [
     api.onScanProgress((payload) => applyEvent({ kind: 'progress', payload })),
     api.onScanDone((payload) => applyEvent({ kind: 'done', payload })),
     api.onScanFailed((payload) => applyEvent({ kind: 'failed', payload })),
     api.onScanRestarted(applyRestarted),
     api.onTreeChanged(applyTreeChanged),
-    api.onUpdateReady((ready) => store.setState({ updateReady: ready })),
+    api.onUpdateState((updateState) => {
+      pushedUpdateState = true
+      store.setState({ updateState })
+    }),
   ]
+
+  // Pull the current state after subscribing (a late reply cannot overwrite a newer push: both
+  // travel one ordered channel), then, once per session, open What's new when it is due. It is
+  // marked seen as it opens, so closing the app with the dialog open still counts as shown.
+  let whatsNewChecked = false
+  void (async () => {
+    try {
+      const pulled = await api.getUpdateState()
+      // A push that arrived meanwhile is newer than this reply.
+      if (!pushedUpdateState) store.setState({ updateState: pulled })
+    } catch {
+      // Stay idle: the state arrives with the next push.
+    }
+    if (whatsNewChecked) return
+    whatsNewChecked = true
+    try {
+      const due = await api.getWhatsNewDue()
+      if (due === null) return
+      await api.markWhatsNewSeen()
+      store.setState({ whatsNew: { kind: 'installed', version: due.version } })
+    } catch {
+      // A failed lookup shows nothing.
+    }
+  })()
 
   return Object.assign(store, {
     dispose() {

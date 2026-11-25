@@ -51,17 +51,43 @@ describe('preload bridge', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith('update:install')
   })
 
-  it('onUpdateReady subscribes to update:ready and returns an unsubscribe', () => {
+  it('each new method invokes its channel with the documented arguments', async () => {
+    const { ipcRenderer } = await import('electron')
+    const call = (name: string, ...args: unknown[]) =>
+      (exposed[name] as unknown as (...a: unknown[]) => Promise<unknown>)(...args)
+    await call('getUpdateState')
+    await call('checkForUpdates')
+    await call('downloadUpdate')
+    await call('getReleaseNotes')
+    await call('getChangelog')
+    await call('openNotices')
+    await call('openLink', 'issues')
+    await call('getWhatsNewDue')
+    await call('markWhatsNewSeen')
+    expect(vi.mocked(ipcRenderer.invoke).mock.calls).toEqual([
+      ['update:get-state'],
+      ['update:check'],
+      ['update:download'],
+      ['update:get-release-notes'],
+      ['app:get-changelog'],
+      ['app:open-notices'],
+      ['app:open-link', 'issues'],
+      ['app:get-whats-new-due'],
+      ['app:mark-whats-new-seen'],
+    ])
+  })
+
+  it('onUpdateState subscribes to update:state and returns an unsubscribe', () => {
     const received: unknown[] = []
     const unsubscribe = (
-      exposed['onUpdateReady'] as unknown as (cb: (p: unknown) => void) => () => void
+      exposed['onUpdateState'] as unknown as (cb: (p: unknown) => void) => () => void
     )((payload) => received.push(payload))
-    const [forward] = listeners.get('update:ready') ?? []
-    forward?.({ sender: 'leaky' }, { version: '0.2.0' })
-    expect(received).toEqual([{ version: '0.2.0' }])
+    const [forward] = listeners.get('update:state') ?? []
+    forward?.({ sender: 'leaky' }, { kind: 'available', version: '0.2.0' })
+    expect(received).toEqual([{ kind: 'available', version: '0.2.0' }])
 
     unsubscribe()
-    expect(listeners.get('update:ready')).toEqual([])
+    expect(listeners.get('update:state')).toEqual([])
   })
 
   it('sends the list of node ids for the menu and for copying paths', async () => {

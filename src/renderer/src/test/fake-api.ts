@@ -1,10 +1,11 @@
 import { vi } from 'vitest'
 import type {
   AppInfo,
+  ChangelogEntry,
   IconBatch,
   SelectFolderResult,
   StorageIQApi,
-  UpdateReady,
+  UpdateState,
 } from '@shared/ipc-contract'
 import type {
   DriveDetails,
@@ -33,7 +34,21 @@ export const TEST_APP_INFO: AppInfo = {
   platform: 'win32',
   arch: 'x64',
   electronVersion: '45.3.4',
+  chromeVersion: '150.0.7000.0',
+  channel: 'Stable',
 }
+
+export const TEST_CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '0.2.0-beta.1',
+    date: '2026-11-25',
+    sections: [
+      { title: 'Added', items: ['A workspace with a tree and a treemap.', 'A new logo.'] },
+      { title: 'Fixed', items: ['Deleted rows leave the tree.'] },
+    ],
+  },
+  { version: '0.1.0', date: null, sections: [{ title: 'Added', items: ['First release.'] }] },
+]
 
 const MB = 1024 ** 2
 const GB = 1024 ** 3
@@ -258,7 +273,7 @@ export interface FakeApi extends StorageIQApi {
   emitScanFailed(failed: ScanFailed): void
   emitScanRestarted(restarted: ScanRestarted): void
   emitTreeChanged(changed: TreeChanged): void
-  emitUpdateReady(ready: UpdateReady): void
+  emitUpdateState(state: UpdateState): void
   /** Subscribed event listeners across all channels. */
   listenerCount(): number
 }
@@ -285,7 +300,7 @@ export function createFakeApi(overrides: Partial<StorageIQApi> = {}): FakeApi {
   const failed = createChannel<ScanFailed>()
   const restarted = createChannel<ScanRestarted>()
   const changed = createChannel<TreeChanged>()
-  const updateReady = createChannel<UpdateReady>()
+  const updateState = createChannel<UpdateState>()
   return {
     getAppInfo: vi.fn(async () => TEST_APP_INFO),
     quit: vi.fn(async () => undefined),
@@ -316,20 +331,29 @@ export function createFakeApi(overrides: Partial<StorageIQApi> = {}): FakeApi {
     onScanRestarted: vi.fn(restarted.subscribe),
     onTreeChanged: vi.fn(changed.subscribe),
     installUpdate: vi.fn(async () => undefined),
-    onUpdateReady: vi.fn(updateReady.subscribe),
+    getUpdateState: vi.fn(async (): Promise<UpdateState> => ({ kind: 'idle' })),
+    checkForUpdates: vi.fn(async (): Promise<UpdateState> => ({ kind: 'idle' })),
+    downloadUpdate: vi.fn(async () => undefined),
+    getReleaseNotes: vi.fn(async () => null),
+    onUpdateState: vi.fn(updateState.subscribe),
+    getChangelog: vi.fn(async () => TEST_CHANGELOG),
+    openNotices: vi.fn(async () => ({ opened: true })),
+    openLink: vi.fn(async () => undefined),
+    getWhatsNewDue: vi.fn(async () => null),
+    markWhatsNewSeen: vi.fn(async () => undefined),
     ...overrides,
     emitScanProgress: progress.emit,
     emitScanDone: done.emit,
     emitScanFailed: failed.emit,
     emitScanRestarted: restarted.emit,
     emitTreeChanged: changed.emit,
-    emitUpdateReady: updateReady.emit,
+    emitUpdateState: updateState.emit,
     listenerCount: () =>
       progress.size() +
       done.size() +
       failed.size() +
       restarted.size() +
       changed.size() +
-      updateReady.size(),
+      updateState.size(),
   }
 }

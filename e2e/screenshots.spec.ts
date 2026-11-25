@@ -41,7 +41,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.getByRole('tab', { name: 'View' }).click()
       await ribbonButton(page, 'Treemap').click()
       await shot('5-view-tab-treemap-hidden')
-      await page.getByRole('tab', { name: 'File' }).click()
+      await page.getByRole('tab', { name: 'Help' }).click()
       await ribbonButton(page, 'About').click()
       await shot('6-about')
       await page.keyboard.press('Escape')

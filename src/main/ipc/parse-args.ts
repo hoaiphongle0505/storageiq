@@ -1,3 +1,4 @@
+import type { AboutLink } from '@shared/ipc-contract'
 import {
   MAX_PAGE_ROWS,
   MAX_TREEMAP_DEPTH,
@@ -219,4 +220,16 @@ export function iconTypesArgs(args: readonly unknown[]): [string[]] {
       return key
     }),
   ]
+}
+
+export const ABOUT_LINKS: readonly AboutLink[] = ['repo', 'license', 'releases', 'help', 'issues']
+
+/** `app:open-link`: exactly one of the five fixed keys (never a URL). */
+export function aboutLinkArg(args: readonly unknown[]): [AboutLink] {
+  expectCount(args, 1)
+  const [value] = args
+  if (typeof value !== 'string' || !ABOUT_LINKS.includes(value as AboutLink)) {
+    throw new InvalidIpcArgumentsError('expected a known link')
+  }
+  return [value as AboutLink]
 }

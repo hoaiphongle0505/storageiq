@@ -1,4 +1,5 @@
 import type { BrowserWindow, OpenDialogOptions, OpenDialogReturnValue } from 'electron'
+import { hasPrereleaseTag } from '../updater/updater'
 import { noArgs } from './parse-args'
 import type { IpcHandlerMap } from './register'
 
@@ -11,7 +12,7 @@ export interface AppHandlerDeps {
     ): Promise<OpenDialogReturnValue>
   }
   getMainWindow(): BrowserWindow | null
-  runtime: { platform: string; arch: string; electronVersion: string }
+  runtime: { platform: string; arch: string; electronVersion: string; chromeVersion: string }
   installUpdate(): void
 }
 
@@ -28,6 +29,7 @@ export function createAppHandlers(deps: AppHandlerDeps): AppHandlers {
         name: deps.app.getName(),
         version: deps.app.getVersion(),
         ...deps.runtime,
+        channel: hasPrereleaseTag(deps.app.getVersion()) ? 'Beta' : 'Stable',
       }),
     },
 

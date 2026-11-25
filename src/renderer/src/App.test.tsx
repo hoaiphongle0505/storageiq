@@ -54,16 +54,29 @@ describe('<App />', () => {
     expect(screen.getByRole('region', { name: 'Treemap' })).toBeInTheDocument()
   })
 
-  it('F5 scans the same location again; About opens from File', async () => {
+  it('F5 scans the same location again', async () => {
     const user = userEvent.setup()
     const { api, workspace } = renderWithStores(<App />)
     await act(() => workspace.getState().startScan('D:\\'))
     act(() => api.emitScanDone(makeDone()))
     await user.keyboard('{F5}')
     expect(api.startScan).toHaveBeenCalledTimes(2)
-    await user.click(screen.getByRole('tab', { name: 'File' }))
+  })
+
+  it('About opens from the Help tab', async () => {
+    const user = userEvent.setup()
+    renderWithStores(<App />)
+    await user.click(screen.getByRole('tab', { name: 'Help' }))
     await user.click(screen.getByRole('button', { name: 'About' }))
     expect(screen.getByRole('dialog', { name: 'About StorageIQ' })).toHaveTextContent('MIT license')
+  })
+
+  it("the What's new dialog opens from the banner", async () => {
+    const user = userEvent.setup()
+    const { api } = renderWithStores(<App />)
+    act(() => api.emitUpdateState({ kind: 'available', version: '0.3.0' }))
+    await user.click(screen.getByRole('button', { name: "What's new" }))
+    expect(screen.getByRole('dialog', { name: "What's new" })).toBeInTheDocument()
   })
 
   it('F5 does nothing while a key is held or a dialog is open', async () => {
@@ -73,7 +86,7 @@ describe('<App />', () => {
     act(() => api.emitScanDone(makeDone()))
     fireEvent.keyDown(window, { key: 'F5', repeat: true })
     expect(api.startScan).toHaveBeenCalledTimes(1)
-    await user.click(screen.getByRole('tab', { name: 'File' }))
+    await user.click(screen.getByRole('tab', { name: 'Help' }))
     await user.click(screen.getByRole('button', { name: 'About' }))
     fireEvent.keyDown(window, { key: 'F5' })
     expect(api.startScan).toHaveBeenCalledTimes(1)

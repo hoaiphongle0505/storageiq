@@ -18,6 +18,8 @@ beforePack: scripts/build-notices.cjs
 extraResources:
   - from: out/THIRD_PARTY_NOTICES.txt
     to: THIRD_PARTY_NOTICES.txt
+  - from: CHANGELOG.md
+    to: CHANGELOG.md
 
 asar: true
 

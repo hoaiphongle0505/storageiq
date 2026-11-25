@@ -36,7 +36,16 @@ const api: StorageIQApi = {
   onScanRestarted: (listener) => subscribe(ipcRenderer, 'scan:restarted', listener),
   onTreeChanged: (listener) => subscribe(ipcRenderer, 'tree:changed', listener),
   installUpdate: () => invoke('update:install'),
-  onUpdateReady: (listener) => subscribe(ipcRenderer, 'update:ready', listener),
+  getUpdateState: () => invoke('update:get-state'),
+  checkForUpdates: () => invoke('update:check'),
+  downloadUpdate: () => invoke('update:download'),
+  getReleaseNotes: () => invoke('update:get-release-notes'),
+  onUpdateState: (listener) => subscribe(ipcRenderer, 'update:state', listener),
+  getChangelog: () => invoke('app:get-changelog'),
+  openNotices: () => invoke('app:open-notices'),
+  openLink: (link) => invoke('app:open-link', link),
+  getWhatsNewDue: () => invoke('app:get-whats-new-due'),
+  markWhatsNewSeen: () => invoke('app:mark-whats-new-seen'),
 }
 
 contextBridge.exposeInMainWorld('storageiq', api)

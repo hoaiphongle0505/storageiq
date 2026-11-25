@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, open, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Worker } from 'node:worker_threads'
 import {
@@ -28,6 +28,8 @@ import { createKoffiDriveApi } from './drives/koffi-drive-api'
 import { listDrives } from './drives/list-drives'
 import { createIconService, type IconService, type IconWorkerLike } from './icons/icon-service'
 import { ICON_WORKER_DATA } from './icons/icon-worker-protocol'
+import { createWhatsNewStore } from './about/whats-new-store'
+import { createAboutHandlers } from './ipc/about-handlers'
 import { createAppHandlers } from './ipc/app-handlers'
 import { createDriveHandlers } from './ipc/drive-handlers'
 import { createIconHandlers } from './ipc/icon-handlers'
@@ -52,6 +54,7 @@ import {
 } from './shell-menu/shell-worker-pool'
 import type { WorkerLike } from './shell-menu/shell-worker-pool'
 import { SHELL_WORKER_DATA } from './shell-menu/shell-worker-protocol'
+import { createUpdateHandlers } from './ipc/update-handlers'
 import { createUpdater, type Updater } from './updater/updater'
 import { createMainWindow } from './window'
 
@@ -67,6 +70,27 @@ const shellWorkerPath = path.join(__dirname, 'shell-worker.js')
 const iconWorkerPath = path.join(__dirname, 'icon-worker.js')
 const devServerUrl = app.isPackaged ? undefined : process.env['ELECTRON_RENDERER_URL']
 const isTrustedUrl = (url: string) => isTrustedRendererUrl(url, { rendererRoot, devServerUrl })
+
+/** CHANGELOG.md and THIRD_PARTY_NOTICES.txt: in resources/ when packaged, else in the project. */
+const changelogPath = app.isPackaged
+  ? path.join(process.resourcesPath, 'CHANGELOG.md')
+  : path.join(app.getAppPath(), 'CHANGELOG.md')
+const noticesPath = app.isPackaged
+  ? path.join(process.resourcesPath, 'THIRD_PARTY_NOTICES.txt')
+  : path.join(app.getAppPath(), 'out', 'THIRD_PARTY_NOTICES.txt')
+const MAX_CHANGELOG_BYTES = 256 * 1024
+
+/** Reads at most max bytes of a text file (a larger file is cut, not refused). */
+async function readBounded(file: string, max: number): Promise<string> {
+  const handle = await open(file, 'r')
+  try {
+    const buffer = Buffer.alloc(max)
+    const { bytesRead } = await handle.read(buffer, 0, max, 0)
+    return buffer.subarray(0, bytesRead).toString('utf8')
+  } finally {
+    await handle.close()
+  }
+}
 
 let mainWindow: BrowserWindow | null = null
 let quitting = false
@@ -390,8 +414,35 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
             platform: process.platform,
             arch: process.arch,
             electronVersion: process.versions.electron,
+            chromeVersion: process.versions.chrome,
           },
           installUpdate: () => updater?.install(),
+        }),
+        ...createUpdateHandlers({
+          getUpdateState: () => updater?.state ?? { kind: 'idle' },
+          checkForUpdates: () => updater?.checkNow() ?? { kind: 'idle' },
+          downloadUpdate: () => updater?.download(),
+          getReleaseNotes: () => updater?.releaseNotes ?? null,
+        }),
+        ...createAboutHandlers({
+          version: app.getVersion(),
+          readChangelog: () => readBounded(changelogPath, MAX_CHANGELOG_BYTES),
+          store: createWhatsNewStore({
+            filePath: path.join(app.getPath('userData'), 'whats-new.json'),
+            readFile: (file) => readFile(file, 'utf8'),
+            writeFile: (file, text) => writeFile(file, text, 'utf8'),
+            rename,
+            log: (message, error) => console.warn(message, error),
+          }),
+          noticesPath,
+          fileExists: (file) =>
+            stat(file).then(
+              (info) => info.isFile(),
+              () => false,
+            ),
+          openPath: (file) => shell.openPath(file),
+          openExternal: (url) => shell.openExternal(url),
+          log: (message, error) => console.warn(message, error),
         }),
         ...createScanHandlers({
           scanService,
@@ -482,9 +533,9 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
         log: (message, error) => console.warn(message, error),
       })
       updater.start()
-      // A page that loads after the download finished still gets the banner.
+      // A page that loads while an update is announced or downloading still gets its state.
       mainWindow.webContents.on('did-finish-load', () => {
-        if (updater?.ready) sendEvent('update:ready', updater.ready)
+        if (updater && updater.state.kind !== 'idle') sendEvent('update:state', updater.state)
       })
     })
     .catch(reportStartupError)

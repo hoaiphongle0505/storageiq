@@ -1,5 +1,7 @@
 import {
+  ArrowCircleDown24Regular,
   ArrowSync24Color,
+  Bug24Regular,
   CheckmarkCircle16Color,
   ChevronDown12Regular,
   ChevronRight16Regular,
@@ -26,7 +28,9 @@ import {
   HardDrive24Regular,
   Info16Regular,
   Info24Regular,
+  QuestionCircle24Regular,
   SignOut24Regular,
+  Sparkle24Regular,
   Stop24Regular,
   TextBulletListTree24Regular,
   Usb20Regular,
@@ -87,6 +91,10 @@ export const IconOpenFolder = folderTint(FolderOpen24Filled)
 export const IconNewFolder = folderTint(FolderAdd24Filled)
 export const IconAbout = Info24Regular
 export const IconExit = SignOut24Regular
+export const IconHelp = QuestionCircle24Regular
+export const IconReportProblem = Bug24Regular
+export const IconCheckUpdates = ArrowCircleDown24Regular
+export const IconWhatsNew = Sparkle24Regular
 export const IconTreemap = DataTreemap24Regular
 
 // Menus (20)

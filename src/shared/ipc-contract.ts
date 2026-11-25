@@ -26,15 +26,40 @@ export interface AppInfo {
   platform: string
   arch: string
   electronVersion: string
+  chromeVersion: string
+  /** `Beta` when the version has a pre-release tag, else `Stable`. */
+  channel: 'Beta' | 'Stable'
 }
 
 /** Outcome of the native "choose a folder" dialog. */
 export type SelectFolderResult = { canceled: true } | { canceled: false; path: string }
 
-/** An update has been downloaded and installs on restart (main → renderer). */
-export interface UpdateReady {
-  version: string
+/** Where the updater stands; main owns it, the renderer only reads it. */
+export type UpdateState =
+  | { kind: 'idle' }
+  | { kind: 'checking' }
+  | { kind: 'up-to-date' }
+  | { kind: 'unavailable'; message: string } // unpackaged or self-test run
+  | { kind: 'available'; version: string }
+  | { kind: 'downloading'; version: string; percent: number } // integer 0..100
+  | { kind: 'ready'; version: string }
+  | { kind: 'error'; message: string }
+
+export interface ChangelogSection {
+  title: string
+  items: string[]
 }
+
+export interface ChangelogEntry {
+  version: string
+  date: string | null
+  sections: ChangelogSection[]
+}
+
+/** The only links the renderer may ask main to open; main owns the URLs. */
+export type AboutLink = 'repo' | 'license' | 'releases' | 'help' | 'issues'
+
+export type ReleaseNotes = { version: string; text: string | null }
 
 /** What the native context menu did, so the renderer can follow up. */
 export type ContextMenuOutcome =
@@ -131,6 +156,15 @@ export interface IpcContract {
   'icons:for-nodes': { args: [scanId: string, nodeIds: NodeId[]]; result: IconBatch }
   'icons:for-types': { args: [typeKeys: string[]]; result: Record<string, IconImage> }
   'update:install': { args: []; result: void }
+  'update:get-state': { args: []; result: UpdateState }
+  'update:check': { args: []; result: UpdateState }
+  'update:download': { args: []; result: void }
+  'update:get-release-notes': { args: []; result: ReleaseNotes | null }
+  'app:get-changelog': { args: []; result: ChangelogEntry[] }
+  'app:open-notices': { args: []; result: { opened: boolean } }
+  'app:open-link': { args: [link: AboutLink]; result: void }
+  'app:get-whats-new-due': { args: []; result: ChangelogEntry | null }
+  'app:mark-whats-new-seen': { args: []; result: void }
 }
 
 export type IpcChannel = keyof IpcContract
@@ -144,7 +178,7 @@ export interface IpcEventContract {
   'scan:failed': ScanFailed
   'scan:restarted': ScanRestarted
   'tree:changed': TreeChanged
-  'update:ready': UpdateReady
+  'update:state': UpdateState
 }
 
 export type IpcEventChannel = keyof IpcEventContract
@@ -226,8 +260,26 @@ export interface StorageIQApi {
   /** Main started a new scan of the same root; sent before any progress for the new scanId. */
   onScanRestarted(listener: (restarted: ScanRestarted) => void): Unsubscribe
   onTreeChanged(listener: (changed: TreeChanged) => void): Unsubscribe
+  /** The updater's current state (pull once, then follow `onUpdateState`). */
+  getUpdateState(): Promise<UpdateState>
+  /** Starts a manual update check; ignored while one is running or an update is found. */
+  checkForUpdates(): Promise<UpdateState>
+  /** Downloads the found update; ignored unless one is available. */
+  downloadUpdate(): Promise<void>
   /** Restarts the app to install the downloaded update; ignored when none is ready. */
   installUpdate(): Promise<void>
-  /** An update finished downloading; also re-sent when the page reloads after that. */
-  onUpdateReady(listener: (ready: UpdateReady) => void): Unsubscribe
+  /** Release notes (plain text) of the update that was found; null when there is none. */
+  getReleaseNotes(): Promise<ReleaseNotes | null>
+  /** Every state change; also re-sent when the page reloads while not idle. */
+  onUpdateState(listener: (state: UpdateState) => void): Unsubscribe
+  /** The bundled CHANGELOG.md, newest first (at most 10 entries). */
+  getChangelog(): Promise<ChangelogEntry[]>
+  /** Opens the third-party notices file with the default app. */
+  openNotices(): Promise<{ opened: boolean }>
+  /** Opens one of the fixed project links in the default browser. */
+  openLink(link: AboutLink): Promise<void>
+  /** The changelog entry to show once after an update; null when nothing is due. */
+  getWhatsNewDue(): Promise<ChangelogEntry | null>
+  /** Records that the running version's What's new was shown. */
+  markWhatsNewSeen(): Promise<void>
 }

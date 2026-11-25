@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Banner } from './components/Banner'
-import { Dialog } from './components/Dialog'
+import { AboutDialog } from './components/AboutDialog'
 import { Ribbon } from './components/Ribbon'
 import { Splitter } from './components/Splitter'
 import { StatusBar } from './components/StatusBar'
 import { TreeGrid } from './components/TreeGrid'
 import { TreemapPane } from './components/TreemapPane'
 import { UpdateBanner } from './components/UpdateBanner'
+import { WhatsNewDialog } from './components/WhatsNewDialog'
 import { useAppStore } from './stores/app-store-context'
 import { useWorkspace } from './stores/workspace-store-context'
 
@@ -19,10 +20,10 @@ const TREE_RESERVED_HEIGHT = 340
 /** The analyzer workspace: ribbon, column tree, treemap pane and status bar, top to bottom. */
 export function App() {
   const loadAppInfo = useAppStore((s) => s.loadAppInfo)
-  const appInfo = useAppStore((s) => s.appInfo)
   const loadMenuData = useWorkspace((s) => s.loadMenuData)
   const treemapVisible = useWorkspace((s) => s.treemapVisible)
   const rescan = useWorkspace((s) => s.rescan)
+  const whatsNew = useWorkspace((s) => s.whatsNew)
   const [treemapHeight, setTreemapHeight] = useState(TREEMAP_DEFAULT_HEIGHT)
   const [aboutOpen, setAboutOpen] = useState(false)
   const [windowHeight, setWindowHeight] = useState(() => window.innerHeight)
@@ -77,14 +78,8 @@ export function App() {
         )}
       </main>
       <StatusBar />
-      {aboutOpen && (
-        <Dialog title="About StorageIQ" onClose={() => setAboutOpen(false)}>
-          <p>StorageIQ {appInfo?.version ?? ''}</p>
-          <p className="text-ink-muted">
-            Shows where your disk space went. Free and open source under the MIT license.
-          </p>
-        </Dialog>
-      )}
+      {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
+      {whatsNew !== null && <WhatsNewDialog target={whatsNew} />}
     </div>
   )
 }
