@@ -61,6 +61,33 @@ describe('<WhatsNewDialog />', () => {
     expect(notes?.textContent).toBe(text)
   })
 
+  it('update ignores notes of another version', async () => {
+    const api = createFakeApi({
+      getReleaseNotes: vi.fn(async () => ({ version: '0.4.0', text: 'Other notes' })),
+    })
+    await renderDialog({ kind: 'update', version: '0.3.0' }, api)
+    expect(dialog()).not.toHaveTextContent('Other notes')
+    expect(screen.getByRole('button', { name: 'View release page' })).toBeInTheDocument()
+  })
+
+  it('renders two sections with the same title without duplicate-key errors', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const api = createFakeApi({
+      getChangelog: vi.fn(async () => [
+        {
+          version: '1.0.0',
+          date: null,
+          sections: [
+            { title: 'Added', items: ['a'] },
+            { title: 'Added', items: ['b'] },
+          ],
+        },
+      ]),
+    })
+    await renderDialog({ kind: 'history' }, api)
+    expect(error).not.toHaveBeenCalled()
+  })
+
   it('update with null text falls back to the release page button', async () => {
     const api = createFakeApi({ getReleaseNotes: vi.fn(async () => null) })
     await renderDialog({ kind: 'update', version: '0.3.0' }, api)

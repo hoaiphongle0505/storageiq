@@ -313,7 +313,14 @@ function reportStartupError(error: unknown): void {
 
 // Dev and E2E runs get their own userData folder (and so their own single-instance lock).
 if (!app.isPackaged) {
-  app.setPath('userData', path.join(app.getPath('appData'), 'StorageIQ-dev'))
+  // E2E launches pass a fresh folder, so a persistent profile never leaks state between runs.
+  const testUserData = process.env['STORAGEIQ_TEST_USER_DATA']
+  app.setPath(
+    'userData',
+    testUserData !== undefined && process.env['STORAGEIQ_TEST_HOOKS'] === '1'
+      ? testUserData
+      : path.join(app.getPath('appData'), 'StorageIQ-dev'),
+  )
 }
 
 if (process.argv.includes(SELF_TEST_FLAG)) {

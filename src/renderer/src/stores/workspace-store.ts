@@ -150,6 +150,8 @@ export interface WorkspaceState {
   dismissedUpdateVersion: string | null
   /** The open What's new dialog, if any. */
   whatsNew: WhatsNewTarget | null
+  /** A download error the user chose to hide with Later (cleared when the state changes). */
+  dismissedDownloadError: boolean
   /** Short polite message for screen readers (copied, created, …). */
   announcement: string
   folderPickerOpen: boolean
@@ -425,6 +427,7 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
       updateState: { kind: 'idle' },
       dismissedUpdateVersion: null,
       whatsNew: null,
+      dismissedDownloadError: false,
       announcement: '',
       folderPickerOpen: false,
 
@@ -740,8 +743,8 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
 
       async checkForUpdates() {
         try {
-          // The reply and the pushed event carry the same state; the event keeps order.
-          set({ updateState: await api.checkForUpdates() })
+          // The state arrives as a pushed event; the reply is not used.
+          await api.checkForUpdates()
         } catch (error) {
           fail(error)
         }
@@ -759,6 +762,8 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
         const { updateState } = get()
         if (updateState.kind === 'available' || updateState.kind === 'ready') {
           set({ dismissedUpdateVersion: updateState.version })
+        } else if (updateState.kind === 'error' && updateState.during === 'download') {
+          set({ dismissedDownloadError: true })
         }
       },
 
@@ -982,14 +987,18 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
     api.onTreeChanged(applyTreeChanged),
     api.onUpdateState((updateState) => {
       pushedUpdateState = true
-      store.setState({ updateState })
+      store.setState(
+        updateState.kind === 'error'
+          ? { updateState }
+          : { updateState, dismissedDownloadError: false },
+      )
     }),
   ]
 
   // Pull the current state after subscribing (a late reply cannot overwrite a newer push: both
-  // travel one ordered channel), then, once per session, open What's new when it is due. It is
-  // marked seen as it opens, so closing the app with the dialog open still counts as shown.
-  let whatsNewChecked = false
+  // are applied last-writer-wins and a push beats the reply), then open What's new when main says
+  // it is due. It is marked seen as it opens, so closing the app with the dialog open still counts
+  // as shown, and a re-init asks main again and gets nothing.
   void (async () => {
     try {
       const pulled = await api.getUpdateState()
@@ -998,8 +1007,6 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
     } catch {
       // Stay idle: the state arrives with the next push.
     }
-    if (whatsNewChecked) return
-    whatsNewChecked = true
     try {
       const due = await api.getWhatsNewDue()
       if (due === null) return

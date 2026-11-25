@@ -71,6 +71,16 @@ describe('<App />', () => {
     expect(screen.getByRole('dialog', { name: 'About StorageIQ' })).toHaveTextContent('MIT license')
   })
 
+  it("What's new does not stack over About", async () => {
+    const user = userEvent.setup()
+    const { workspace } = renderWithStores(<App />)
+    await user.click(screen.getByRole('tab', { name: 'Help' }))
+    await user.click(screen.getByRole('button', { name: 'About' }))
+    act(() => workspace.getState().openWhatsNew({ kind: 'installed', version: '0.2.0' }))
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    expect(screen.getByRole('dialog', { name: 'About StorageIQ' })).toBeInTheDocument()
+  })
+
   it("the What's new dialog opens from the banner", async () => {
     const user = userEvent.setup()
     const { api } = renderWithStores(<App />)

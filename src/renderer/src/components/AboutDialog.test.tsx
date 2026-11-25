@@ -64,7 +64,11 @@ describe('<AboutDialog />', () => {
     expect(status()).toHaveTextContent('You have the latest version.')
     show(api, { kind: 'unavailable', message: 'Updates are available in the installed app.' })
     expect(status()).toHaveTextContent('Updates are available in the installed app.')
-    show(api, { kind: 'error', message: 'Could not check for updates. Try again.' })
+    show(api, {
+      kind: 'error',
+      message: 'Could not check for updates. Try again.',
+      during: 'check',
+    })
     expect(status()).toHaveTextContent('Could not check for updates. Try again.')
     expect(within(status()).getByRole('button', { name: 'Check for updates' })).toBeInTheDocument()
   })
@@ -76,7 +80,7 @@ describe('<AboutDialog />', () => {
     expect(status()).toHaveTextContent('StorageIQ 0.3.0 is available.')
     await user.click(within(status()).getByRole('button', { name: 'Update' }))
     expect(api.downloadUpdate).toHaveBeenCalledTimes(1)
-    await user.click(within(status()).getByRole('button', { name: "What's new" }))
+    await user.click(within(status()).getByRole('button', { name: "What's new in 0.3.0" }))
     expect(onClose).toHaveBeenCalled()
     expect(workspace.getState().whatsNew).toEqual({ kind: 'update', version: '0.3.0' })
   })
@@ -90,6 +94,18 @@ describe('<AboutDialog />', () => {
       '57',
     )
     expect(within(status()).queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('keeps focus inside About when Update starts the download, then moves it to Restart', async () => {
+    const user = userEvent.setup()
+    const { api } = await renderAbout()
+    show(api, { kind: 'available', version: '0.3.0' })
+    await user.click(within(status()).getByRole('button', { name: 'Update' }))
+    show(api, { kind: 'downloading', version: '0.3.0', percent: 2 })
+    expect(document.activeElement).not.toBe(document.body)
+    expect(dialog()).toContainElement(document.activeElement as HTMLElement)
+    show(api, { kind: 'ready', version: '0.3.0' })
+    expect(screen.getByRole('button', { name: 'Restart to update' })).toHaveFocus()
   })
 
   it('ready offers Restart to update', async () => {

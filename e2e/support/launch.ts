@@ -1,3 +1,5 @@
+import { mkdtempSync } from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 
@@ -22,7 +24,12 @@ export interface LaunchedApp {
 
 /** Launches the built app with the console/CSP capture hook loaded before the main script. */
 export async function launchApp(): Promise<LaunchedApp> {
-  const app = await electron.launch({ args: ['-r', captureHook, '.'], env: launchEnv })
+  // A fresh profile per launch: no stored What's new state or recent scans from earlier runs.
+  const userData = mkdtempSync(path.join(os.tmpdir(), 'storageiq-e2e-profile-'))
+  const app = await electron.launch({
+    args: ['-r', captureHook, '.'],
+    env: { ...launchEnv, STORAGEIQ_TEST_USER_DATA: userData },
+  })
   const page = await app.firstWindow()
   return { app, page }
 }

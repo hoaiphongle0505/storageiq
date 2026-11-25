@@ -79,7 +79,7 @@ export function App() {
       </main>
       <StatusBar />
       {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
-      {whatsNew !== null && <WhatsNewDialog target={whatsNew} />}
+      {whatsNew !== null && !aboutOpen && <WhatsNewDialog target={whatsNew} />}
     </div>
   )
 }

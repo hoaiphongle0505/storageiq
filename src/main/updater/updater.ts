@@ -106,9 +106,9 @@ export function createUpdater(deps: UpdaterDeps): Updater {
     deps.log('Update failed', error)
     if (state.kind === 'checking') {
       clearTimeoutGuard()
-      setState(manual ? { kind: 'error', message: CHECK_ERROR } : { kind: 'idle' })
+      setState(manual ? { kind: 'error', message: CHECK_ERROR, during: 'check' } : { kind: 'idle' })
     } else if (state.kind === 'downloading') {
-      setState({ kind: 'error', message: DOWNLOAD_ERROR })
+      setState({ kind: 'error', message: DOWNLOAD_ERROR, during: 'download' })
     }
   }
 
@@ -152,6 +152,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
       })
       autoUpdater.on('download-progress', (progress) => {
         if (state.kind !== 'downloading') return
+        if (!Number.isFinite(progress.percent)) return
         const percent = Math.min(100, Math.max(0, Math.round(progress.percent)))
         setState({ kind: 'downloading', version: state.version, percent })
       })
@@ -172,12 +173,11 @@ export function createUpdater(deps: UpdaterDeps): Updater {
         setState({ kind: 'unavailable', message: UNAVAILABLE })
         return state
       }
-      if (
-        state.kind === 'checking' ||
-        state.kind === 'downloading' ||
-        state.kind === 'available' ||
-        state.kind === 'ready'
-      ) {
+      if (state.kind === 'checking') {
+        manual = true // the user's intent surfaces the result of a check already running
+        return state
+      }
+      if (state.kind === 'downloading' || state.kind === 'available' || state.kind === 'ready') {
         return state
       }
       beginCheck(true)

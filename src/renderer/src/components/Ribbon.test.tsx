@@ -221,6 +221,12 @@ describe('<Ribbon />', () => {
     }
   })
 
+  it('the dot stays while a download error is shown', async () => {
+    const { api } = renderRibbon()
+    act(() => api.emitUpdateState({ kind: 'error', message: 'x', during: 'download' }))
+    expect(screen.getByRole('tab', { name: 'Help, update available' })).toBeInTheDocument()
+  })
+
   it('no dot when idle, checking, up-to-date or error', async () => {
     const user = userEvent.setup()
     const { api } = renderRibbon()
@@ -228,7 +234,7 @@ describe('<Ribbon />', () => {
       { kind: 'idle' as const },
       { kind: 'checking' as const },
       { kind: 'up-to-date' as const },
-      { kind: 'error' as const, message: 'x' },
+      { kind: 'error' as const, message: 'x', during: 'check' as const },
     ]) {
       act(() => api.emitUpdateState(state))
       await user.click(screen.getByRole('tab', { name: 'Help' }))

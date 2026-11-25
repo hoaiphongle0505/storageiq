@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { useUpdateFocus } from '../lib/use-update-focus'
 import { useAppStore } from '../stores/app-store-context'
 import { useWorkspace } from '../stores/workspace-store-context'
 import { AppLogo } from './AppLogo'
@@ -19,6 +20,9 @@ export function AboutDialog({ onClose }: { onClose(): void }) {
   const openLink = useWorkspace((s) => s.openLink)
   const openNotices = useWorkspace((s) => s.openNotices)
   const [noticeMessage, setNoticeMessage] = useState('')
+  const statusRef = useRef<HTMLDivElement>(null)
+  const restartRef = useRef<HTMLButtonElement>(null)
+  const keepFocus = useUpdateFocus(updateState.kind, statusRef, restartRef)
 
   const state = updateState
   const checkButton = (
@@ -57,7 +61,12 @@ export function AboutDialog({ onClose }: { onClose(): void }) {
           Shows where your disk space went. Free and open source under the MIT license.
         </p>
 
-        <div role="status" className="flex flex-wrap items-center gap-3">
+        <div
+          ref={statusRef}
+          role="status"
+          tabIndex={-1}
+          className="flex flex-wrap items-center gap-3 outline-none"
+        >
           {state.kind === 'checking' && <p className="text-sm">Checking for updates…</p>}
           {state.kind === 'up-to-date' && <p className="text-sm">You have the latest version.</p>}
           {(state.kind === 'unavailable' || state.kind === 'error') && (
@@ -83,7 +92,14 @@ export function AboutDialog({ onClose }: { onClose(): void }) {
             checkButton}
           {state.kind === 'available' && (
             <>
-              <Button onClick={() => void downloadUpdate()}>Update</Button>
+              <Button
+                onClick={() => {
+                  keepFocus()
+                  void downloadUpdate()
+                }}
+              >
+                Update
+              </Button>
               <Button
                 variant="quiet"
                 onClick={() => {
@@ -91,12 +107,14 @@ export function AboutDialog({ onClose }: { onClose(): void }) {
                   openWhatsNew({ kind: 'update', version: state.version })
                 }}
               >
-                What&apos;s new
+                What&apos;s new in {state.version}
               </Button>
             </>
           )}
           {state.kind === 'ready' && (
-            <Button onClick={() => void installUpdate()}>Restart to update</Button>
+            <Button ref={restartRef} onClick={() => void installUpdate()}>
+              Restart to update
+            </Button>
           )}
         </div>
 

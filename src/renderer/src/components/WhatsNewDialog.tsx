@@ -21,8 +21,8 @@ function Entry({ entry }: { entry: ChangelogEntry }) {
   return (
     <section className="flex flex-col gap-2">
       <h3 className="text-sm font-semibold text-ink">{entryHeading(entry)}</h3>
-      {entry.sections.map((section) => (
-        <div key={section.title}>
+      {entry.sections.map((section, index) => (
+        <div key={index}>
           <h4 className="text-xs font-semibold text-ink-muted">{section.title}</h4>
           <ul className="list-disc pl-5 text-sm text-ink">
             {section.items.map((item, index) => (
@@ -53,7 +53,7 @@ export function WhatsNewDialog({ target }: { target: WhatsNewTarget }) {
         (notes) => {
           if (!current) return
           setContent(
-            notes?.text
+            notes?.text && notes.version === version
               ? { kind: 'notes', text: notes.text }
               : { kind: 'page', message: 'Release notes are on the release page.' },
           )

@@ -109,9 +109,12 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
   const checkForUpdates = useWorkspace((s) => s.checkForUpdates)
   const openLink = useWorkspace((s) => s.openLink)
   const openWhatsNew = useWorkspace((s) => s.openWhatsNew)
-  const updateKind = useWorkspace((s) => s.updateState.kind)
+  const updateState = useWorkspace((s) => s.updateState)
   const updatePending =
-    updateKind === 'available' || updateKind === 'downloading' || updateKind === 'ready'
+    updateState.kind === 'available' ||
+    updateState.kind === 'downloading' ||
+    updateState.kind === 'ready' ||
+    (updateState.kind === 'error' && updateState.during === 'download')
 
   const scanning = phase === 'scanning'
   const hasTree = phase !== 'empty' && phase !== 'failed'

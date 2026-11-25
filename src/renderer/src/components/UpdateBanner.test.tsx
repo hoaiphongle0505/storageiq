@@ -74,11 +74,48 @@ describe('<UpdateBanner />', () => {
       { kind: 'checking' as const },
       { kind: 'up-to-date' as const },
       { kind: 'unavailable' as const, message: 'm' },
-      { kind: 'error' as const, message: 'Could not check' },
+      { kind: 'error' as const, message: 'Could not check', during: 'check' as const },
     ]) {
       act(() => api.emitUpdateState(state))
       expect(container).toBeEmptyDOMElement()
     }
+  })
+
+  it('a download error shows the message and Try again, and Later hides it', async () => {
+    const user = userEvent.setup()
+    const { api, container } = renderWithStores(<UpdateBanner />)
+    act(() =>
+      api.emitUpdateState({
+        kind: 'error',
+        message: 'Could not download the update. Try again.',
+        during: 'download',
+      }),
+    )
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Could not download the update. Try again.',
+    )
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(api.checkForUpdates).toHaveBeenCalledTimes(1)
+    await user.click(screen.getByRole('button', { name: 'Later' }))
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('keeps focus in the banner when Update starts the download, then moves it to Restart', async () => {
+    const user = userEvent.setup()
+    const { api } = renderWithStores(<UpdateBanner />)
+    act(() => api.emitUpdateState(available))
+    await user.click(screen.getByRole('button', { name: 'Update' }))
+    act(() => api.emitUpdateState({ kind: 'downloading', version: '0.2.0', percent: 1 }))
+    expect(document.activeElement).not.toBe(document.body)
+    expect(screen.getByRole('status')).toContainElement(document.activeElement as HTMLElement)
+    act(() => api.emitUpdateState({ kind: 'ready', version: '0.2.0' }))
+    expect(screen.getByRole('button', { name: 'Restart to update' })).toHaveFocus()
+  })
+
+  it('does not take focus when nothing in the banner was used', () => {
+    const { api } = renderWithStores(<UpdateBanner />)
+    act(() => api.emitUpdateState({ kind: 'downloading', version: '0.2.0', percent: 1 }))
+    expect(document.activeElement).toBe(document.body)
   })
 
   it('the progress text changes once per ten percent', () => {

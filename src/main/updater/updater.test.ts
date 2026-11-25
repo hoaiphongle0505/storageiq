@@ -195,8 +195,35 @@ describe('createUpdater', () => {
     updater.download()
     fake.emit('update-downloaded', { version: '0.3.0' })
     expect(updater.state).toEqual({ kind: 'ready', version: '0.3.0' })
+    // Every timer (the interval and any guard) is cancelled, not just ignored by the tick.
+    expect(vi.getTimerCount()).toBe(0)
     await vi.advanceTimersByTimeAsync(12 * HOUR)
     expect(fake.check).toHaveBeenCalledTimes(1)
+  })
+
+  it('a manual check pressed during a background check surfaces that check\u2019s error', async () => {
+    const { updater, fake } = setup()
+    updater.start()
+    let reject: (error: Error) => void = () => undefined
+    fake.check.mockReturnValueOnce(
+      new Promise((_resolve, rej) => {
+        reject = rej
+      }),
+    )
+    await vi.advanceTimersByTimeAsync(UPDATE_FIRST_CHECK_DELAY_MS)
+    expect(updater.state).toEqual({ kind: 'checking' })
+    expect(updater.checkNow()).toEqual({ kind: 'checking' })
+    reject(new Error('offline'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(updater.state).toEqual({ kind: 'error', message: CHECK_ERROR, during: 'check' })
+  })
+
+  it('a non-finite download percent is ignored', () => {
+    const { updater, fake } = available()
+    updater.download()
+    fake.emit('download-progress', { percent: 30 })
+    fake.emit('download-progress', { percent: Number.NaN })
+    expect(updater.state).toMatchObject({ percent: 30 })
   })
 
   it('install quits and installs only from ready', () => {
@@ -216,7 +243,7 @@ describe('createUpdater', () => {
     fake.check.mockRejectedValueOnce(failure)
     updater.checkNow()
     await vi.advanceTimersByTimeAsync(0)
-    expect(updater.state).toEqual({ kind: 'error', message: CHECK_ERROR })
+    expect(updater.state).toEqual({ kind: 'error', message: CHECK_ERROR, during: 'check' })
     expect(log).toHaveBeenCalledWith('Update failed', failure)
     expect(JSON.stringify(updater.state)).not.toContain('secret')
     // an error allows a new check
@@ -228,7 +255,7 @@ describe('createUpdater', () => {
       throw new Error('sync')
     })
     updater.checkNow()
-    expect(updater.state).toEqual({ kind: 'error', message: CHECK_ERROR })
+    expect(updater.state).toEqual({ kind: 'error', message: CHECK_ERROR, during: 'check' })
   })
 
   it('a background check error returns to idle and shows nothing', async () => {
@@ -251,7 +278,7 @@ describe('createUpdater', () => {
     fake.download.mockRejectedValueOnce(failure)
     updater.download()
     await vi.advanceTimersByTimeAsync(0)
-    expect(updater.state).toEqual({ kind: 'error', message: DOWNLOAD_ERROR })
+    expect(updater.state).toEqual({ kind: 'error', message: DOWNLOAD_ERROR, during: 'download' })
     expect(log).toHaveBeenCalledWith('Update failed', failure)
   })
 
@@ -263,7 +290,7 @@ describe('createUpdater', () => {
     await vi.advanceTimersByTimeAsync(UPDATE_CHECK_TIMEOUT_MS - 1)
     expect(manual.updater.state).toEqual({ kind: 'checking' })
     await vi.advanceTimersByTimeAsync(1)
-    expect(manual.updater.state).toEqual({ kind: 'error', message: CHECK_ERROR })
+    expect(manual.updater.state).toEqual({ kind: 'error', message: CHECK_ERROR, during: 'check' })
 
     const background = setup()
     background.updater.start()

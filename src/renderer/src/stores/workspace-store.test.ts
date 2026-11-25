@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DriveDetails, ScanStartResult } from '@shared/scan-types'
-import type { ContextMenuOutcome } from '@shared/ipc-contract'
+import type { ContextMenuOutcome, UpdateState } from '@shared/ipc-contract'
 import { createFakeApi, TEST_DRIVE_DETAILS, TEST_DRIVES, TEST_PLACES } from '../test/fake-api'
 import { makeDone, makeFailed, makeProgress } from '../test/scan-fixtures'
 import {
@@ -329,18 +329,54 @@ describe('updates', () => {
     await expect(store.getState().downloadUpdate()).resolves.toBeUndefined()
   })
 
-  it("a due What's new entry opens once, marks it seen at once and is not opened twice", async () => {
+  it("a due What's new entry opens, is marked seen at once and is not due again", async () => {
     const entry = { version: '0.2.0', date: null, sections: [] }
-    const api = createFakeApi({ getWhatsNewDue: vi.fn(async () => entry) })
+    let seen = false
+    const api = createFakeApi({
+      getWhatsNewDue: vi.fn(async () => (seen ? null : entry)),
+      markWhatsNewSeen: vi.fn(async () => {
+        seen = true
+      }),
+    })
     const store = createWorkspaceStore(api)
     await flush()
     expect(store.getState().whatsNew).toEqual({ kind: 'installed', version: '0.2.0' })
     expect(api.markWhatsNewSeen).toHaveBeenCalledTimes(1)
-    expect(api.getWhatsNewDue).toHaveBeenCalledTimes(1)
-    store.getState().closeWhatsNew()
-    expect(store.getState().whatsNew).toBeNull()
+    // A second store (a re-init) asks main again and gets nothing.
+    const again = createWorkspaceStore(api)
     await flush()
-    expect(api.getWhatsNewDue).toHaveBeenCalledTimes(1)
+    expect(again.getState().whatsNew).toBeNull()
+    expect(api.markWhatsNewSeen).toHaveBeenCalledTimes(1)
+  })
+
+  it('a pushed state is not overwritten by a late pull reply', async () => {
+    const pull = deferred<UpdateState>()
+    const api = createFakeApi({ getUpdateState: vi.fn(() => pull.promise) })
+    const store = createWorkspaceStore(api)
+    api.emitUpdateState({ kind: 'available', version: '0.3.0' })
+    pull.resolve({ kind: 'idle' })
+    await flush()
+    expect(store.getState().updateState).toEqual({ kind: 'available', version: '0.3.0' })
+  })
+
+  it('checkForUpdates leaves the state to the pushed event', async () => {
+    const api = createFakeApi({
+      checkForUpdates: vi.fn(async () => ({ kind: 'checking' as const })),
+    })
+    const store = createWorkspaceStore(api)
+    await flush()
+    await store.getState().checkForUpdates()
+    expect(store.getState().updateState).toEqual({ kind: 'idle' })
+  })
+
+  it('dismissUpdate also hides a download error until the state changes', () => {
+    const api = createFakeApi()
+    const store = createWorkspaceStore(api)
+    api.emitUpdateState({ kind: 'error', message: 'm', during: 'download' })
+    store.getState().dismissUpdate()
+    expect(store.getState().dismissedDownloadError).toBe(true)
+    api.emitUpdateState({ kind: 'checking' })
+    expect(store.getState().dismissedDownloadError).toBe(false)
   })
 
   it('no due entry opens nothing', async () => {

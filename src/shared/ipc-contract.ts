@@ -43,7 +43,7 @@ export type UpdateState =
   | { kind: 'available'; version: string }
   | { kind: 'downloading'; version: string; percent: number } // integer 0..100
   | { kind: 'ready'; version: string }
-  | { kind: 'error'; message: string }
+  | { kind: 'error'; message: string; during: 'check' | 'download' }
 
 export interface ChangelogSection {
   title: string
