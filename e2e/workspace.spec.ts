@@ -483,16 +483,21 @@ test('the automatic update check setting persists across a relaunch with the sam
   const name = 'Check for updates automatically'
   const group = () => page.getByRole('group', { name: 'Application' })
   await page.getByRole('tab', { name: 'Options' }).click()
-  await group().getByRole('checkbox', { name }).uncheck()
-  await expect(group().getByRole('checkbox', { name })).not.toBeChecked()
+  const box = () => group().getByRole('checkbox', { name })
+  // The box is controlled by main: it flips once main has stored the setting, so click and then
+  // wait for the stored state rather than using uncheck(), which checks the state immediately.
+  await expect(box()).toBeChecked()
+  await box().click()
+  await expect(box()).not.toBeChecked()
   const profile = await app!.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
   await app?.close()
   const launched = await launchApp([], profile)
   app = launched.app
   page = launched.page
   await page.getByRole('tab', { name: 'Options' }).click()
-  await expect(group().getByRole('checkbox', { name })).not.toBeChecked()
-  await group().getByRole('checkbox', { name }).check()
+  await expect(box()).not.toBeChecked()
+  await box().click()
+  await expect(box()).toBeChecked()
 })
 
 /** Restarts the app the way Explorer's menu would: with `--scan <path>` after the app folder. */
