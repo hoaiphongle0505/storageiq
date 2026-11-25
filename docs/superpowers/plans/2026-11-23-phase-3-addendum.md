@@ -1095,6 +1095,71 @@ Add any other test file the change touched (and `design/tokens.css` only if it i
 
 ---
 
+### Task 12b: The StorageIQ logo and app icon
+
+**Implementer tier:** standard (SVG pixel-fitting, a rasterising script, ICO packing, packaging config).
+
+**Owner pick (2026-11-25):** concept **R6 "Dark tile"**: a white segmented S on a near-black rounded tile, with a crimson middle block. It is original to StorageIQ. Today the app ships Electron's default icon: there is no `build/` folder and no `icon` key in `electron-builder.yml`.
+
+**Master artwork (64 × 64 viewBox, exact values):**
+
+```svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#1b1b1b"/>
+  <g transform="translate(32 32) scale(.68) translate(-32 -32)">
+    <path d="M51 12H22a10 10 0 0 0 0 20" fill="none" stroke="#ffffff" stroke-width="12" stroke-linecap="round"/>
+    <path d="M25.5 32h13" stroke="#c8102e" stroke-width="12"/>
+    <path d="M42 32a10 10 0 0 1 0 20H13" fill="none" stroke="#ffffff" stroke-width="12" stroke-linecap="round"/>
+  </g>
+</svg>
+```
+
+The owner approved this rendering as it is: the white round caps overlap the red, so a short red block shows between the two white ends. Keep that look. You may flatten the transform into absolute coordinates; the result must be visually identical at 256 px.
+
+**Files:**
+
+- Create `build/icon.svg`: the master above, flattened, with no transform.
+- Create `build/icon-16.svg` and `build/icon-24.svg`: hand-tuned small sizes.
+  - Snap the tile, the S strokes and the red block to whole pixels.
+  - At 16 px: tile corner radius 3 px, S stroke 2 px, red block at least 2 × 2 px and centred.
+  - At 24 px: corner radius 5 px, S stroke 3 px, red block 3 × 3 px.
+  - The S must stay readable and symmetric, and nothing may blur across half pixels.
+- Create `scripts/build-icon.mjs`, which regenerates `build/icon.ico` and `build/icon.png` (256 px).
+  - Rasterise each SVG at 16, 20, 24, 32, 40, 48, 64, 128 and 256 px. Use icon-16.svg for 16 and 20, icon-24.svg for 24, and icon.svg for the rest.
+  - Do the rasterising with Electron's offscreen rendering (`BrowserWindow({ show: false, webPreferences: { offscreen: true } })` + `capturePage`) or the Playwright Chromium already in devDependencies. Transparent background. No new dependency.
+  - Pack the ICO by hand: ICONDIR + ICONDIRENTRY, with PNG-compressed entries for every size (Windows Vista and later accept PNG entries at all sizes).
+  - The script is deterministic: running it twice produces byte-identical files. Commit the generated `build/icon.ico` and `build/icon.png`.
+  - Add `"icon": "node scripts/build-icon.mjs"` (or the Electron launch equivalent) to package.json scripts.
+- Modify `electron-builder.yml`:
+  - `win.icon: build/icon.ico`;
+  - `nsis.installerIcon`, `nsis.uninstallerIcon` and `nsis.installerHeaderIcon` all set to `build/icon.ico`.
+  - Keep every other key unchanged, especially the asar unpack list.
+- Modify `src/main/index.ts`: in unpackaged runs, pass `icon` to the main `BrowserWindow` so dev windows show the logo. Packaged builds use the exe's embedded icon.
+  - Resolve the path without touching the asar unpack rules: `build/` is not inside `out/`, so do it only when `!app.isPackaged`.
+- README: show the logo at the top. Use `docs/assets/logo.svg`, a copy of the master, at 64 px next to the title.
+
+**Tests:**
+
+- `scripts/build-icon.test.mjs` or a vitest test. It parses `build/icon.ico` and asserts:
+  - 9 entries with sizes 16, 20, 24, 32, 40, 48, 64, 128 and 256;
+  - each entry is a valid PNG whose IHDR size matches its entry;
+  - the 256 px PNG's centre-left pixel is white and its corner pixel is transparent.
+- Extend `check-packaged-app.mjs`: the packaged `StorageIQ.exe` has an icon resource that is not Electron's default. Compare the size or a hash of the extracted group icon, or read it through `app.getFileIcon` in the self-test.
+
+**Owner manual checks:**
+
+- The logo is crisp at 100 %, 125 % and 150 % scaling in the taskbar, the Start menu, the title bar, the installer and Apps & features.
+- It shows on light and on dark taskbars.
+
+**Gate:**
+
+- `npm run format`, `npm run format:check`, `npm run lint`;
+- `npm run typecheck:node` and `npm run typecheck:web`;
+- `npx vitest run`;
+- the package build, then `npm run test:packaged`.
+
+**Commit:** `feat(brand): add the StorageIQ logo and Windows app icon`, with explicit paths and no AI attribution.
+
 ## Self-review
 
 **Coverage against the brief.** 8a: typed `ShellMenuError` with HRESULT, gone pre-check plus HRESULT mapping, `{ kind: 'gone' }` outcome and message, 500 ms / 15 s watcher with cancel on new scan and quit, logged refresh failures, handler and store tests. 8b: `win-find.ts` with the constants and the 592-byte struct, `fn.async` for the open with the synchronous next-loop (justified, benchmarked against a batched variant), 8 directories in flight (to be confirmed by measurement), injectable lister, removal of the lstat path, packaging check, 1000 ms renderer throttle, bench script, 3x acceptance on `C:\Program Files`, tests. 10: all-users installer, electron-updater 6.8.12, publish block, channel rule, updater module and IPC, banner, release workflow, docs with the signing TODO, tests and manual checks. Task 8c is written separately and is not covered here.
