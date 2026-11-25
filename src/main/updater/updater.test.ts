@@ -351,3 +351,42 @@ describe('hasPrereleaseTag', () => {
     expect(hasPrereleaseTag(version)).toBe(expected)
   })
 })
+
+describe('automatic update checks setting', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('runs the startup check and the interval checks when the setting is on', async () => {
+    const { updater, fake } = setup({ autoCheck: () => true })
+    updater.start()
+    await vi.advanceTimersByTimeAsync(UPDATE_FIRST_CHECK_DELAY_MS)
+    expect(fake.check).toHaveBeenCalledTimes(1)
+  })
+
+  it('schedules nothing and never checks when the setting is off at startup', async () => {
+    const { updater, fake, schedule, scheduleEvery } = setup({ autoCheck: () => false })
+    updater.start()
+    await vi.advanceTimersByTimeAsync(UPDATE_FIRST_CHECK_DELAY_MS + UPDATE_CHECK_INTERVAL_MS * 2)
+    expect(fake.check).not.toHaveBeenCalled()
+    expect(schedule).not.toHaveBeenCalled()
+    expect(scheduleEvery).not.toHaveBeenCalled()
+  })
+
+  it('a manual check still works when the setting is off', async () => {
+    const { updater, fake } = setup({ autoCheck: () => false })
+    updater.start()
+    expect(updater.checkNow()).toEqual({ kind: 'checking' })
+    expect(fake.check).toHaveBeenCalledTimes(1)
+  })
+
+  it('turning it off later stops the background checks', async () => {
+    let on = true
+    const { updater, fake } = setup({ autoCheck: () => on })
+    updater.start()
+    await vi.advanceTimersByTimeAsync(UPDATE_FIRST_CHECK_DELAY_MS)
+    fake.emit('update-not-available')
+    on = false
+    await vi.advanceTimersByTimeAsync(UPDATE_CHECK_INTERVAL_MS * 2)
+    expect(fake.check).toHaveBeenCalledTimes(1)
+  })
+})

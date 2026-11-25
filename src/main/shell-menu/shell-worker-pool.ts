@@ -1,4 +1,5 @@
 import type { ShellFinish, ShellMenuChoice, ShellMenuHost, ShellMenuRequest } from './context-menu'
+import { assertDriveRoot } from './recycle-bin'
 import { E_FAIL, ShellMenuError } from './shell-menu-error'
 import type { WorkerReply, WorkerRequest } from './shell-worker-protocol'
 
@@ -287,6 +288,35 @@ export function createShellWorkerPool(deps: ShellWorkerPoolDeps): ShellWorkerPoo
           },
         )
       })
+    },
+
+    deleteItems(paths: string[], permanent: boolean) {
+      // Like `show`: a busy pool throws here, synchronously, not as a rejected promise.
+      let finished!: Promise<ShellFinish>
+      start(
+        (id) => ({ type: 'invoke-delete', id, paths, permanent }),
+        (pending) => {
+          finished = new Promise<ShellFinish>((resolve) => {
+            pending.finish = resolve
+          })
+        },
+      )
+      return finished
+    },
+
+    emptyRecycleBin(root: string) {
+      // An empty root would make Windows empty every drive's bin: refuse before any worker is used.
+      assertDriveRoot(root)
+      let finished!: Promise<ShellFinish>
+      start(
+        (id) => ({ type: 'empty-bin', id, root }),
+        (pending) => {
+          finished = new Promise<ShellFinish>((resolve) => {
+            pending.finish = resolve
+          })
+        },
+      )
+      return finished
     },
 
     dispose() {

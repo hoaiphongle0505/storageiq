@@ -26,6 +26,7 @@ const api: StorageIQApi = {
   openInExplorer: (scanId, nodeId) => invoke('shell:open-in-explorer', scanId, nodeId),
   showContextMenu: (scanId, nodeIds, x, y, extended) =>
     invoke('shell:context-menu', scanId, nodeIds, x, y, extended),
+  deleteNodes: (scanId, nodeIds, permanent) => invoke('shell:delete', scanId, nodeIds, permanent),
   createFolder: (scanId, nodeId) => invoke('folder:create', scanId, nodeId),
   copyNodePath: (scanId, nodeIds) => invoke('clipboard:copy-path', scanId, nodeIds),
   getIcons: (scanId, nodeIds) => invoke('icons:for-nodes', scanId, nodeIds),
@@ -47,6 +48,8 @@ const api: StorageIQApi = {
   getWhatsNewDue: () => invoke('app:get-whats-new-due'),
   markWhatsNewSeen: () => invoke('app:mark-whats-new-seen'),
   getOptionsState: () => invoke('options:get-state'),
+  getAutoUpdate: () => invoke('options:get-auto-update'),
+  setAutoUpdate: (enabled) => invoke('options:set-auto-update', enabled),
   setExplorerMenu: (enabled) => invoke('options:set-explorer-menu', enabled),
   setRunAsAdmin: (enabled) => invoke('options:set-run-as-admin', enabled),
   takeLaunchRequest: () => invoke('launch:take-request'),

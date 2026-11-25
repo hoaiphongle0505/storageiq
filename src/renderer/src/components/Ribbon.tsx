@@ -6,6 +6,7 @@ import {
   IconAbout,
   IconCheckUpdates,
   IconChevronDown,
+  IconDelete,
   IconExit,
   IconExpand,
   IconHelp,
@@ -93,6 +94,7 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
   const expandLevels = useWorkspace((s) => s.expandLevels)
   const openInExplorer = useWorkspace((s) => s.openInExplorer)
   const createFolder = useWorkspace((s) => s.createFolder)
+  const deleteSelection = useWorkspace((s) => s.deleteSelection)
   const setTreemapVisible = useWorkspace((s) => s.setTreemapVisible)
   const quit = useWorkspace((s) => s.quit)
   const checkForUpdates = useWorkspace((s) => s.checkForUpdates)
@@ -107,6 +109,7 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
 
   const scanning = phase === 'scanning'
   const hasTree = phase !== 'empty' && phase !== 'failed'
+  const cannotDelete = !hasTree || scanning || selectedId === null
 
   const scanGroup = (
     <Group label="Scan">
@@ -217,6 +220,36 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
           if (selectedId !== null) void createFolder(selectedId)
         }}
       />
+      <div className="flex items-stretch">
+        <RibbonButton
+          label="Delete"
+          icon={IconDelete}
+          disabled={cannotDelete}
+          title="Send the selected items to the Recycle Bin (Delete)"
+          onClick={() => void deleteSelection(false)}
+        />
+        <MenuButton
+          menuLabel="Delete options"
+          triggerLabel="More delete options"
+          disabled={cannotDelete}
+          className="flex min-w-5 items-start justify-center rounded-[9px] px-1 pt-2 text-ink-muted transition-colors duration-[120ms] hover:bg-row-hover hover:text-ink aria-expanded:bg-row-hover aria-disabled:cursor-default aria-disabled:text-ink-subtle aria-disabled:opacity-40 aria-disabled:hover:bg-transparent"
+          title="More delete options"
+          sections={[
+            {
+              id: 'delete',
+              entries: [
+                {
+                  id: 'permanent',
+                  label: 'Delete permanently',
+                  onSelect: () => void deleteSelection(true),
+                },
+              ],
+            },
+          ]}
+        >
+          <IconChevronDown aria-hidden="true" focusable={false} />
+        </MenuButton>
+      </div>
     </Group>
   )
 

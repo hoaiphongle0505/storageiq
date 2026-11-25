@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { existsSync, realpath } from 'node:fs'
 import { mkdir, open, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Worker } from 'node:worker_threads'
@@ -45,6 +46,7 @@ import { autoUpdater } from 'electron-updater'
 import { findScanArgument, parseSecondInstanceData } from './launch/launch-args'
 import { createLaunchCoordinator } from './launch/launch-coordinator'
 import { watchRendererLifecycle } from './launch/renderer-lifecycle'
+import { createAppSettingsStore } from './options/app-settings-store'
 import { createOptionsService } from './options/options-service'
 import { createWinRegistry } from './registry/win-registry'
 import { createRecentScans, listPlaces, RECENT_SCANS_FILE } from './places/places'
@@ -53,7 +55,7 @@ import { hardenWebContents } from './security/harden-web-contents'
 import { isTrustedRendererUrl } from './security/trusted-url'
 import { isTrustedIpcSender } from './security/trusted-sender'
 import { runSelfTest, SELF_TEST_FLAG, type SelfTestScan } from './self-test'
-import type { ShellMenuHost, ShellMenuRequest } from './shell-menu/context-menu'
+import type { ShellFinish, ShellMenuHost, ShellMenuRequest } from './shell-menu/context-menu'
 import {
   createShellWorkerPool,
   disposePoolAtQuit,
@@ -236,6 +238,42 @@ function showContextMenuAt(request: ShellMenuRequest): ReturnType<ShellMenuHost[
   const bounds = window.getContentBounds()
   const point = screen.dipToScreenPoint({ x: bounds.x + request.x, y: bounds.y + request.y })
   return getShellPool().show({ ...request, x: Math.round(point.x), y: Math.round(point.y) })
+}
+
+/** E2E only: the delete requests that main received (nothing is deleted). */
+const testDeleteRequests: Array<{ paths: string[]; permanent: boolean }> | null =
+  testMenuRequests === null ? null : []
+
+/** Keyboard Delete on a shell worker thread; Windows shows its own dialogs. */
+function deleteShellItems(paths: string[], permanent: boolean): Promise<ShellFinish> {
+  if (testDeleteRequests !== null) {
+    // E2E only: record the request, never delete.
+    testDeleteRequests.push({ paths, permanent })
+    return Promise.resolve({ ok: true })
+  }
+  return getShellPool().deleteItems(paths, permanent)
+}
+
+/** Empties a drive's Recycle Bin on a shell worker thread (E2E: never, only a recorded no-op). */
+function emptyRecycleBin(root: string): Promise<ShellFinish> {
+  if (testDeleteRequests !== null) return Promise.resolve({ ok: true })
+  return getShellPool().emptyRecycleBin(root)
+}
+
+/**
+ * The current user's SID, read once with Windows' own `whoami.exe` by its full System32 path (never
+ * through PATH). Null when it cannot be read: then only the bin folder itself is emptied as a bin.
+ */
+let userSidPromise: Promise<string | null> | null = null
+function currentUserSid(): Promise<string | null> {
+  userSidPromise ??= new Promise((resolve) => {
+    const whoami = path.join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32', 'whoami.exe')
+    execFile(whoami, ['/user', '/fo', 'csv', '/nh'], { windowsHide: true }, (error, stdout) => {
+      const sid = error ? '' : (stdout.split(',')[1] ?? '').replace(/[\r\n"\s]/g, '')
+      resolve(/^S-1-[0-9-]+$/.test(sid) ? sid : null)
+    })
+  })
+  return userSidPromise
 }
 
 function forkScanner(): ScannerChild {
@@ -425,13 +463,26 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
       __storageiqProbeShellMenu: (target: string) => getShellPool().probe([target]),
       // The menu requests recorded instead of shown (see showContextMenuAt).
       __storageiqMenuRequests: () => testMenuRequests,
+      __storageiqDeleteRequests: () => testDeleteRequests,
     })
   }
 
   app
     .whenReady()
-    .then(() => {
+    .then(async () => {
       app.setAppUserModelId(APP_USER_MODEL_ID)
+      // StorageIQ's own settings (userData/settings.json). Read now, answered from memory after.
+      const appSettings = createAppSettingsStore({
+        filePath: path.join(app.getPath('userData'), 'settings.json'),
+        readFile: (file) => readFile(file, 'utf8'),
+        writeFile: (file, text) => writeFile(file, text, 'utf8'),
+        rename,
+        log: (message, error) => console.warn(message, error),
+      })
+      let autoUpdate = true
+      const autoUpdateLoaded = appSettings.readAutoUpdate().then((value) => {
+        autoUpdate = value
+      })
       if (app.isPackaged) {
         Menu.setApplicationMenu(null)
       }
@@ -493,7 +544,14 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
           openExternal: (url) => shell.openExternal(url),
           log: (message, error) => console.warn(message, error),
         }),
-        ...createOptionsHandlers(options),
+        ...createOptionsHandlers(options, {
+          get: () => autoUpdate,
+          set: async (enabled) => {
+            autoUpdate = enabled
+            await appSettings.writeAutoUpdate(enabled)
+            return autoUpdate
+          },
+        }),
         ...createLaunchHandlers(launch),
         ...createScanHandlers({
           scanService,
@@ -542,6 +600,15 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
             await mkdir(folder)
           },
           showShellMenu: showContextMenuAt,
+          deleteShellItems,
+          emptyRecycleBin,
+          userSid: currentUserSid,
+          realPath: (target) =>
+            new Promise((resolve, reject) =>
+              realpath.native(target, (error, resolved) =>
+                error ? reject(error) : resolve(resolved),
+              ),
+            ),
           pathExists: itemExists,
           watcher: itemWatcher,
           warn: (message, error) => console.warn(message, error),
@@ -572,8 +639,10 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
       // The install folder may have changed (update, moved app): point the menu at this exe.
       if (app.isPackaged) options.repairExplorerMenu()
 
+      await autoUpdateLoaded
       updater = createUpdater({
         autoUpdater,
+        autoCheck: () => autoUpdate,
         isPackaged: app.isPackaged,
         selfTest: process.argv.includes(SELF_TEST_FLAG),
         version: app.getVersion(),

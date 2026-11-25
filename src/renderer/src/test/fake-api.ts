@@ -333,6 +333,7 @@ export function createFakeApi(overrides: Partial<StorageIQApi> = {}): FakeApi {
     ),
     openInExplorer: vi.fn(async () => undefined),
     showContextMenu: vi.fn(async () => ({ kind: 'dismissed' as const })),
+    deleteNodes: vi.fn(async () => ({ kind: 'dismissed' as const })),
     createFolder: vi.fn(async () => ({ parentId: 'd1', name: 'New folder' })),
     copyNodePath: vi.fn(async () => undefined),
     getIcons: vi.fn(async (): Promise<IconBatch> => ({ keys: {}, images: {}, pending: [] })),
@@ -353,6 +354,8 @@ export function createFakeApi(overrides: Partial<StorageIQApi> = {}): FakeApi {
     openLink: vi.fn(async () => undefined),
     getWhatsNewDue: vi.fn(async () => null),
     markWhatsNewSeen: vi.fn(async () => undefined),
+    getAutoUpdate: vi.fn(async () => true),
+    setAutoUpdate: vi.fn(async (enabled: boolean) => enabled),
     getOptionsState: vi.fn(async (): Promise<OptionsState> => TEST_OPTIONS_STATE),
     setExplorerMenu: vi.fn(async (enabled: boolean): Promise<OptionsChangeResult> => ({
       state: { ...TEST_OPTIONS_STATE, explorerMenu: enabled },

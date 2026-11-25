@@ -327,4 +327,83 @@ describe('shell worker pool', () => {
     expect(worker.posted.at(-1)).toEqual({ type: 'exit' })
     expect(pool.size).toBe(0)
   })
+
+  it('deleteItems posts invoke-delete and resolves with the finish', async () => {
+    const { pool, workers } = setup()
+    const done = pool.deleteItems(['D:\\Data\\a.txt'], true)
+    const worker = first(workers)
+    expect(worker.posted[0]).toEqual({
+      type: 'invoke-delete',
+      id: worker.lastId,
+      paths: ['D:\\Data\\a.txt'],
+      permanent: true,
+    })
+    worker.reply({
+      type: 'finished',
+      id: worker.lastId,
+      ok: false,
+      hresult: 5,
+      step: 'InvokeCommand',
+    })
+    await expect(done).resolves.toEqual({ ok: false, hresult: 5, step: 'InvokeCommand' })
+  })
+
+  it('deleteItems throws ShellBusyError while three actions run', () => {
+    const { pool } = setup()
+    pool.show(request).chosen.catch(() => undefined)
+    pool.show(request).chosen.catch(() => undefined)
+    pool.show(request).chosen.catch(() => undefined)
+    expect(() => pool.deleteItems(['D:\\a.txt'], false)).toThrow(ShellBusyError)
+  })
+
+  it('a worker that dies mid-delete finishes with ok false', async () => {
+    const { pool, workers } = setup()
+    const done = pool.deleteItems(['D:\\a.txt'], false)
+    first(workers).crash()
+    await expect(done).resolves.toMatchObject({ ok: false, step: 'worker' })
+  })
+
+  it('a delete on a worker that is not ready is asked to exit, never terminated', async () => {
+    const { pool, workers } = setup({}, false)
+    const done = pool.deleteItems(['D:\\a.txt'], false)
+    const worker = first(workers)
+    pool.dispose()
+    expect(worker.terminated).toBe(false)
+    expect(worker.posted.at(-1)).toEqual({ type: 'exit' })
+    await expect(done).resolves.toMatchObject({ ok: false })
+  })
+
+  it('emptyRecycleBin posts empty-bin and resolves with the finish', async () => {
+    const { pool, workers } = setup()
+    const done = pool.emptyRecycleBin('D:\\')
+    const worker = first(workers)
+    expect(worker.posted[0]).toEqual({ type: 'empty-bin', id: worker.lastId, root: 'D:\\' })
+    worker.reply({ type: 'finished', id: worker.lastId, ok: true })
+    await expect(done).resolves.toEqual({ ok: true })
+  })
+
+  it.each(['', 'D:', 'D:\\Data', '\\\\server\\share\\'])(
+    'emptyRecycleBin refuses the root %j before any worker is used (an empty root empties every bin)',
+    (root) => {
+      const { pool, workers } = setup()
+      expect(() => pool.emptyRecycleBin(root)).toThrow()
+      expect(workers).toHaveLength(0)
+    },
+  )
+
+  it('emptyRecycleBin throws ShellBusyError while three actions run', () => {
+    const { pool } = setup()
+    for (let i = 0; i < 3; i += 1) pool.show(request).chosen.catch(() => undefined)
+    expect(() => pool.emptyRecycleBin('D:\\')).toThrow(ShellBusyError)
+  })
+
+  it('an empty-bin on a worker that is not ready is asked to exit, never terminated', async () => {
+    const { pool, workers } = setup({}, false)
+    const done = pool.emptyRecycleBin('D:\\')
+    const worker = first(workers)
+    pool.dispose()
+    expect(worker.terminated).toBe(false)
+    expect(worker.posted.at(-1)).toEqual({ type: 'exit' })
+    await expect(done).resolves.toMatchObject({ ok: false })
+  })
 })

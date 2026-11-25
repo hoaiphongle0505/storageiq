@@ -451,7 +451,10 @@ test('the Options tab renders its Application group', async () => {
   await page.getByRole('tab', { name: 'Options' }).click()
   const group = page.getByRole('group', { name: 'Application' })
   await expect(group).toBeVisible()
-  await expect(group.getByRole('checkbox')).toHaveCount(2)
+  await expect(group.getByRole('checkbox')).toHaveCount(3)
+  await expect(
+    group.getByRole('checkbox', { name: 'Check for updates automatically' }),
+  ).toBeChecked()
   await expect(
     group.getByRole('checkbox', { name: 'Show StorageIQ in Explorer’s context menu' }),
   ).toBeVisible()
@@ -460,13 +463,41 @@ test('the Options tab renders its Application group', async () => {
   ).toBeVisible()
 })
 
-test('both Options checkboxes are disabled in an unpackaged run with the explanation', async () => {
+test('the two Windows checkboxes are disabled in an unpackaged run with the explanation', async () => {
   await page.getByRole('tab', { name: 'Options' }).click()
   const group = page.getByRole('group', { name: 'Application' })
   await expect(group.getByText('Available in the installed app')).toBeVisible()
-  for (const box of await group.getByRole('checkbox').all()) {
-    await expect(box).toBeDisabled()
+  for (const name of [
+    'Show StorageIQ in Explorer’s context menu',
+    'Always start StorageIQ as administrator',
+  ]) {
+    await expect(group.getByRole('checkbox', { name })).toBeDisabled()
   }
+  // The update setting only stores a value, so it stays usable.
+  await expect(
+    group.getByRole('checkbox', { name: 'Check for updates automatically' }),
+  ).toBeEnabled()
+})
+
+test('the automatic update check setting persists across a relaunch with the same profile', async () => {
+  const name = 'Check for updates automatically'
+  const group = () => page.getByRole('group', { name: 'Application' })
+  await page.getByRole('tab', { name: 'Options' }).click()
+  const box = () => group().getByRole('checkbox', { name })
+  // The box is controlled by main: it flips once main has stored the setting, so click and then
+  // wait for the stored state rather than using uncheck(), which checks the state immediately.
+  await expect(box()).toBeChecked()
+  await box().click()
+  await expect(box()).not.toBeChecked()
+  const profile = await app!.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
+  await app?.close()
+  const launched = await launchApp([], profile)
+  app = launched.app
+  page = launched.page
+  await page.getByRole('tab', { name: 'Options' }).click()
+  await expect(box()).not.toBeChecked()
+  await box().click()
+  await expect(box()).toBeChecked()
 })
 
 /** Restarts the app the way Explorer's menu would: with `--scan <path>` after the app folder. */
@@ -518,4 +549,25 @@ test('a second instance with --scan makes the open window scan that folder', asy
     `${count.format(fixture.expected.files)} files found`,
   )
   await exited // the second process quit by itself
+})
+
+test('Delete and Shift+Delete send delete requests (recorded, nothing is deleted)', async () => {
+  const { fixture: f } = await scanFixture()
+  await treeRow(page, 'folder-12').click()
+  const requests = () =>
+    app!.evaluate(() =>
+      (
+        globalThis as unknown as {
+          __storageiqDeleteRequests: () => Array<{ paths: string[]; permanent: boolean }>
+        }
+      ).__storageiqDeleteRequests(),
+    )
+  await page.keyboard.press('Delete')
+  await expect.poll(async () => (await requests()).length).toBe(1)
+  await page.keyboard.press('Shift+Delete')
+  await expect.poll(async () => (await requests()).length).toBe(2)
+  const sent = await requests()
+  expect(sent[0]).toEqual({ paths: [path.join(f.root, 'folder-12')], permanent: false })
+  expect(sent[1]).toEqual({ paths: [path.join(f.root, 'folder-12')], permanent: true })
+  expect(existsSync(path.join(f.root, 'folder-12'))).toBe(true)
 })

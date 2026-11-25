@@ -10,6 +10,7 @@ import {
   DataBarVertical24Regular,
   DataPie24Color,
   DataTreemap24Regular,
+  Delete24Regular,
   Dismiss16Regular,
   Document16Regular,
   DocumentMultiple16Regular,
@@ -88,6 +89,7 @@ export const IconModeFiles = DocumentMultiple24Regular
 export const IconModePercent = colour(DataPie24Color)
 export const IconExpand = TextBulletListTree24Regular
 export const IconOpenFolder = folderTint(FolderOpen24Filled)
+export const IconDelete = Delete24Regular
 export const IconNewFolder = folderTint(FolderAdd24Filled)
 export const IconAbout = Info24Regular
 export const IconExit = SignOut24Regular

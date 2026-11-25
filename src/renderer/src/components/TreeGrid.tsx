@@ -232,6 +232,7 @@ export function TreeGrid() {
   const sortBy = useWorkspace((s) => s.sortBy)
   const openInExplorer = useWorkspace((s) => s.openInExplorer)
   const showContextMenu = useWorkspace((s) => s.showContextMenu)
+  const deleteSelection = useWorkspace((s) => s.deleteSelection)
   const createFolder = useWorkspace((s) => s.createFolder)
   const copyPaths = useWorkspace((s) => s.copyPaths)
 
@@ -389,6 +390,12 @@ export function TreeGrid() {
       else void createFolder(row.id)
     } else if (event.ctrlKey && key.toLowerCase() === 'c' && row !== null) {
       void copyPaths(actionRows())
+    } else if (key === 'Delete') {
+      // Delete: Recycle Bin; Shift+Delete: permanent. Any other modifier leaves the key alone.
+      if (event.ctrlKey || event.altKey || event.metaKey) handled = false
+      else if (event.repeat)
+        handled = true // a held key must not start more dialogs
+      else void deleteSelection(event.shiftKey)
     } else handled = false
     if (handled) event.preventDefault()
   }

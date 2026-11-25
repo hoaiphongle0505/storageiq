@@ -2,7 +2,7 @@
 
 A free, open-source disk space analyzer for Windows. StorageIQ shows where your disk space went, and explains it in plain words. It scans a drive or folder and shows which folders and files use the most space, so you can decide what to clean up.
 
-> **Status:** early development. Phase 3 (Analyzer Workspace) turns the scanner into a full workspace in the Strata look (light and dark): a ribbon with a Select menu (drives, Documents, OneDrive, recent scans, any folder), a virtualized column tree (size, allocated size, files, folders, share of the parent, last modified), a treemap pane with levels 0–5 that colours files by type and names the types in a legend, the Windows Explorer context menu on every row, and a status bar with free space and cluster size. Scans walk folders in parallel (about 1.5 to 2.5 minutes for 1.9 million files on the developer's machine). The installer offers a per-user or an all-users install, and installed copies update themselves from GitHub Releases ([how to release](docs/RELEASING.md)); code signing through SignPath is pending. Next: side views (top files, file types, file age). See the [roadmap](docs/ROADMAP.md).
+> **Status:** early development. Phase 3 (Analyzer Workspace) turns the scanner into a full workspace in the Strata look (light and dark): a ribbon with a Select menu (drives, Documents, OneDrive, recent scans, any folder), a virtualized column tree (size, allocated size, files, folders, share of the parent, last modified), a treemap pane with levels 0–5 that colours files by type and names the types in a legend, the Windows Explorer context menu on every row, and a status bar with free space and cluster size. Scans walk folders in parallel (about 1.5 to 2.5 minutes for 1.9 million files on the developer's machine). The installer offers a per-user or an all-users install, and installed copies update themselves from GitHub Releases ([how to release](docs/RELEASING.md)); code signing through SignPath is pending (see the [Code signing policy](#code-signing-policy)). Next: side views (top files, file types, file age). See the [roadmap](docs/ROADMAP.md).
 
 ## Requirements
 
@@ -35,6 +35,10 @@ Notes:
 
 Installers are currently unsigned, so Windows SmartScreen will warn on first run. An all-users (per-machine) install shows a Windows administrator (UAC) prompt, also when an update installs at quit.
 
+## Deleting
+
+Select rows in the tree and press **Delete** to send them to the Recycle Bin, or **Shift+Delete** to delete them permanently, as in File Explorer (the ribbon's **Delete** button on the Home tab does the same, and its arrow offers **Delete permanently**). Windows shows its own confirmation and progress. Selecting a drive's `$RECYCLE.BIN` folder (or your own folder in it) and pressing Delete empties that Recycle Bin instead of deleting its items one by one.
+
 ## Windows integration (Options tab)
 
 The installed app has an **Options** tab with two switches. Both show what Windows has set (they are read from the registry each time the tab opens, and StorageIQ keeps no copy). They are disabled in `npm run dev`, so a development run never writes to the registry.
@@ -56,6 +60,13 @@ With **Always start StorageIQ as administrator** on, every launch of StorageIQ t
 The installed app lists the licences of the open-source packages it ships in `THIRD_PARTY_NOTICES.txt` (next to the program; generated at build time by `scripts/build-notices.cjs`, also `npm run notices`).
 
 Security baseline: context isolation, sandboxed renderer, no Node integration, strict CSP, blocked navigation and pop-ups, a sender check and argument validation on every IPC call, and shell actions only on paths from the current scan. Read [docs/ROADMAP.md](docs/ROADMAP.md) for the architecture decisions and [docs/RELEASING.md](docs/RELEASING.md) for releases and updates.
+
+## Code signing policy
+
+Code signing for StorageIQ is being set up through the SignPath Foundation's open-source programme, and the installers are not signed yet. Once approved: Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+- **Team roles.** Committers and reviewers: [hoaiphongle0505](https://github.com/hoaiphongle0505). Approvers: [hoaiphongle0505](https://github.com/hoaiphongle0505).
+- **Privacy.** StorageIQ will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. The one automatic connection is the check for a new version on GitHub; turn it off with **Options → Check for updates automatically**. Read the [privacy policy](PRIVACY.md).
 
 ## Credits
 

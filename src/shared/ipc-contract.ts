@@ -78,6 +78,8 @@ export type ContextMenuOutcome =
       /** The command is still running in Windows when this outcome is returned. */
       running: boolean
     }
+  /** A Recycle Bin folder was selected together with other rows: nothing was done. */
+  | { kind: 'bin-mixed' }
   /** Three Explorer actions are already running; try again in a moment. */
   | { kind: 'busy' }
 
@@ -173,6 +175,10 @@ export interface IpcContract {
     args: [scanId: string, nodeIds: NodeId[], x: number, y: number, extended: boolean]
     result: ContextMenuOutcome
   }
+  'shell:delete': {
+    args: [scanId: string, nodeIds: NodeId[], permanent: boolean]
+    result: ContextMenuOutcome
+  }
   'folder:create': { args: [scanId: string, nodeId: NodeId]; result: CreateFolderResult }
   'clipboard:copy-path': { args: [scanId: string, nodeIds: NodeId[]]; result: void }
   'icons:for-nodes': { args: [scanId: string, nodeIds: NodeId[]]; result: IconBatch }
@@ -190,6 +196,8 @@ export interface IpcContract {
   'options:get-state': { args: []; result: OptionsState }
   'options:set-explorer-menu': { args: [enabled: boolean]; result: OptionsChangeResult }
   'options:set-run-as-admin': { args: [enabled: boolean]; result: OptionsChangeResult }
+  'options:get-auto-update': { args: []; result: boolean }
+  'options:set-auto-update': { args: [enabled: boolean]; result: boolean }
   'launch:take-request': { args: []; result: LaunchRequest | null }
 }
 
@@ -267,6 +275,12 @@ export interface StorageIQApi {
     y: number,
     extended: boolean,
   ): Promise<ContextMenuOutcome>
+  /**
+   * Keyboard Delete (Recycle Bin) or Shift+Delete (`permanent`) for rows of the current scan:
+   * main runs the shell's delete verb, so Windows shows its own dialogs. The outcome is
+   * `shell` (started), `gone`, `dismissed` (nothing deletable) or `busy`.
+   */
+  deleteNodes(scanId: string, nodeIds: NodeId[], permanent: boolean): Promise<ContextMenuOutcome>
   /** Creates "New folder" (or "New folder (2)", …) in the row's folder and rescans that folder. */
   createFolder(scanId: string, nodeId: NodeId): Promise<CreateFolderResult>
   /**
@@ -311,6 +325,10 @@ export interface StorageIQApi {
   markWhatsNewSeen(): Promise<void>
   /** What Windows has for the two Options switches (read from the registry on every call). */
   getOptionsState(): Promise<OptionsState>
+  /** Whether StorageIQ checks for updates by itself (on by default). */
+  getAutoUpdate(): Promise<boolean>
+  /** Turns the automatic check on or off; resolves with the value now in effect. */
+  setAutoUpdate(enabled: boolean): Promise<boolean>
   /** Adds or removes “Scan with StorageIQ” in Explorer’s context menu (HKCU, no admin needed). */
   setExplorerMenu(enabled: boolean): Promise<OptionsChangeResult>
   /** Sets or clears Windows’ “run as administrator” flag for StorageIQ; effective next start. */

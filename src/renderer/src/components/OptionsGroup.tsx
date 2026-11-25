@@ -19,6 +19,12 @@ const ADMIN_TITLE =
   'Windows asks for approval each time StorageIQ starts, so it can read protected folders'
 const ADMIN_LOCKED_NOTE = 'Set for all users by your administrator'
 
+const AUTO_LABEL = 'Check for updates automatically'
+const AUTO_NOTE =
+  'When off, StorageIQ checks for a new version only when you choose Check for updates.'
+const AUTO_TITLE = 'Look for a new StorageIQ on GitHub shortly after start and every few hours'
+const AUTO_FAILED_TEXT = 'StorageIQ could not save that setting. Your settings are unchanged.'
+
 const CHECKBOX_CLASS = 'size-4 shrink-0 accent-accent disabled:opacity-60'
 const LABEL_CLASS = 'flex items-center gap-2 text-[13px] leading-[18px] text-ink'
 const NOTE_CLASS = 'pl-6 text-xs leading-4 text-ink-muted'
@@ -32,6 +38,9 @@ export function OptionsGroup() {
   const loadOptionsState = useWorkspace((s) => s.loadOptionsState)
   const changeExplorerMenu = useWorkspace((s) => s.changeExplorerMenu)
   const changeRunAsAdmin = useWorkspace((s) => s.changeRunAsAdmin)
+  const loadAutoUpdate = useWorkspace((s) => s.loadAutoUpdate)
+  const changeAutoUpdate = useWorkspace((s) => s.changeAutoUpdate)
+  const [autoUpdate, setAutoUpdate] = useState<boolean | null>(null)
   const [state, setState] = useState<OptionsState | null>(null)
   const [loadFailed, setLoadFailed] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -41,6 +50,7 @@ export function OptionsGroup() {
   const menuNoteId = `${baseId}-menu`
   const adminNoteId = `${baseId}-admin`
   const stateNoteId = `${baseId}-state`
+  const autoNoteId = `${baseId}-auto`
 
   useEffect(() => {
     let current = true
@@ -49,10 +59,22 @@ export function OptionsGroup() {
       if (loaded === null) setLoadFailed(true)
       else setState(loaded)
     })
+    void loadAutoUpdate().then((value) => {
+      if (current && value !== null) setAutoUpdate(value)
+    })
     return () => {
       current = false
     }
-  }, [loadOptionsState])
+  }, [loadOptionsState, loadAutoUpdate])
+
+  const changeAuto = async (enabled: boolean) => {
+    setBusy(true)
+    setMessage('')
+    const result = await changeAutoUpdate(enabled)
+    setBusy(false)
+    if (result === null) setMessage(AUTO_FAILED_TEXT)
+    else setAutoUpdate(result)
+  }
 
   const change = async (which: 'menu' | 'admin', enabled: boolean) => {
     setBusy(true)
@@ -125,6 +147,22 @@ export function OptionsGroup() {
             </div>
           </>
         )}
+        <div className="col-span-2">
+          <label title={AUTO_TITLE} className={LABEL_CLASS}>
+            <input
+              type="checkbox"
+              className={CHECKBOX_CLASS}
+              checked={autoUpdate ?? true}
+              disabled={autoUpdate === null || busy}
+              aria-describedby={autoNoteId}
+              onChange={(event) => void changeAuto(event.target.checked)}
+            />
+            {AUTO_LABEL}
+          </label>
+          <p id={autoNoteId} className={NOTE_CLASS}>
+            {AUTO_NOTE}
+          </p>
+        </div>
         <p role="status" className="col-span-2 text-xs leading-4 text-danger">
           {message}
         </p>

@@ -44,6 +44,8 @@ export interface UpdaterDeps {
   /** Repeating timer; returns its cancel function. */
   scheduleEvery(callback: () => void, ms: number): () => void
   log(message: string, error?: unknown): void
+  /** Whether background checks are allowed (the "Check for updates automatically" setting); default on. */
+  autoCheck?(): boolean
 }
 
 export interface Updater {
@@ -128,6 +130,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
   }
 
   const backgroundTick = () => {
+    if (deps.autoCheck?.() === false) return
     if (state.kind === 'idle' || state.kind === 'up-to-date' || state.kind === 'error') {
       beginCheck(false)
     }
@@ -160,6 +163,9 @@ export function createUpdater(deps: UpdaterDeps): Updater {
         cancelAll() // nothing more to download
         setState({ kind: 'ready', version: info.version })
       })
+      // Off at startup: no background check at all (a manual check still works). Turning it on
+      // again takes effect at the next start.
+      if (deps.autoCheck?.() === false) return
       cancels.push(
         deps.schedule(() => {
           backgroundTick()

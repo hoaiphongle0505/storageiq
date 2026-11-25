@@ -194,6 +194,16 @@ export function contextMenuArgs(
   ]
 }
 
+/** `shell:delete`: `[scanId, nodeIds, permanent]` (1 to 1,000 ids and a strict boolean). */
+export function deleteArgs(args: readonly unknown[]): [string, NodeId[], boolean] {
+  expectCount(args, 3)
+  return [
+    scanIdArg(args[0]),
+    nodeIdListArg(args[1], MAX_ACTION_ITEMS),
+    booleanArg(args[2], 'permanent'),
+  ]
+}
+
 /** `drive:info`: a drive root like `C:\` (or `C:`). */
 export function driveRootArgs(args: readonly unknown[]): [string] {
   const [root] = oneString(args)

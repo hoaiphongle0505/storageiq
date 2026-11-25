@@ -33,6 +33,8 @@ export interface MenuSection {
 export interface MenuButtonProps {
   /** Accessible name of the menu (the trigger's visible text names the trigger). */
   menuLabel: string
+  /** Accessible name of the trigger when its content is only an icon. */
+  triggerLabel?: string
   sections: MenuSection[]
   /** Called before the menu opens (for example to refresh the drive list). */
   onOpen?(): void
@@ -58,6 +60,7 @@ const supportsPopover = () =>
  */
 export function MenuButton({
   menuLabel,
+  triggerLabel,
   sections,
   onOpen,
   className = '',
@@ -136,6 +139,7 @@ export function MenuButton({
         ref={triggerRef}
         type="button"
         title={title}
+        aria-label={triggerLabel}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}

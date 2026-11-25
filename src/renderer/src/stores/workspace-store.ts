@@ -73,6 +73,7 @@ export const SCAN_CRASH_MESSAGE = 'The scan stopped unexpectedly. You can try ag
 export const PATH_COPIED = 'Path copied.'
 export const GONE_MESSAGE = 'That item no longer exists. The list was refreshed.'
 export const BUSY_MESSAGE = 'Windows is still working on earlier actions. Try again in a moment.'
+export const BIN_MIXED_MESSAGE = 'Select the Recycle Bin on its own to empty it.'
 export const TOO_MANY_MESSAGE = 'Too many items selected (the limit is 1,000).'
 /** Rows one Explorer action takes (the same limit as main). */
 export const MAX_ACTION_ITEMS = 1000
@@ -187,6 +188,12 @@ export interface WorkspaceState {
   /** Shows the Explorer menu for these rows (1 to 1,000 after rows inside others are dropped). */
   showContextMenu(ids: readonly NodeId[], x: number, y: number, extended: boolean): Promise<void>
   createFolder(id: NodeId): Promise<void>
+  /**
+   * Keyboard Delete and the ribbon button: sends the selection (the active row when none is
+   * selected) to the Recycle Bin, or deletes it permanently. Windows shows its own dialogs.
+   * Does nothing while a scan runs, and announces the rows it skips.
+   */
+  deleteSelection(permanent: boolean): Promise<void>
   /** Lays out the treemap of `treemapRootId` for a canvas of `width` × `height` CSS px. */
   fetchTreemap(width: number, height: number): Promise<TreemapLayout | null>
   setTreemapDepth(depth: number): void
@@ -209,6 +216,10 @@ export interface WorkspaceState {
   changeExplorerMenu(enabled: boolean): Promise<OptionsChangeResult | null>
   /** Result of changing the administrator option; null when the call itself fails. */
   changeRunAsAdmin(enabled: boolean): Promise<OptionsChangeResult | null>
+  /** The automatic update check setting; null when the call fails. */
+  loadAutoUpdate(): Promise<boolean | null>
+  /** Changes it; resolves with the value now in effect, null when the call fails. */
+  changeAutoUpdate(enabled: boolean): Promise<boolean | null>
   checkForUpdates(): Promise<void>
   downloadUpdate(): Promise<void>
   installUpdate(): Promise<void>
@@ -387,6 +398,7 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
           banner: null,
         })
       if (outcome.kind === 'busy') set({ announcement: BUSY_MESSAGE })
+      if (outcome.kind === 'bin-mixed') set({ announcement: BIN_MIXED_MESSAGE })
       if (outcome.kind === 'copied') {
         set({
           announcement:
@@ -406,6 +418,9 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
         }
       }
     }
+
+    /** True while a delete request is with main; a second one is dropped. */
+    let deleteInFlight = false
 
     /** The rows an action sends: rows inside another selected row are not part of it. */
     const actionIds = (ids: readonly NodeId[]): { ids: NodeId[]; removed: number } => {
@@ -716,6 +731,38 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
         }
       },
 
+      async deleteSelection(permanent) {
+        const { scanId, phase, selectedId, selectedIds } = get()
+        // A request is still on its way (a held or repeated key): drop this one.
+        if (scanId === null || phase === 'scanning' || deleteInFlight) return
+        const selection =
+          selectedIds.size > 0 ? [...selectedIds] : selectedId === null ? [] : [selectedId]
+        if (selection.length === 0) return
+        // The root and "[N files]" rows are never deleted, not even alone (actionIds only drops
+        // them from a multi-row selection).
+        const deletable = selection.filter((id) => id !== ROOT_NODE_ID && !id.startsWith('g'))
+        const { ids: sent, removed } =
+          deletable.length === 0 ? { ids: [], removed: selection.length } : actionIds(selection)
+        if (sent.length === 0) {
+          set({
+            announcement: `Skipped ${removed} ${removed === 1 ? 'row' : 'rows'} that cannot be acted on.`,
+          })
+          return
+        }
+        if (sent.length > MAX_ACTION_ITEMS) {
+          set({ announcement: TOO_MANY_MESSAGE })
+          return
+        }
+        deleteInFlight = true
+        try {
+          handleOutcome(await api.deleteNodes(scanId, sent, permanent), sent.length + removed)
+        } catch (error) {
+          fail(error)
+        } finally {
+          deleteInFlight = false
+        }
+      },
+
       async createFolder(id) {
         const { scanId } = get()
         if (scanId === null) return
@@ -835,6 +882,22 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
       async changeExplorerMenu(enabled) {
         try {
           return await api.setExplorerMenu(enabled)
+        } catch {
+          return null
+        }
+      },
+
+      async loadAutoUpdate() {
+        try {
+          return await api.getAutoUpdate()
+        } catch {
+          return null
+        }
+      },
+
+      async changeAutoUpdate(enabled) {
+        try {
+          return await api.setAutoUpdate(enabled)
         } catch {
           return null
         }
