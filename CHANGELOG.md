@@ -2,6 +2,18 @@
 
 All notable changes to StorageIQ are listed here, newest first. The format follows Keep a Changelog and the versions follow Semantic Versioning.
 
+## [0.2.0-beta.2] - 2026-11-25
+
+### Added
+
+- Press Delete on the selected rows to send them to the Recycle Bin, or Shift+Delete to delete them permanently, as in File Explorer. Windows shows its own confirmation and progress.
+- A Delete button in the ribbon's Folder group, next to New folder, with a "Delete permanently" choice in its menu.
+
+### Fixed
+
+- Deleting a drive's Recycle Bin folder from the tree now empties the Recycle Bin with Windows' own command, instead of going through every item in it.
+- The developer tests no longer leave their temporary files in the Recycle Bin.
+
 ## [0.2.0-beta.1] - 2026-11-25
 
 ### Added

@@ -35,6 +35,10 @@ Notes:
 
 Installers are currently unsigned, so Windows SmartScreen will warn on first run. An all-users (per-machine) install shows a Windows administrator (UAC) prompt, also when an update installs at quit.
 
+## Deleting
+
+Select rows in the tree and press **Delete** to send them to the Recycle Bin, or **Shift+Delete** to delete them permanently, as in File Explorer (the ribbon's **Delete** button on the Home tab does the same, and its arrow offers **Delete permanently**). Windows shows its own confirmation and progress. Selecting a drive's `$RECYCLE.BIN` folder and pressing Delete empties that Recycle Bin instead of deleting its items one by one.
+
 ## Windows integration (Options tab)
 
 The installed app has an **Options** tab with two switches. Both show what Windows has set (they are read from the registry each time the tab opens, and StorageIQ keeps no copy). They are disabled in `npm run dev`, so a development run never writes to the registry.
