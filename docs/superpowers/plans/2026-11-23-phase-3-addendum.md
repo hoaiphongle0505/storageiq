@@ -1538,6 +1538,242 @@ git status --short   # nothing unrelated staged (drop src/renderer/src/lib/icons
 
 **Commit:** `feat(update): add the Help tab, About, update checks, update notification and What's new`, with explicit paths and no AI attribution.
 
+### Task 14: Options tab — Explorer integration and run as administrator
+
+**Implementer tier:** standard (Win32 registry through koffi, a launch-argument path that crosses process and integrity levels, NSIS cleanup, IPC bounds; build in the order of the steps, the spike and the pure logic before the native code and the renderer).
+
+**Why (owner request):** two Windows-integration options in a new ribbon tab: (1) "Scan with StorageIQ" in Explorer’s right-click menu for folders, drives and the folder background; (2) an "Always start StorageIQ as administrator" switch, so protected folders (for example `C:\Windows`, other users’ profiles) are readable. Both reflect what Windows actually has (the registry), never a copy kept in app settings.
+
+**Global Constraints interaction (state it in the commit body):** the line “the scanner never asks for elevation” stays true: the scanner is unchanged and never prompts. The _app_ can be started elevated by the owner’s explicit choice through the Windows compatibility flag below; nothing in StorageIQ elevates itself at runtime. No new dependency (koffi is already installed). No competitor is named anywhere.
+
+**Decisions (this plan’s; owner approved the requirements, the choices below are the plan’s):**
+
+1. **Registry API: koffi + `advapi32.dll`, not `reg.exe`.** koffi is already loaded in main (drive API) and in the shell and icon workers, so this adds no dependency and no process. `reg.exe` would work through `execFile` with an argument array (no shell), but it spawns a process per call, its output is localised and has to be parsed, and `reg add` re-parses the data string (quotes inside `"<exe>",0`). The direct calls take UTF-16 strings and need no quoting at all. Registry calls are microsecond-scale, so they run synchronously in main (no worker), behind an injectable `RegistryAdapter` so every rule is unit-testable with a fake.
+2. **`%V` for all three keys.** `%1` is the clicked item’s path for `Directory` and `Drive`, but a `Directory\Background` verb has no clicked item: `%1` is not substituted there. `%V` is the folder path in every one of the three cases (the folder, the drive root, the folder being viewed), so one command string serves all three keys.
+3. **The trailing-backslash trap.** `%V` expands to `C:\` for a drive and for the background of a drive root. In `"C:\"` the sequence `\"` is an escaped quote under Windows command-line rules, so Chromium’s argv would hold `C:"` (and swallow later arguments). The registered command stays the conventional `"<exe>" --scan "%V"` and the **parser** repairs the case (rule 9). The unit tests pin this.
+4. **Launch hand-off goes through the renderer’s existing scan-start flow.** Main parses and validates the launch path, then tells the renderer _“scan this validated path”_ (event `launch:request`, or the pull `launch:take-request` on first launch). The renderer calls the existing `startScan(path)` → `scan:start`, which already takes a path from the renderer and re-validates it in `parseScanRoot`; so no new “renderer sends a raw path” channel exists and the store shows the scan exactly as if the owner had picked the folder. Main does not start scans behind the renderer’s back.
+5. **A scan already running: ask, do not silently discard.** If `phase === 'scanning'` the renderer shows the existing `Dialog` component: title “Scan another folder?”, body “StorageIQ is still scanning {current target}. Stop it and scan {new path} instead?”, buttons “Scan {leaf}” and “Keep current scan”. When not scanning, or when the window is empty or showing a finished scan, the scan starts immediately (a finished tree is replaced, as with “Select”).
+6. **Run as administrator uses the per-user compatibility-layer flag**, not a manifest change and not a scheduled task: `HKCU\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers`, value name = the exe’s full path, data `~ RUNASADMIN`. It needs no admin to set, it is what Explorer’s Properties → Compatibility → “Run this program as an administrator” writes, and Windows shows UAC on the next launch (including launches from the Explorer menu).
+7. **Reality over settings:** `options:get-state` reads the registry every time the Options tab is shown; no app setting is stored.
+8. **Dev and unpackaged runs** (`!app.isPackaged`): both checkboxes disabled with the text “Available in the installed app”, because `process.execPath` would be `electron.exe` and registering it would point Explorer at a development binary.
+9. **Windows 11 note (owner-facing):** classic registry verbs appear under “Show more options” (or Shift+F10) in the Windows 11 menu. This is by design of the platform for per-user registry verbs; the README says so.
+
+**Out of scope:** the new Windows 11 top-level menu (needs a packaged COM `IExplorerCommand` handler), file-type associations, tray, the elevated-drag-drop workaround (the app accepts no dropped files today), a Windows service or scheduled task for elevation.
+
+**Files:**
+
+- Create: `src/main/registry/registry-adapter.ts` (interface and constants), `src/main/registry/win-registry.ts` (koffi implementation), `src/main/registry/win-registry.native.test.ts`
+- Create: `src/main/options/layers-flags.ts` (+ test), `explorer-menu.ts` (+ test), `run-as-admin.ts` (+ test), `options-service.ts` (+ test)
+- Create: `src/main/launch/launch-args.ts` (+ test), `launch-coordinator.ts` (+ test)
+- Create: `src/main/ipc/options-handlers.ts` (+ test), `src/main/ipc/launch-handlers.ts` (+ test)
+- Create: `src/renderer/src/components/OptionsGroup.tsx` (+ test)
+- Create: `build/installer.nsh`
+- Modify: `src/main/ipc/parse-args.ts` (+ test; `oneBoolean`), `src/main/ipc/scan-handlers.ts` (export the shared validation used by launch-args, behaviour unchanged), `src/shared/ipc-contract.ts`, `src/preload/index.ts` (+ test), `src/main/index.ts`, `src/renderer/src/components/Ribbon.tsx` (+ test), `src/renderer/src/stores/workspace-store.ts` (+ test), `src/renderer/src/App.tsx` (+ test), `src/renderer/src/test/fake-api.ts`, `electron-builder.yml` (comment only if needed; `build/installer.nsh` is picked up from `buildResources`, verify in Step 9), `scripts/check-packaged-app.mjs` (optional self-test probe), `e2e/workspace.spec.ts`, `README.md`, `docs/RELEASING.md`, `docs/ROADMAP.md`
+
+**Interfaces (exact names):**
+
+```ts
+// src/main/registry/registry-adapter.ts   (every key path is relative to the hive root)
+export type RegistryHive = 'HKCU' | 'HKLM'
+export interface RegistryAdapter {
+  /** REG_SZ value; `name === ''` is the key’s (Default). null when the key or value is absent. */
+  getString(hive: RegistryHive, key: string, name: string): string | null
+  /** Creates the key (and parents) if needed, then writes a REG_SZ. HKCU only. */
+  setString(key: string, name: string, value: string): void
+  /** Deletes one value; a missing key or value is not an error. HKCU only. */
+  deleteValue(key: string, name: string): void
+  /** Deletes the key and everything below it; a missing key is not an error. HKCU only. */
+  deleteTree(key: string): void
+}
+```
+
+```ts
+// src/shared/ipc-contract.ts additions
+export interface OptionsState {
+  /** false when unpackaged (or not Windows): both switches are shown disabled. */
+  available: boolean
+  /** All three Explorer verbs exist with a command for the current exe. */
+  explorerMenu: boolean
+  /** HKCU or HKLM carries RUNASADMIN for the current exe. */
+  runAsAdmin: boolean
+  /** RUNASADMIN comes from HKLM (policy or an administrator): it cannot be turned off here. */
+  runAsAdminLocked: boolean
+}
+export interface OptionsChangeResult {
+  state: OptionsState
+  /** Calm one-line message when Windows refused the change; null on success. */
+  error: string | null
+}
+export type LaunchRequest =
+  | { kind: 'scan'; path: string }
+  | { kind: 'invalid'; message: string }
+// IpcContract
+'options:get-state': { args: []; result: OptionsState }
+'options:set-explorer-menu': { args: [enabled: boolean]; result: OptionsChangeResult }
+'options:set-run-as-admin': { args: [enabled: boolean]; result: OptionsChangeResult }
+'launch:take-request': { args: []; result: LaunchRequest | null }
+// IpcEventContract
+'launch:request': LaunchRequest
+// StorageIQApi
+getOptionsState(): Promise<OptionsState>
+setExplorerMenu(enabled: boolean): Promise<OptionsChangeResult>
+setRunAsAdmin(enabled: boolean): Promise<OptionsChangeResult>
+takeLaunchRequest(): Promise<LaunchRequest | null>
+onLaunchRequest(listener: (request: LaunchRequest) => void): Unsubscribe
+```
+
+```ts
+// src/main/launch/launch-args.ts
+export const SCAN_FLAG = '--scan'
+export const MAX_LAUNCH_PATH_CHARS = 1024
+/** The raw value after `--scan` (or `--scan=value`), repaired per rule 9; null when the flag is absent. */
+export function findScanArgument(argv: readonly string[]): string | null
+export function resolveLaunchRequest(
+  argv: readonly string[],
+  stat: (path: string) => Promise<{ isDirectory(): boolean }>,
+): Promise<LaunchRequest | null> // null: no --scan flag at all
+
+// src/main/launch/launch-coordinator.ts
+export interface LaunchCoordinator {
+  /** First launch and second-instance both call this with the process’s full argv. */
+  handleArgv(argv: readonly string[]): Promise<void>
+  /** `launch:take-request`: returns and clears the pending request; marks the renderer ready. */
+  take(): LaunchRequest | null
+  /** Renderer reloaded or navigated: pending requests wait again. */
+  rendererGone(): void
+}
+export function createLaunchCoordinator(deps: {
+  stat: LaunchStat
+  send(request: LaunchRequest): void // main → renderer event
+  focus(): void
+}): LaunchCoordinator
+
+// src/main/options/options-service.ts
+export interface OptionsService {
+  getState(): OptionsState
+  setExplorerMenu(enabled: boolean): OptionsChangeResult
+  setRunAsAdmin(enabled: boolean): OptionsChangeResult
+  /** Startup: when the menu is on but a key is missing or points at another exe, rewrite all three. Never throws. */
+  repairExplorerMenu(): void
+}
+export function createOptionsService(deps: {
+  registry: RegistryAdapter
+  exePath: string // process.execPath
+  isPackaged: boolean
+  warn(message: string, error: unknown): void
+}): OptionsService
+```
+
+**Rules:**
+
+1. **Explorer keys (exact).** Under `HKCU`, `KEY_ROOTS = ['Software\\Classes\\Directory\\shell\\StorageIQ', 'Software\\Classes\\Drive\\shell\\StorageIQ', 'Software\\Classes\\Directory\\Background\\shell\\StorageIQ']`. For each root `K`: `K` `(Default)` = `Scan with StorageIQ`; `K` `MUIVerb` = `Scan with StorageIQ`; `K` `Icon` = `"<exe>",0` (the exe path in double quotes, then `,0`); `K\command` `(Default)` = `"<exe>" --scan "%V"`. `<exe>` is `process.execPath` as given (no 8.3 or case rewriting). Exported constants `EXPLORER_MENU_LABEL`, `EXPLORER_KEY_ROOTS`, `explorerCommand(exe)`, `explorerIcon(exe)`. HKCU is used so no administrator approval is needed; a key under `Software\Classes` is merged into the system view for this user only.
+2. **State of the menu.** `explorerMenu` is true only when all three `command` values equal `explorerCommand(exePath)` (case-insensitive compare of the whole string). A key that exists with another exe path or only some keys present: `explorerMenu` is `false` for the checkbox’s purpose (so it shows what is really wired) **but** `repairExplorerMenu()` treats “any of the three `K` keys exists” as “the owner enabled it” and rewrites all three for the current exe. Turning the menu off calls `deleteTree` on all three roots regardless of which exe they pointed at. Both operations are idempotent: calling `setExplorerMenu(true)` twice writes the same values; `setExplorerMenu(false)` on absent keys succeeds.
+3. **Startup repair.** Packaged builds call `options.repairExplorerMenu()` once after `app.whenReady()`, inside try/catch (a failure only `console.warn`s). This covers the install folder changing between versions or the owner moving the app.
+4. **Run as administrator (exact).** Key `Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers`, value name = `process.execPath`, data a space-separated token list whose first token is `~` and which contains `RUNASADMIN`. `layers-flags.ts` exports `addRunAsAdmin(existing: string | null): string` and `removeRunAsAdmin(existing: string | null): string | null` (null = delete the value). Rules: tokens are split on runs of whitespace and compared case-insensitively; adding to `null` gives `~ RUNASADMIN`; adding to `~ WIN7RTM` gives `~ WIN7RTM RUNASADMIN`; adding to a value that already has the flag returns it unchanged (idempotent, original token order and casing kept); a value without a leading `~` keeps its tokens and gets `RUNASADMIN` appended (never rewrite other flags); removing keeps all other tokens (`~ WIN7RTM RUNASADMIN` → `~ WIN7RTM`); removing the only flag (`~ RUNASADMIN`, or `RUNASADMIN`) returns `null` and the value is deleted; a value with a flag list that contains only `~` after removal also returns `null`; the empty or null input to remove returns `null`.
+5. **State of run-as-admin.** `runAsAdmin` is true when the HKCU value contains the flag **or** the HKLM value (same key path, same name) does. `runAsAdminLocked` is true when the flag is present in HKLM (the app can edit HKCU only; the checkbox shows checked and disabled with the title “Set for all users by your administrator”). Disabling only changes HKCU.
+6. **Takes effect next launch.** Turning the switch on or off does not elevate or de-elevate the running process. After a successful change the renderer shows, under the checkbox, the line “Takes effect the next time StorageIQ starts”. The line is shown for the rest of the session after a change in that session (not derived from the registry).
+7. **Packaged guard.** When `!isPackaged` or `process.platform !== 'win32'`, `getState()` returns `{ available: false, explorerMenu: false, runAsAdmin: false, runAsAdminLocked: false }` without reading the registry, and both setters return `{ state, error: 'Available in the installed app' }` without writing. A development run therefore never writes a registry key.
+8. **Errors are calm.** A registry failure (access denied by policy, koffi load failure) is caught in `options-service`: `console.warn` with the technical error, and the setter returns the freshly read state plus `error: 'Windows did not allow that change. Your settings are unchanged.'` (no HRESULT in the UI). The IPC handlers never throw for registry failures.
+9. **Argv parsing (exact).** `findScanArgument(argv)` scans the **whole** array (no fixed offsets: packaged is `[exe, …]`, dev is `[electron, '.', …]`, and Chromium may add its own switches before or after). It takes the first element that equals `--scan` (value = the next element) or starts with `--scan=` (value = the rest); an exact `--scan` as the last element returns `''` (so the launch is reported invalid, not ignored). The element must not itself look like another switch only when it is exactly `--` + letters and the next element would be consumed; a value beginning with `--` is treated as missing (`''`). **Trailing-backslash repair:** if the value contains a double quote, everything from the first `"` onward is dropped and one `\` is appended (`C:" --extra` → `C:\`; this is how `"C:\"` arrives). Leading and trailing whitespace is trimmed. `findScanArgument` never reads `--scan` that appears after a lone `--` element (end-of-options) and ignores `--self-test` handling (the self-test branch runs before any launch handling).
+10. **Launch validation (exact).** `resolveLaunchRequest` returns `{ kind: 'scan', path }` only when: the value is a string of 3 to `MAX_LAUNCH_PATH_CHARS` (1,024) characters; contains no NUL or control characters; does not start with `\\` or `//` (UNC and `\\?\` forms are refused, like `parseScanRoot`); matches a drive-absolute path (`^[A-Za-z]:[\\/]`, so a drive root is `C:\`, and the drive-relative `C:` is refused); `stat` succeeds and `isDirectory()` is true (drive roots count: `stat('C:\\')` is a directory). The path is returned `path.win32.normalize`d. Each failure returns `{ kind: 'invalid', message }` with exactly one of: `That path is too long or not a valid location.` (length, control characters, missing value), `StorageIQ scans local folders and drives. Network paths are not supported.` (UNC), `Choose a full path such as C:\Folder.` (not absolute), `That folder could not be found.` (stat failed or not a directory). The messages never include the path. Validation shares `parseScanRoot`’s regex and UNC test through one exported helper in `scan-handlers.ts` so the two can never drift.
+11. **Coordinator.** `handleArgv(argv)`: no `--scan` → do nothing (a plain second launch still just focuses, via the `second-instance` handler’s `focus()`). With a flag: resolve the request; if the renderer is ready (`take()` has been called since the last load) `send(request)` and `focus()`; otherwise keep it as `pending` (the latest request replaces an older pending one). `take()` returns `pending`, clears it and marks the renderer ready. `rendererGone()` marks it not ready (called on the window’s `did-start-loading`). `focus()` is the existing `focusMainWindow` (restore if minimised, show, focus).
+12. **Main wiring.** `launch.handleArgv(process.argv)` is called once after the window is created (first launch); `app.on('second-instance', (_event, argv) => { focusMainWindow(); void launch.handleArgv(argv) })` replaces the current bare `focusMainWindow` listener. Neither runs in the `--self-test` branch.
+13. **Renderer flow.** In `App` (mount effect): subscribe with `api.onLaunchRequest(handle)` **first**, then `api.takeLaunchRequest().then(r => r && handle(r))`; unsubscribe on unmount. `handle` is the store action `receiveLaunchRequest(request)`: `invalid` sets the existing banner `{ tone: 'error', message }`; `scan` starts at once unless `phase === 'scanning'` (rule decision 5: store `pendingLaunchScan: string | null` and render the `Dialog`; “Scan {leaf}” calls `startScan(path)`, “Keep current scan” clears it). A second `launch:request` while the dialog is open replaces its path.
+14. **IPC.** `oneBoolean(args)` in `parse-args.ts`: exactly one argument and `typeof === 'boolean'`, otherwise `InvalidIpcArgumentsError` (so `1`, `'true'`, `null`, `undefined`, objects and extra arguments are refused). `options:get-state`, `launch:take-request`: `noArgs`. All five channels use the existing sender check (`isTrustedIpcSender`) through `registerIpcHandlers`; none returns a path except `launch:take-request`, whose path was validated in main. Preload exposes exactly the five functions in the interface; the event is subscribed only through `onLaunchRequest`.
+15. **Options tab UI.** `RibbonTab` gains `'options'`; `TABS` order is File, Home, Scan, View, **Options**. `OptionsGroup` renders `<Group label="Application">` with two native `<input type="checkbox">` controls inside labels (so keyboard, screen readers and high contrast behave natively; styled with the existing tokens, 16 px box):
+    - label “Show StorageIQ in Explorer’s context menu”, title “Adds “Scan with StorageIQ” when you right-click a folder, a drive or the empty space in a folder”;
+    - label “Always start StorageIQ as administrator”, title “Windows asks for approval each time StorageIQ starts, so it can read protected folders”;
+    - state is loaded with `api.getOptionsState()` each time the tab becomes visible (not cached across tab switches); both boxes are disabled while loading, while a change is in flight, and when `available` is false; when `available` is false a caption “Available in the installed app” sits under the boxes and is referenced by `aria-describedby`;
+    - a change calls the setter, then applies the returned `state`; if `error` is non-null the box returns to the real state and the message shows in a `role="status"` line in the group (no banner, no modal);
+    - the “Takes effect the next time StorageIQ starts” line (rule 6) appears under the administrator box after a successful change;
+    - when `runAsAdminLocked`, that box is checked and disabled with the title from rule 5.
+16. **Uninstall cleanup (NSIS).** `build/installer.nsh` (electron-builder includes it automatically from `buildResources`; Step 9 verifies by building and by reading the generated `.nsi`) defines `!macro customUnInstall` that, **only when the uninstall is not part of an update** (`${ifNot} ${isUpdated}`; electron-builder runs the old uninstaller silently during an update and the keys must survive it), runs `DeleteRegKey HKCU "Software\Classes\Directory\shell\StorageIQ"`, the same for `Drive\shell\StorageIQ` and `Directory\Background\shell\StorageIQ`, and `DeleteRegValue HKCU "Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers" "$INSTDIR\${APP_EXECUTABLE_FILENAME}"`. Per-machine limitation (state it in `docs/RELEASING.md`): an all-users uninstaller runs elevated, and `HKCU` is then the _elevating_ account’s hive, which is the installing user for “Run as administrator” prompts by the same account but another account’s hive when a different administrator approves the prompt; and it never touches other users’ hives. Chosen behaviour: clean the current hive only, accept that other users of a per-machine install keep a stale “Scan with StorageIQ” entry (it does nothing harmful: choosing it shows Windows’ “file not found” message) until they remove it by hand or reinstall and turn the option off. Walking loaded `HKU\<sid>` hives is listed as an open question, not built.
+17. **Auto-update interaction (document in `docs/RELEASING.md`).** The updater replaces the exe at the same install path, so the Explorer keys and the compatibility flag keep working across updates (the uninstall macro skips cleanup during an update, rule 16). An elevated StorageIQ that installs a per-user update runs the new installer elevated: it installs into the same per-user folder and relaunches elevated (the flag is still set). If the elevating account differs from the installing account, the per-user install folder is not the elevating account’s; this combination is unsupported and is listed in the docs. A per-machine install already asks for approval at update time; with the flag set the owner sees one prompt for the app and one for the installer.
+18. **Elevation limits (document in the README and in the tab’s title text where short).** An elevated process cannot receive drag-and-drop from a non-elevated Explorer (UIPI); StorageIQ accepts no dropped files, so nothing is lost today, and the README names the limit for the future. “Open in Explorer” and the shell menu from an elevated StorageIQ work; Explorer itself stays non-elevated.
+19. **Single-instance forwarding across integrity levels (verify, do not assume).** Electron’s `second-instance` is Chromium’s `ProcessSingleton`, which on Windows finds the first instance’s message window and sends the command line with `WM_COPYDATA`. Windows’ UI Privilege Isolation can block messages from a lower-integrity sender to a higher-integrity window, so a non-elevated Explorer launch may not reach an elevated running instance. Step 1 is a spike that settles it on the owner’s machine. **If it works:** nothing more; the spike result is recorded in the commit body. **If it is blocked:** implement the fallback exactly: the second process (the one that loses the lock, or whichever detects no delivery) writes `{ "path": "<raw --scan value>", "at": <epoch ms> }` to `<userData>\launch-request.json` before quitting; the first instance watches that file (`fs.watch` on the folder, 150 ms debounce), reads it, deletes it, ignores files older than 10 s, and passes the argv `['--scan', value]` through `handleArgv`. The path is still validated by `resolveLaunchRequest`. If both fail, the elevated instance simply does not scan, and the README states “when StorageIQ runs as administrator, start it from its own icon first; Explorer’s menu works when it is closed”. Do not hide the limitation.
+20. **Never touch real keys in tests.** Unit tests use `createFakeRegistry()` (in-memory map keyed by lower-cased `hive\key\name`). The native test writes only under `HKCU\Software\StorageIQ-Test\<random uuid>` and removes it in `finally`; it asserts its own key path starts with `Software\StorageIQ-Test\` before any write. No test constructs the real keys through the real adapter.
+
+**Win32 details for `win-registry.ts` (koffi, advapi32.dll, `fn` synchronous):**
+
+- `HKEY_CURRENT_USER = 0x80000001`, `HKEY_LOCAL_MACHINE = 0x80000002` passed as `uintptr_t`; `KEY_QUERY_VALUE = 0x1`, `KEY_SET_VALUE = 0x2`, `KEY_CREATE_SUB_KEY = 0x4`, `REG_SZ = 1`, `ERROR_SUCCESS = 0`, `ERROR_FILE_NOT_FOUND = 2`.
+- Functions: `RegCreateKeyExW(uintptr_t hKey, str16 lpSubKey, uint32 Reserved, void* lpClass, uint32 dwOptions, uint32 samDesired, void* lpSecurityAttributes, _Out_ void** phkResult, _Out_ uint32* lpdwDisposition)`, `RegOpenKeyExW(...)` for reads, `RegSetValueExW(void* hKey, str16 lpValueName, uint32 Reserved, uint32 dwType, const void* lpData, uint32 cbData)` (UTF-16LE bytes including the terminating NUL; `cbData` counts the NUL), `RegQueryValueExW` (size query first, then read; non-`REG_SZ` or `REG_EXPAND_SZ` types read as absent), `RegDeleteValueW`, `RegDeleteTreeW(void* hKey, str16 lpSubKey)`, `RegCloseKey(void* hKey)` in `finally`. The empty name `''` means `(Default)` (pass a NULL pointer, not an empty string, for `lpValueName` on write and read). A non-zero status other than `ERROR_FILE_NOT_FOUND` throws `RegistryError` (status in `message` and as `.status`). `RegDeleteTreeW` of an absent key returns `ERROR_FILE_NOT_FOUND`, treated as success. Names and data lengths are checked before the call (`value.length <= 32,767`, no NUL inside).
+- koffi is loaded lazily on the first call (`require('koffi')` as in `cancelMenuWindow`), so unit tests that import the module on a non-Windows runner do not load it.
+
+**Tests (names exact, grouped by file):**
+
+- `src/main/options/layers-flags.test.ts`: `adds RUNASADMIN to a missing value`, `adds RUNASADMIN after other flags and keeps them`, `is idempotent when the flag is already set`, `matches the flag case-insensitively`, `keeps a value without a leading tilde and appends the flag`, `removes only RUNASADMIN and keeps other flags`, `returns null when RUNASADMIN was the only flag`, `returns null for null or empty input`, `collapses repeated whitespace only when it changes the value`.
+- `src/main/options/explorer-menu.test.ts`: `writes all three keys with label, MUIVerb, icon and command`, `uses %V in every command`, `quotes the exe path and the icon path`, `handles an exe path with spaces and non-ASCII letters`, `is idempotent when registered twice`, `removing deletes all three trees and is idempotent`, `state is off when a command points at another exe`, `state is on only when all three commands match`.
+- `src/main/options/run-as-admin.test.ts`: `writes the flag under the AppCompatFlags Layers key named by the exe path`, `preserves other flags when enabling`, `removes only the flag and keeps the others`, `deletes the value when nothing else remains`, `reads HKLM and reports locked`, `never writes HKLM`, `a disable of an absent value succeeds`.
+- `src/main/options/options-service.test.ts`: `unpackaged returns available false and writes nothing`, `non-Windows returns available false`, `re-registers all three keys when the exe path changed`, `repair does nothing when no key exists`, `repair rewrites a partial set`, `repair never throws when the registry fails`, `a registry failure returns the real state and a calm error`, `setters return the refreshed state`.
+- `src/main/launch/launch-args.test.ts`: `finds --scan in a packaged argv`, `finds --scan in a dev argv with the app folder`, `finds --scan=value`, `ignores Chromium switches before and after`, `ignores a --scan after a lone --`, `repairs a drive root that arrives as C:"`, `repairs a quoted drive root followed by more arguments`, `keeps a path with spaces`, `returns an empty string for --scan without a value`, `returns null without the flag`, `accepts a drive root`, `rejects a UNC path`, `rejects a relative path`, `rejects C: without a separator`, `rejects a path over 1024 characters`, `rejects control characters`, `rejects a file`, `rejects a missing folder`, `messages never include the path`, `normalizes forward slashes`.
+- `src/main/launch/launch-coordinator.test.ts`: `holds a first-launch request until the renderer takes it`, `take clears the pending request`, `sends a second-instance request immediately once ready and focuses`, `holds it again after rendererGone`, `the latest pending request wins`, `an argv without --scan does nothing`, `an invalid request is delivered as invalid`, `a stat failure becomes a not-found message`.
+- `src/main/ipc/parse-args.test.ts` additions: `oneBoolean accepts true and false`, `oneBoolean rejects 1, 'true', null, undefined, objects`, `oneBoolean rejects zero or two arguments`.
+- `src/main/ipc/options-handlers.test.ts`: `get-state takes no arguments`, `set-explorer-menu parses a strict boolean`, `set-run-as-admin parses a strict boolean`, `rejects a non-boolean before the service runs`, `returns the service result unchanged`, `an untrusted sender is refused (through registerIpcHandlers)`.
+- `src/main/ipc/launch-handlers.test.ts`: `take-request takes no arguments and returns the coordinator’s request`.
+- `src/preload/index.test.ts` additions: `exposes the five option and launch functions`, `onLaunchRequest returns an unsubscribe`.
+- `src/renderer/src/components/OptionsGroup.test.tsx`: `renders the Application group with two checkboxes`, `both are disabled with “Available in the installed app” when unavailable`, `reflects the system state (checked and unchecked)`, `loads state again when the tab is shown again`, `toggling calls the setter with a boolean and applies the returned state`, `shows the restart line after changing the administrator option`, `does not show the restart line before a change`, `shows the calm error and keeps the real state when the change fails`, `disables both boxes while a change is in flight`, `shows the administrator box checked and disabled when locked`, `every checkbox has an accessible name`.
+- `src/renderer/src/components/Ribbon.test.tsx` additions: `has the tabs File, Home, Scan, View and Options in that order`, `the Options tab shows the Application group`, `arrow keys reach the Options tab` (existing tablist pattern).
+- `src/renderer/src/stores/workspace-store.test.ts` additions: `receiveLaunchRequest starts a scan at once when idle`, `receiveLaunchRequest asks first while scanning`, `confirming the launch dialog scans the new path`, `declining keeps the current scan`, `an invalid request sets the error banner`, `a second request replaces the dialog’s path`.
+- `src/renderer/src/App.test.tsx` additions: `subscribes before it takes the pending launch request`, `unsubscribes on unmount`, `shows the confirmation dialog while scanning`.
+- `src/main/registry/win-registry.native.test.ts` (win32 only, `describe.skipIf(process.platform !== 'win32')`): `writes, reads and overwrites a string under a throwaway HKCU key`, `writes and reads the (Default) value`, `handles non-ASCII text`, `deleteValue removes one value and leaves the rest`, `deleteTree removes nested keys`, `deleting something absent is not an error`, `reads HKLM without throwing`, `the throwaway key is gone at the end`.
+- `e2e/workspace.spec.ts` additions: `the Options tab renders its Application group`, `both Options checkboxes are disabled in an unpackaged run with the explanation`, `launching with --scan <fixture folder> starts a scan of it` (Playwright `args: ['.', '--scan', fixture]`, as the existing scan e2e builds its fixture), `launching with --scan <missing folder> shows the calm message and no scan`.
+- Optional, `scripts/check-packaged-app.mjs` / self-test: a packaged self-test line `registry round trip` that writes, reads and deletes a value under `HKCU\Software\StorageIQ-Test\self-test` through the real adapter (proves koffi’s `advapi32` binding in the installed build; never touches the real keys).
+
+**Steps:**
+
+- [ ] **Step 1: Spike, integrity levels.** On a packaged build (`npm run dist`, install it), set “Run as administrator” by hand in the exe’s Properties, start StorageIQ (accept UAC), then from a normal command prompt run `"<exe>" --scan "C:\Windows"`. Observe whether the running window comes forward and receives the `second-instance` event (add a temporary `console.log` or watch the log). Record the result (works / blocked) for the commit body, then remove the temporary log. If blocked, rule 19’s fallback is part of this task (add `launch-request-file.ts` + test `writes, reads, deletes and ignores stale files` and wire it in `index.ts`).
+- [ ] **Step 2: Write the failing tests** in this order: `layers-flags.test.ts`, `launch-args.test.ts`, `explorer-menu.test.ts`, `run-as-admin.test.ts`, `options-service.test.ts`, `launch-coordinator.test.ts`, `parse-args.test.ts`, `options-handlers.test.ts`, `launch-handlers.test.ts`, preload test, `OptionsGroup.test.tsx`, Ribbon, store and App additions. Write `win-registry.native.test.ts` last (needs Step 4).
+- [ ] **Step 3: Run them.** `npx vitest run src/main/options src/main/launch src/main/ipc src/preload src/renderer`. Expected: FAIL.
+- [ ] **Step 4: Main logic.** `registry-adapter.ts`, `layers-flags.ts`, `explorer-menu.ts`, `run-as-admin.ts`, `options-service.ts`, `launch-args.ts`, `launch-coordinator.ts`, the shared validation export in `scan-handlers.ts`, `oneBoolean`, the two handler files, contract, preload, `fake-api`. Then `win-registry.ts`. Run `npx vitest run src/main src/preload`; expected PASS, the native file included (from PowerShell).
+- [ ] **Step 5: Main wiring.** `index.ts`: options service (packaged `process.execPath`), handlers, `launch:request` sender via `sendEvent`, the coordinator, the new `second-instance` listener, `handleArgv(process.argv)` after window creation, `rendererGone` on `did-start-loading`, `repairExplorerMenu()` after ready (packaged only). Confirm nothing runs under `--self-test`.
+- [ ] **Step 6: Renderer.** Store actions and `pendingLaunchScan`, `OptionsGroup.tsx`, `Ribbon.tsx` tab, `App.tsx` effect and dialog. Run `npx vitest run src/renderer`.
+- [ ] **Step 7: Installer.** `build/installer.nsh` (rule 16). Read `node_modules/app-builder-lib/templates/nsis/` to confirm the name `customUnInstall`, the `isUpdated` macro and `APP_EXECUTABLE_FILENAME`; if any differ in 26.18.0 use the installed names and say so in the commit body.
+- [ ] **Step 8: Docs.** `README.md` (the two options, the Windows 11 “Show more options” note, the UIPI note), `docs/RELEASING.md` (rules 16 and 17, the per-machine stale entry), `docs/ROADMAP.md`.
+- [ ] **Step 9: Gate** (common gate), then `npm run test:e2e` (unset `ELECTRON_RUN_AS_NODE`; interactive desktop), then `npm run dist; npm run test:packaged`. Inspect the generated installer script (under `release/<version>/` or the builder’s temp `.nsi`) for the `customUnInstall` body. Run the owner’s manual checks below on the built installer yourself first.
+- [ ] **Step 10: Commit**
+
+```powershell
+git add src/main/registry/registry-adapter.ts src/main/registry/win-registry.ts src/main/registry/win-registry.native.test.ts src/main/options/layers-flags.ts src/main/options/layers-flags.test.ts src/main/options/explorer-menu.ts src/main/options/explorer-menu.test.ts src/main/options/run-as-admin.ts src/main/options/run-as-admin.test.ts src/main/options/options-service.ts src/main/options/options-service.test.ts src/main/launch/launch-args.ts src/main/launch/launch-args.test.ts src/main/launch/launch-coordinator.ts src/main/launch/launch-coordinator.test.ts src/main/ipc/options-handlers.ts src/main/ipc/options-handlers.test.ts src/main/ipc/launch-handlers.ts src/main/ipc/launch-handlers.test.ts src/main/ipc/parse-args.ts src/main/ipc/parse-args.test.ts src/main/ipc/scan-handlers.ts src/main/ipc/scan-handlers.test.ts src/shared/ipc-contract.ts src/preload/index.ts src/preload/index.test.ts src/main/index.ts src/renderer/src/components/OptionsGroup.tsx src/renderer/src/components/OptionsGroup.test.tsx src/renderer/src/components/Ribbon.tsx src/renderer/src/components/Ribbon.test.tsx src/renderer/src/stores/workspace-store.ts src/renderer/src/stores/workspace-store.test.ts src/renderer/src/App.tsx src/renderer/src/App.test.tsx src/renderer/src/test/fake-api.ts build/installer.nsh e2e/workspace.spec.ts scripts/check-packaged-app.mjs README.md docs/RELEASING.md docs/ROADMAP.md
+git commit -m "feat(options): add Explorer context menu and run-as-administrator options"
+```
+
+Add any other file the change touched (for example `launch-request-file.ts` and its test if the spike required the fallback, `electron-builder.yml` if it changed). Never `git add -A`, `.` or `commit -a`. No AI attribution trailer. Put the spike result in the commit body.
+
+**Manual checks for the owner (add to Task 9’s checks-by-eye list), on the installed build:**
+
+1. **Folder:** Options tab, tick “Show StorageIQ in Explorer’s context menu”; in Explorer right-click a folder (on Windows 11 choose “Show more options”): “Scan with StorageIQ” appears with the StorageIQ logo; click it with StorageIQ **closed**: the app starts and scans that folder.
+2. **Open app:** repeat with StorageIQ **open** and idle: the window comes forward and scans the new folder; with a scan **running**: the “Scan another folder?” dialog appears and both buttons do what they say.
+3. **Drive and background:** right-click a drive in This PC and also the empty space inside a folder (and inside a drive’s root, `D:\`): each scans the right location (the drive root `D:\` must scan the whole drive, not fail).
+4. **Odd paths:** a folder with spaces and with non-English letters scans correctly; a network folder shows “StorageIQ scans local folders and drives. Network paths are not supported.”
+5. **Reality:** delete one of the three keys by hand in `regedit` (`HKCU\Software\Classes\Directory\shell\StorageIQ`), restart StorageIQ: the entry is back (repair). Move or reinstall to another folder with the option on: the menu still works after the next start.
+6. **Untick** the box: the menu entry disappears from folders, drives and backgrounds immediately.
+7. **Administrator:** tick “Always start StorageIQ as administrator”; it says “Takes effect the next time StorageIQ starts”; close and start: UAC appears; scan `C:\Windows\System32\config` (readable now). Right-click a folder, choose “Scan with StorageIQ” while the elevated copy is running: record whether it scans (rule 19); untick: the next start shows no UAC.
+8. **Uninstall (per-user):** uninstall; the three Explorer entries are gone and `AppCompatFlags\Layers` has no StorageIQ value; **update** to a newer build first and confirm the entries survive the update.
+9. **Per-machine install:** install for all users, enable the menu, uninstall; note which entries remain (rule 16) and confirm the README/RELEASING note matches.
+10. **Dev run:** `npm run dev` shows both boxes disabled with “Available in the installed app” and writes nothing under `HKCU\Software\Classes`.
+
+**Gate:**
+
+- `npm run format`, `npm run format:check`, `npm run lint`;
+- `npm run typecheck:node` and `npm run typecheck:web`;
+- `npx vitest run` (the native registry test runs on Windows only);
+- `npx vitest run src/renderer` with `impeccable detect --json src/renderer` printing `[]`;
+- `npm run test:e2e`;
+- `npm run dist` then `npm run test:packaged`;
+- `git status`: no registry or `release/` artefacts staged.
+
+**Commit:** `feat(options): add Explorer context menu and run-as-administrator options`, with explicit paths and no AI attribution.
+
+**Open questions for the controller / owner (Task 14):**
+
+1. **Integrity-level forwarding (rule 19)** is settled by the Step 1 spike, not by this plan. If blocked, the file hand-off fallback is in scope; if that is unwanted, the documented limitation stands.
+2. **Per-machine uninstall** cleans only the elevating account’s hive. Walking loaded `HKU\<sid>` hives in the macro would clean more but is untested territory; not built unless the owner wants it.
+3. **Windows 11 top-level menu** needs a packaged shell extension; today the entry sits under “Show more options”. Later task if wanted.
+4. **A scan running when a launch arrives** asks first (decision 5). Say if “replace silently” is preferred.
+5. **Elevated by a different administrator account** (standard user approves with another admin’s credentials): the compatibility flag lives in the _current_ user’s hive and `userData` differs for the elevated process. Documented as unsupported.
+
+**Controller rulings (2026-11-25):** (1) the file hand-off fallback is in scope if the spike shows forwarding is blocked; (2) no `HKU\<sid>` walking — the per-machine limitation is documented; (3) the Windows 11 top-level menu is a later task; (4) ask before replacing a running scan; (5) elevation by a different admin account is documented as unsupported.
+
 ## Self-review
 
 **Coverage against the brief.** 8a: typed `ShellMenuError` with HRESULT, gone pre-check plus HRESULT mapping, `{ kind: 'gone' }` outcome and message, 500 ms / 15 s watcher with cancel on new scan and quit, logged refresh failures, handler and store tests. 8b: `win-find.ts` with the constants and the 592-byte struct, `fn.async` for the open with the synchronous next-loop (justified, benchmarked against a batched variant), 8 directories in flight (to be confirmed by measurement), injectable lister, removal of the lstat path, packaging check, 1000 ms renderer throttle, bench script, 3x acceptance on `C:\Program Files`, tests. 10: all-users installer, electron-updater 6.8.12, publish block, channel rule, updater module and IPC, banner, release workflow, docs with the signing TODO, tests and manual checks. Task 8c is written separately and is not covered here.
