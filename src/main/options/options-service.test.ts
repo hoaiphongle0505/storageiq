@@ -88,6 +88,19 @@ describe('createOptionsService', () => {
     expect(warn).toHaveBeenCalledTimes(1)
   })
 
+  it('a read failure reports readFailed with both switches unavailable', () => {
+    const { registry, service, warn } = setup()
+    registry.failWith(new Error('policy'))
+    expect(service.getState()).toEqual({
+      available: false,
+      readFailed: true,
+      explorerMenu: false,
+      runAsAdmin: false,
+      runAsAdminLocked: false,
+    })
+    expect(warn).toHaveBeenCalled()
+  })
+
   it('setters return the refreshed state', () => {
     const { registry, service } = setup()
     const on = service.setExplorerMenu(true)

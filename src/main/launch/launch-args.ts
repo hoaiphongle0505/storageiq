@@ -40,6 +40,24 @@ export function findScanArgument(argv: readonly string[]): string | null {
   return null
 }
 
+/**
+ * `second-instance` argv is rebuilt by Chromium (switches first, extra ones appended), so the
+ * second process sends its `--scan` value as `additionalData` through the single-instance lock.
+ * Returns the argv to feed `handleArgv` (`[]`: no request; an over-long value becomes an empty
+ * `--scan`, which is reported as invalid), or null when the data is not the expected shape.
+ */
+export function parseSecondInstanceData(data: unknown): string[] | null {
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) return null
+  const proto: unknown = Object.getPrototypeOf(data)
+  if (proto !== Object.prototype && proto !== null) return null
+  const keys = Object.keys(data)
+  if (keys.some((key) => key !== 'scan')) return null
+  const scan: unknown = (data as Record<string, unknown>)['scan']
+  if (scan === undefined || scan === null) return []
+  if (typeof scan !== 'string') return null
+  return [SCAN_FLAG, scan.length > MAX_LAUNCH_PATH_CHARS ? '' : scan]
+}
+
 /** Control characters, including NUL, never belong in a path. */
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/

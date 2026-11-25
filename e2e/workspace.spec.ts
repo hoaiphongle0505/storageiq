@@ -1,9 +1,10 @@
+import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { type ElectronApplication, expect, type Page, test } from '@playwright/test'
 import { SCANNER_SERVICE_NAME } from '../src/shared/scanner-protocol'
 import { allocated, createScanFixture, type ScanFixture, sum } from './support/fixture'
-import { consoleErrors, launchApp } from './support/launch'
+import { consoleErrors, launchApp, launchEnv } from './support/launch'
 import {
   cellBytes,
   cellTexts,
@@ -495,4 +496,26 @@ test('launching with --scan <missing folder> shows the calm message and no scan'
   await expect(ribbonButton(page, 'Stop')).toBeDisabled()
   await expect(ribbonButton(page, 'Refresh')).toBeDisabled()
   await expect(page.getByRole('contentinfo')).not.toContainText('files found')
+})
+
+test('a second instance with --scan makes the open window scan that folder', async () => {
+  fixture = createScanFixture()
+  const first = await launchApp()
+  await app?.close()
+  app = first.app
+  page = first.page
+  // The same profile makes the new process lose the single-instance lock and hand its request over.
+  // In plain Node, require('electron') is the path of the electron executable.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const electronPath = require('electron') as unknown as string
+  const second = spawn(electronPath, ['.', '--scan', fixture.root], {
+    env: { ...launchEnv, STORAGEIQ_TEST_USER_DATA: first.userData },
+    stdio: 'ignore',
+  })
+  const exited = new Promise<number | null>((resolve) => second.once('exit', resolve))
+  await expect(treeRow(page, 'folder-12')).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByRole('contentinfo')).toContainText(
+    `${count.format(fixture.expected.files)} files found`,
+  )
+  await exited // the second process quit by itself
 })

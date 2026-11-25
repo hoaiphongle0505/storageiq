@@ -42,7 +42,9 @@ import { createItemWatcher } from './ipc/item-watcher'
 import { createShellHandlers, itemExists } from './ipc/shell-handlers'
 import { createFolderRefresher, createTreeHandlers } from './ipc/tree-handlers'
 import { autoUpdater } from 'electron-updater'
+import { findScanArgument, parseSecondInstanceData } from './launch/launch-args'
 import { createLaunchCoordinator } from './launch/launch-coordinator'
+import { watchRendererLifecycle } from './launch/renderer-lifecycle'
 import { createOptionsService } from './options/options-service'
 import { createWinRegistry } from './registry/win-registry'
 import { createRecentScans, listPlaces, RECENT_SCANS_FILE } from './places/places'
@@ -393,12 +395,15 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
         app.exit(1)
       },
     )
-} else if (!app.requestSingleInstanceLock()) {
+} else if (!app.requestSingleInstanceLock({ scan: findScanArgument(process.argv) })) {
   app.quit()
 } else {
-  app.on('second-instance', (_event, argv) => {
+  // The second process's own command line, sent through the lock: the argv below is rebuilt by
+  // Chromium and not reliable. Plain launches (no additionalData) only focus the window.
+  app.on('second-instance', (_event, _argv, _workingDirectory, additionalData) => {
     focusMainWindow()
-    void launch.handleArgv(argv)
+    const argv = parseSecondInstanceData(additionalData)
+    if (argv !== null) void launch.handleArgv(argv)
   })
   hardenWebContents(app, isTrustedUrl)
   app.on('window-all-closed', () => app.quit())
@@ -562,7 +567,7 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
         mainWindow = null
       })
       // A reload or navigation starts over: a request waits until the page asks for it again.
-      mainWindow.webContents.on('did-start-loading', () => launch.rendererGone())
+      watchRendererLifecycle(mainWindow.webContents, () => launch.rendererGone())
       void launch.handleArgv(process.argv)
       // The install folder may have changed (update, moved app): point the menu at this exe.
       if (app.isPackaged) options.repairExplorerMenu()

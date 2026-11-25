@@ -20,19 +20,21 @@ const captureHook = path.join(__dirname, 'capture-console.cjs')
 export interface LaunchedApp {
   app: ElectronApplication
   page: Page
+  /** The profile folder of this launch; a second process given the same one is a second instance. */
+  userData: string
 }
 
 /** Launches the built app with the console/CSP capture hook loaded before the main script. */
 /** `extraArgs` follow the app folder, as a shell launch would pass them (for example `--scan`). */
-export async function launchApp(extraArgs: string[] = []): Promise<LaunchedApp> {
+export async function launchApp(extraArgs: string[] = [], profile?: string): Promise<LaunchedApp> {
   // A fresh profile per launch: no stored What's new state or recent scans from earlier runs.
-  const userData = mkdtempSync(path.join(os.tmpdir(), 'storageiq-e2e-profile-'))
+  const userData = profile ?? mkdtempSync(path.join(os.tmpdir(), 'storageiq-e2e-profile-'))
   const app = await electron.launch({
     args: ['-r', captureHook, '.', ...extraArgs],
     env: { ...launchEnv, STORAGEIQ_TEST_USER_DATA: userData },
   })
   const page = await app.firstWindow()
-  return { app, page }
+  return { app, page, userData }
 }
 
 interface CaptureScope {

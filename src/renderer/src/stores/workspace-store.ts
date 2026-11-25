@@ -799,6 +799,7 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
           set({ pendingLaunchScan: request.path }) // a later request replaces an earlier one
           return
         }
+        set({ pendingLaunchScan: null }) // never leave an older path in the dialog
         void get().startScan(request.path)
       },
 
@@ -1097,8 +1098,16 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
     }
   })()
 
+  // The "Scan another folder?" question only makes sense while that scan runs.
+  const stopWatchingLaunchDialog = store.subscribe((state, previous) => {
+    if (previous.phase === 'scanning' && state.phase !== 'scanning') {
+      if (state.pendingLaunchScan !== null) store.setState({ pendingLaunchScan: null })
+    }
+  })
+
   return Object.assign(store, {
     dispose() {
+      stopWatchingLaunchDialog()
       clearRevisionTimer()
       for (const unsubscribe of unsubscribers) unsubscribe()
     },

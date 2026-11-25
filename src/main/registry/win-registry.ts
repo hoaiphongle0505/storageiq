@@ -1,3 +1,4 @@
+import { EXPLORER_KEY_ROOTS } from '../options/explorer-menu'
 import type { RegistryAdapter, RegistryHive } from './registry-adapter'
 
 const HKEY_CURRENT_USER = 0x80000001
@@ -24,7 +25,7 @@ export class RegistryError extends Error {
 
 type Handle = number | bigint
 
-interface Advapi32 {
+export interface Advapi32 {
   create(root: number, key: string): Handle
   open(root: number, key: string, access: number): Handle | null
   setValue(handle: Handle, name: string, data: Buffer): number
@@ -124,10 +125,25 @@ function checkName(label: string, value: string, allowEmpty: boolean): void {
 const rootOf = (hive: RegistryHive): number =>
   hive === 'HKCU' ? HKEY_CURRENT_USER : HKEY_LOCAL_MACHINE
 
+const TEST_KEY_PREFIX = 'software\\storageiq-test\\'
+
+/**
+ * `deleteTree` deletes recursively, so it only accepts the three StorageIQ verb keys (and their
+ * children) and the throwaway test prefix; anything else, an empty key included, is refused.
+ */
+export function isAllowedTreeKey(key: string): boolean {
+  const lower = key.toLowerCase()
+  if (lower.startsWith(TEST_KEY_PREFIX)) return lower.length > TEST_KEY_PREFIX.length
+  return EXPLORER_KEY_ROOTS.some((root) => {
+    const rootLower = root.toLowerCase()
+    return lower === rootLower || lower.startsWith(`${rootLower}\\`)
+  })
+}
+
 /** The Windows registry through advapi32 (koffi), synchronously: each call takes microseconds. */
-export function createWinRegistry(): RegistryAdapter {
+export function createWinRegistry(bind: () => Advapi32 = bindAdvapi32): RegistryAdapter {
   let api: Advapi32 | null = null
-  const advapi = (): Advapi32 => (api ??= bindAdvapi32())
+  const advapi = (): Advapi32 => (api ??= bind())
 
   return {
     getString(hive, key, name) {
@@ -172,6 +188,7 @@ export function createWinRegistry(): RegistryAdapter {
     },
     deleteTree(key) {
       checkName('key', key, false)
+      if (!isAllowedTreeKey(key)) throw new RangeError('refusing to delete an unrelated key')
       const status = advapi().deleteTree(HKEY_CURRENT_USER, key)
       if (status !== ERROR_SUCCESS && status !== ERROR_FILE_NOT_FOUND) {
         throw new RegistryError('RegDeleteTreeW', status)

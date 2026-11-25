@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { findScanArgument, MAX_LAUNCH_PATH_CHARS, resolveLaunchRequest } from './launch-args'
+import {
+  findScanArgument,
+  MAX_LAUNCH_PATH_CHARS,
+  parseSecondInstanceData,
+  resolveLaunchRequest,
+} from './launch-args'
 
 const dir = { isDirectory: () => true }
 const file = { isDirectory: () => false }
@@ -152,5 +157,36 @@ describe('resolveLaunchRequest', () => {
     await expect(
       resolveLaunchRequest(['a', '--scan', 'C:/Users/Ana/../Bob'], statDir),
     ).resolves.toEqual({ kind: 'scan', path: 'C:\\Users\\Bob' })
+  })
+})
+
+describe('parseSecondInstanceData', () => {
+  it('turns { scan: value } into a --scan argv', () => {
+    expect(parseSecondInstanceData({ scan: 'D:\\Data' })).toEqual(['--scan', 'D:\\Data'])
+  })
+
+  it('does nothing for { scan: null } or a missing scan', () => {
+    expect(parseSecondInstanceData({ scan: null })).toEqual([])
+    expect(parseSecondInstanceData({})).toEqual([])
+  })
+
+  it('ignores anything that is not a plain object with a string or null scan', () => {
+    const bads = [undefined, null, 'D:\\Data', 7, ['--scan', 'D:\\'], { scan: 5 }, { scan: {} }]
+    for (const bad of bads) {
+      expect(parseSecondInstanceData(bad)).toBeNull()
+    }
+    class Fake {
+      scan = 'D:\\Data'
+    }
+    expect(parseSecondInstanceData(new Fake())).toBeNull()
+  })
+
+  it('ignores unexpected extra keys', () => {
+    expect(parseSecondInstanceData({ scan: 'D:\\Data', extra: 1 })).toBeNull()
+  })
+
+  it('reports an over-long value as invalid input instead of passing it on', () => {
+    const argv = parseSecondInstanceData({ scan: 'C:\\' + 'a'.repeat(MAX_LAUNCH_PATH_CHARS) })
+    expect(argv).toEqual(['--scan', ''])
   })
 })

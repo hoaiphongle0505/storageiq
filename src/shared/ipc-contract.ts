@@ -112,6 +112,8 @@ export interface CreateFolderResult {
 export interface OptionsState {
   /** false when unpackaged (or not Windows): both switches are shown disabled. */
   available: boolean
+  /** The registry could not be read: both switches are shown disabled with a note. */
+  readFailed?: boolean
   /** All three Explorer verbs exist with a command for the current exe. */
   explorerMenu: boolean
   /** HKCU or HKLM carries RUNASADMIN for the current exe. */

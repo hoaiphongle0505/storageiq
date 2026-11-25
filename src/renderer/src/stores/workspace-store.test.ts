@@ -909,6 +909,26 @@ describe('multi-select', () => {
       expect(store.getState().phase).toBe('scanning')
     })
 
+    it('a request that starts a scan at once clears an older dialog path', async () => {
+      const { api, store } = await scanning()
+      store.getState().receiveLaunchRequest({ kind: 'scan', path: 'E:\\One' })
+      api.emitScanDone(makeDone())
+      await flush()
+      store.getState().receiveLaunchRequest({ kind: 'scan', path: 'E:\\Two' })
+      expect(store.getState().pendingLaunchScan).toBeNull()
+      await flush()
+      expect(api.startScan).toHaveBeenLastCalledWith('E:\\Two')
+    })
+
+    it('the dialog closes when the running scan ends', async () => {
+      const { api, store } = await scanning()
+      store.getState().receiveLaunchRequest({ kind: 'scan', path: 'E:\\One' })
+      expect(store.getState().pendingLaunchScan).toBe('E:\\One')
+      api.emitScanDone(makeDone())
+      await flush()
+      expect(store.getState().pendingLaunchScan).toBeNull()
+    })
+
     it('an invalid request sets the error banner', () => {
       const store = createWorkspaceStore(createFakeApi())
       store

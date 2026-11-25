@@ -56,7 +56,7 @@ export function createOptionsService(deps: {
       return readState()
     } catch (error) {
       deps.warn('StorageIQ could not read its Windows options', error)
-      return { ...UNAVAILABLE, available: true }
+      return { ...UNAVAILABLE, readFailed: true }
     }
   }
 

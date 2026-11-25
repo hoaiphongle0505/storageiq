@@ -77,6 +77,11 @@ describe.skipIf(process.platform !== 'win32')('win-registry (native, throwaway H
     expect(() => registry.setString(ROOT, 'a\u0000b', 'x')).toThrow()
   })
 
+  it('refuses to delete a key outside the StorageIQ verbs and the test prefix', () => {
+    expect(() => real?.deleteTree('')).toThrow()
+    expect(() => real?.deleteTree('Software')).toThrow()
+  })
+
   it('reads HKLM without throwing', () => {
     const key = 'Software\\Microsoft\\Windows NT\\CurrentVersion'
     const product = real?.getString('HKLM', key, 'ProductName')

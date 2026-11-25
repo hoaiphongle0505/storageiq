@@ -7,7 +7,7 @@ export function hasNativeFocusgroup(): boolean {
   return typeof HTMLElement !== 'undefined' && 'focusGroup' in HTMLElement.prototype
 }
 
-const ITEM_SELECTOR = 'button:not([disabled])'
+const ITEM_SELECTOR = 'button:not([disabled]), input[type="checkbox"]:not([disabled])'
 
 /**
  * Fallback for the `focusgroup` attribute (modern-web-guidance "toolbar", "tabs" and "menu"):

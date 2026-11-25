@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, screen, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { createFakeApi } from '../test/fake-api'
@@ -165,6 +165,34 @@ describe('<Ribbon />', () => {
     expect(toolbar()).toHaveAccessibleName('Options commands')
     expect(within(toolbar()).getByRole('group', { name: 'Application' })).toBeInTheDocument()
     expect(within(toolbar()).getAllByRole('checkbox')).toHaveLength(2)
+  })
+
+  it('loads state again when the tab is shown again', async () => {
+    const user = userEvent.setup()
+    const api = createFakeApi()
+    renderRibbon(api)
+    await user.click(screen.getByRole('tab', { name: 'Options' }))
+    await waitFor(() => expect(api.getOptionsState).toHaveBeenCalledTimes(1))
+    await user.click(screen.getByRole('tab', { name: 'Home' }))
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    await user.click(screen.getByRole('tab', { name: 'Options' }))
+    await waitFor(() => expect(api.getOptionsState).toHaveBeenCalledTimes(2))
+  })
+
+  it('arrow keys move between the two Options checkboxes (jsdom focusgroup fallback)', async () => {
+    // Electron 45 uses the native focusgroup instead; this covers the fallback's checkbox support
+    // only. The native Tab and arrow behaviour needs a packaged-app check (owner list).
+    const user = userEvent.setup()
+    renderRibbon()
+    await user.click(screen.getByRole('tab', { name: 'Options' }))
+    const menu = await screen.findByRole('checkbox', { name: /Explorer/ })
+    const admin = screen.getByRole('checkbox', { name: /administrator/ })
+    await waitFor(() => expect(menu).toBeEnabled())
+    menu.focus()
+    await user.keyboard('{ArrowRight}')
+    expect(admin).toHaveFocus()
+    await user.keyboard('{ArrowLeft}')
+    expect(menu).toHaveFocus()
   })
 
   it('arrow keys reach the Options tab', async () => {

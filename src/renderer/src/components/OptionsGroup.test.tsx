@@ -40,8 +40,8 @@ describe('<OptionsGroup />', () => {
     const caption = await screen.findByText('Available in the installed app')
     expect(menuBox()).toBeDisabled()
     expect(adminBox()).toBeDisabled()
-    expect(menuBox()).toHaveAttribute('aria-describedby', caption.id)
-    expect(adminBox()).toHaveAttribute('aria-describedby', caption.id)
+    expect(menuBox().getAttribute('aria-describedby')).toContain(caption.id)
+    expect(adminBox().getAttribute('aria-describedby')).toContain(caption.id)
   })
 
   it('reflects the system state (checked and unchecked)', async () => {
@@ -50,12 +50,29 @@ describe('<OptionsGroup />', () => {
     expect(adminBox()).not.toBeChecked()
   })
 
-  it('loads state again when the tab is shown again', async () => {
-    const { api, unmount } = renderOptions()
-    await waitFor(() => expect(api.getOptionsState).toHaveBeenCalledTimes(1))
-    unmount()
-    renderWithStores(<OptionsGroup />, api)
-    await waitFor(() => expect(api.getOptionsState).toHaveBeenCalledTimes(2))
+  it('shows the explanations as visible text that describes each box', async () => {
+    renderOptions()
+    await waitFor(() => expect(menuBox()).toBeEnabled())
+    const menuNote = screen.getByText('Adds “Scan with StorageIQ” to right-click menus')
+    const adminNote = screen.getByText('Windows asks for approval each time StorageIQ starts')
+    expect(menuBox().getAttribute('aria-describedby')).toContain(menuNote.id)
+    expect(adminBox().getAttribute('aria-describedby')).toContain(adminNote.id)
+  })
+
+  it('shows a visible note and disabled boxes when the registry cannot be read', async () => {
+    renderOptions({ ...UNAVAILABLE, readFailed: true })
+    const note = await screen.findByText('Could not read this setting')
+    expect(menuBox()).toBeDisabled()
+    expect(adminBox()).toBeDisabled()
+    expect(menuBox()).not.toBeChecked()
+    expect(menuBox().getAttribute('aria-describedby')).toContain(note.id)
+    expect(screen.queryByText('Available in the installed app')).toBeNull()
+  })
+
+  it('shows the same note when the state call itself rejects', async () => {
+    renderOptions(OFF, { getOptionsState: vi.fn().mockRejectedValue(new Error('ipc')) })
+    expect(await screen.findByText('Could not read this setting')).toBeVisible()
+    expect(menuBox()).toBeDisabled()
   })
 
   it('toggling calls the setter with a boolean and applies the returned state', async () => {
@@ -127,10 +144,9 @@ describe('<OptionsGroup />', () => {
     renderOptions({ ...OFF, runAsAdmin: true, runAsAdminLocked: true })
     await waitFor(() => expect(adminBox()).toBeChecked())
     expect(adminBox()).toBeDisabled()
-    expect(adminBox().closest('label')).toHaveAttribute(
-      'title',
-      'Set for all users by your administrator',
-    )
+    const reason = screen.getByText('Set for all users by your administrator')
+    expect(reason).toBeVisible()
+    expect(adminBox().getAttribute('aria-describedby')).toContain(reason.id)
     expect(menuBox()).toBeEnabled()
   })
 
