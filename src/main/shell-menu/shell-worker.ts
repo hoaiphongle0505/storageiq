@@ -124,6 +124,48 @@ export function runProbeRequest(
   }
 }
 
+/**
+ * Keyboard Delete: builds the menu like a request would (without showing it) and runs the
+ * `"delete"` verb. `finished` follows when the shell's copy engine returned.
+ */
+export function runDeleteRequest(
+  native: ShellNative,
+  request: Extract<WorkerRequest, { type: 'invoke-delete' }>,
+  post: Post,
+  noUi = false,
+): void {
+  const { id } = request
+  let menu: BuiltShellMenu
+  try {
+    menu = buildMenu(native, request.paths, false, false)
+  } catch (error) {
+    post({ type: 'failed', id, ...failureOf(error, 'build') })
+    return
+  }
+  try {
+    menu.invokeDelete(request.permanent, noUi)
+    post({ type: 'finished', id, ok: true })
+  } catch (error) {
+    post({ type: 'finished', id, ok: false, ...failureOf(error, 'invoke') })
+  } finally {
+    menu.release()
+  }
+}
+
+/** Empties one drive's Recycle Bin (Windows shows its confirmation and progress). */
+export function runEmptyBinRequest(
+  native: ShellNative,
+  request: Extract<WorkerRequest, { type: 'empty-bin' }>,
+  post: Post,
+): void {
+  try {
+    native.emptyRecycleBin(request.root)
+    post({ type: 'finished', id: request.id, ok: true })
+  } catch (error) {
+    post({ type: 'finished', id: request.id, ok: false, ...failureOf(error, 'empty-bin') })
+  }
+}
+
 /** Test only: builds the menu like a request would and runs one verb without showing it. */
 export function runInvokeVerbRequest(
   native: ShellNative,
@@ -168,6 +210,11 @@ if (
         }
         if (request.type === 'show') runShellRequest(native, request, post)
         else if (request.type === 'probe') runProbeRequest(native, request, post)
+        // Test workers suppress Windows' UI for the Recycle Bin path only: FLAG_NO_UI makes the
+        // verb ignore SHIFT_DOWN and recycle, so the permanent path runs with the real flags.
+        else if (request.type === 'empty-bin') runEmptyBinRequest(native, request, post)
+        else if (request.type === 'invoke-delete')
+          runDeleteRequest(native, request, post, testVerbs && !request.permanent)
         else if (testVerbs) runInvokeVerbRequest(native, request, post)
         else
           post({ type: 'finished', id: request.id, ok: false, hresult: E_FAIL, step: 'disabled' })

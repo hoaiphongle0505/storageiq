@@ -14,6 +14,11 @@ export interface BuiltShellMenu {
   offsetOfVerb(verb: string): number | null
   /** Runs the shell's item as Explorer would; Shift/Ctrl are read from the live key state. */
   invoke(offset: number, x: number, y: number): void
+  /**
+   * Keyboard delete: runs the `"delete"` verb by name, with no menu shown. `permanent` sets
+   * SHIFT_DOWN (Explorer's Shift+Delete). `noUi` is for native tests only. Windows shows its own confirmation and progress dialogs.
+   */
+  invokeDelete(permanent: boolean, noUi?: boolean): void
   /** Fallback menu only: recycles the items with IFileOperation; returns when it finished. */
   recycle(): void
   /** Destroys the menu and releases every COM object and the owner window. */
@@ -28,6 +33,8 @@ export interface BuildOptions {
 /** The Windows side (koffi), used by the worker; tests pass a fake. Everything is synchronous. */
 export interface ShellNative {
   build(route: MenuRoute, paths: readonly string[], options: BuildOptions): BuiltShellMenu
+  /** `SHEmptyRecycleBinW` for the drive `root` with confirmation and progress (flags 0). */
+  emptyRecycleBin(root: string): void
   /** StorageIQ-only menu (Refresh, Copy paths, Delete) for when the default menu cannot be built. */
   buildFallback(paths: readonly string[]): BuiltShellMenu
 }

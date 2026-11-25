@@ -4,6 +4,7 @@ import type { AppInfo } from '@shared/ipc-contract'
 import {
   childrenArgs,
   contextMenuArgs,
+  deleteArgs,
   expandArgs,
   iconNodesArgs,
   iconTypesArgs,
@@ -92,6 +93,7 @@ function createHandlers(overrides: Partial<IpcHandlerMap> = {}): IpcHandlerMap {
     'launch:take-request': { parseArgs: noArgs, handle: () => null },
     'shell:open-in-explorer': { parseArgs: scanNodeArgs, handle: () => undefined },
     'shell:context-menu': { parseArgs: contextMenuArgs, handle: () => ({ kind: 'dismissed' }) },
+    'shell:delete': { parseArgs: deleteArgs, handle: () => ({ kind: 'dismissed' }) },
     'folder:create': { parseArgs: scanNodeArgs, handle: () => ({ parentId: 'd0', name: 'x' }) },
     'clipboard:copy-path': { parseArgs: scanNodesArgs, handle: () => undefined },
     ...overrides,
@@ -153,6 +155,7 @@ describe('registerIpcHandlers', () => {
       'scan:cancel',
       'scan:start',
       'shell:context-menu',
+      'shell:delete',
       'shell:open-in-explorer',
       'tree:children',
       'tree:expand-ids',

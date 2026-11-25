@@ -53,7 +53,7 @@ import { hardenWebContents } from './security/harden-web-contents'
 import { isTrustedRendererUrl } from './security/trusted-url'
 import { isTrustedIpcSender } from './security/trusted-sender'
 import { runSelfTest, SELF_TEST_FLAG, type SelfTestScan } from './self-test'
-import type { ShellMenuHost, ShellMenuRequest } from './shell-menu/context-menu'
+import type { ShellFinish, ShellMenuHost, ShellMenuRequest } from './shell-menu/context-menu'
 import {
   createShellWorkerPool,
   disposePoolAtQuit,
@@ -236,6 +236,26 @@ function showContextMenuAt(request: ShellMenuRequest): ReturnType<ShellMenuHost[
   const bounds = window.getContentBounds()
   const point = screen.dipToScreenPoint({ x: bounds.x + request.x, y: bounds.y + request.y })
   return getShellPool().show({ ...request, x: Math.round(point.x), y: Math.round(point.y) })
+}
+
+/** E2E only: the delete requests that main received (nothing is deleted). */
+const testDeleteRequests: Array<{ paths: string[]; permanent: boolean }> | null =
+  testMenuRequests === null ? null : []
+
+/** Keyboard Delete on a shell worker thread; Windows shows its own dialogs. */
+function deleteShellItems(paths: string[], permanent: boolean): Promise<ShellFinish> {
+  if (testDeleteRequests !== null) {
+    // E2E only: record the request, never delete.
+    testDeleteRequests.push({ paths, permanent })
+    return Promise.resolve({ ok: true })
+  }
+  return getShellPool().deleteItems(paths, permanent)
+}
+
+/** Empties a drive's Recycle Bin on a shell worker thread (E2E: never, only a recorded no-op). */
+function emptyRecycleBin(root: string): Promise<ShellFinish> {
+  if (testDeleteRequests !== null) return Promise.resolve({ ok: true })
+  return getShellPool().emptyRecycleBin(root)
 }
 
 function forkScanner(): ScannerChild {
@@ -425,6 +445,7 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
       __storageiqProbeShellMenu: (target: string) => getShellPool().probe([target]),
       // The menu requests recorded instead of shown (see showContextMenuAt).
       __storageiqMenuRequests: () => testMenuRequests,
+      __storageiqDeleteRequests: () => testDeleteRequests,
     })
   }
 
@@ -542,6 +563,8 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
             await mkdir(folder)
           },
           showShellMenu: showContextMenuAt,
+          deleteShellItems,
+          emptyRecycleBin,
           pathExists: itemExists,
           watcher: itemWatcher,
           warn: (message, error) => console.warn(message, error),

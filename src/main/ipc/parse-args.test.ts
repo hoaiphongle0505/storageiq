@@ -3,6 +3,7 @@ import {
   aboutLinkArg,
   childrenArgs,
   contextMenuArgs,
+  deleteArgs,
   expandArgs,
   iconNodesArgs,
   iconTypesArgs,
@@ -268,5 +269,29 @@ describe('oneBoolean', () => {
   it('oneBoolean rejects zero or two arguments', () => {
     expect(() => oneBoolean([])).toThrow(InvalidIpcArgumentsError)
     expect(() => oneBoolean([true, false])).toThrow(InvalidIpcArgumentsError)
+  })
+})
+
+describe('deleteArgs', () => {
+  const ids = (n: number) => Array.from({ length: n }, (_, i) => `f${i + 1}`)
+
+  it('accepts 1 and 1000 ids with a boolean', () => {
+    expect(deleteArgs([SCAN, ['d4'], false])).toEqual([SCAN, ['d4'], false])
+    expect(deleteArgs([SCAN, ids(1000), true])[1]).toHaveLength(1000)
+  })
+
+  it('rejects 0 and 1001 ids', () => {
+    expect(() => deleteArgs([SCAN, [], false])).toThrow(InvalidIpcArgumentsError)
+    expect(() => deleteArgs([SCAN, ids(1001), false])).toThrow(InvalidIpcArgumentsError)
+  })
+
+  it.each([undefined, 0, 1, 'true', null, {}])('rejects permanent = %j', (permanent) => {
+    expect(() => deleteArgs([SCAN, ['d1'], permanent])).toThrow(InvalidIpcArgumentsError)
+  })
+
+  it('rejects a wrong argument count and a path instead of an id', () => {
+    expect(() => deleteArgs([SCAN, ['d1']])).toThrow(InvalidIpcArgumentsError)
+    expect(() => deleteArgs([SCAN, ['d1'], false, 1])).toThrow(InvalidIpcArgumentsError)
+    expect(() => deleteArgs([SCAN, ['C:\\Windows'], false])).toThrow(InvalidIpcArgumentsError)
   })
 })

@@ -4,7 +4,7 @@ import { SHELL_FIRST_ID, STORAGEIQ_COMMAND_IDS } from './menu-commands'
 import { ShellMenuError } from './shell-menu-error'
 import type { BuildOptions, BuiltShellMenu, ShellNative } from './shell-native'
 import type { WorkerReply, WorkerRequest } from './shell-worker-protocol'
-import { runShellRequest } from './shell-worker'
+import { runDeleteRequest, runEmptyBinRequest, runShellRequest } from './shell-worker'
 
 type ShowRequest = Extract<WorkerRequest, { type: 'show' }>
 
@@ -33,6 +33,9 @@ function fakeMenu(chosenId: number, verb: string | null = 'delete') {
     invoke: vi.fn(() => {
       calls.push('invoke')
     }),
+    invokeDelete: vi.fn((permanent: boolean) => {
+      calls.push(permanent ? 'delete-permanent' : 'delete')
+    }),
     recycle: vi.fn(() => {
       calls.push('recycle')
     }),
@@ -51,6 +54,7 @@ function fakeNative(menu: BuiltShellMenu, fallback?: BuiltShellMenu) {
       return menu
     }),
     buildFallback: vi.fn(() => fallback ?? menu),
+    emptyRecycleBin: vi.fn(),
   }
   return { native, routes }
 }
@@ -239,5 +243,99 @@ describe('runShellRequest', () => {
     runShellRequest(native, show(['D:\\Data\\a.txt']), post)
     expect(menu.release).toHaveBeenCalledTimes(1)
     expect(replies).toEqual([{ type: 'failed', id: 7, hresult: 0x80004005, step: 'track' }])
+  })
+})
+
+describe('runDeleteRequest', () => {
+  const del = (
+    paths: string[],
+    permanent: boolean,
+  ): Extract<WorkerRequest, { type: 'invoke-delete' }> => ({
+    type: 'invoke-delete',
+    id: 9,
+    paths,
+    permanent,
+  })
+
+  it('builds the menu like a request would, runs the delete verb without showing it and releases', () => {
+    const { menu, calls } = fakeMenu(0)
+    const { native, routes } = fakeNative(menu)
+    const { replies, post } = collect()
+    runDeleteRequest(native, del(['D:\\Data\\a.txt', 'E:\\b.txt'], false), post)
+    expect(routes).toEqual([
+      {
+        route: 'default',
+        paths: ['D:\\Data\\a.txt', 'E:\\b.txt'],
+        options: { extended: false, hideDestructive: false },
+      },
+    ])
+    expect(menu.track).not.toHaveBeenCalled()
+    expect(calls).toEqual(['delete', 'release'])
+    expect(replies).toEqual([{ type: 'finished', id: 9, ok: true }])
+  })
+
+  it('passes permanent through', () => {
+    const { menu } = fakeMenu(0)
+    const { native } = fakeNative(menu)
+    runDeleteRequest(native, del(['D:\\a.txt'], true), collect().post)
+    expect(menu.invokeDelete).toHaveBeenCalledWith(true, false)
+    runDeleteRequest(native, del(['D:\\a.txt'], false), collect().post, true)
+    expect(menu.invokeDelete).toHaveBeenLastCalledWith(false, true)
+  })
+
+  it('reports a failing verb with its hresult and still releases', () => {
+    const { menu } = fakeMenu(0)
+    vi.mocked(menu.invokeDelete).mockImplementation(() => {
+      throw new ShellMenuError('InvokeCommand', 0x800704c7)
+    })
+    const { native } = fakeNative(menu)
+    const { replies, post } = collect()
+    runDeleteRequest(native, del(['D:\\a.txt'], false), post)
+    expect(menu.release).toHaveBeenCalledTimes(1)
+    expect(replies).toEqual([
+      { type: 'finished', id: 9, ok: false, hresult: 0x800704c7, step: 'InvokeCommand' },
+    ])
+  })
+
+  it('reports a menu that cannot be built as failed', () => {
+    const { menu } = fakeMenu(0)
+    const { native } = fakeNative(menu)
+    vi.mocked(native.build).mockImplementation(() => {
+      throw new ShellMenuError('GetUIObjectOf', 0x80070002)
+    })
+    const { replies, post } = collect()
+    runDeleteRequest(native, del(['D:\\a.txt'], false), post)
+    expect(replies).toEqual([{ type: 'failed', id: 9, hresult: 0x80070002, step: 'GetUIObjectOf' }])
+  })
+})
+
+describe('runEmptyBinRequest', () => {
+  const request: Extract<WorkerRequest, { type: 'empty-bin' }> = {
+    type: 'empty-bin',
+    id: 4,
+    root: 'D:\\',
+  }
+
+  it('calls the native empty-bin for the drive root and finishes', () => {
+    const { menu } = fakeMenu(0)
+    const { native } = fakeNative(menu)
+    const { replies, post } = collect()
+    runEmptyBinRequest(native, request, post)
+    expect(native.emptyRecycleBin).toHaveBeenCalledWith('D:\\')
+    expect(native.build).not.toHaveBeenCalled()
+    expect(replies).toEqual([{ type: 'finished', id: 4, ok: true }])
+  })
+
+  it('reports a failing call with its hresult', () => {
+    const { menu } = fakeMenu(0)
+    const { native } = fakeNative(menu)
+    vi.mocked(native.emptyRecycleBin).mockImplementation(() => {
+      throw new ShellMenuError('SHEmptyRecycleBinW', 0x8000ffff)
+    })
+    const { replies, post } = collect()
+    runEmptyBinRequest(native, request, post)
+    expect(replies).toEqual([
+      { type: 'finished', id: 4, ok: false, hresult: 0x8000ffff, step: 'SHEmptyRecycleBinW' },
+    ])
   })
 })

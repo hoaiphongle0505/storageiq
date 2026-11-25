@@ -15,6 +15,13 @@ export type WorkerRequest =
   | { type: 'probe'; id: number; paths: string[]; hideDestructive: boolean }
   /** Native tests and nothing else: build the menu without showing it and run one verb. */
   | { type: 'invoke-verb'; id: number; paths: string[]; verb: string }
+  /**
+   * Keyboard Delete (`permanent`: Shift+Delete): runs the shell's `"delete"` verb on `paths`
+   * with no menu. Allowed in production; Windows shows its own dialogs.
+   */
+  | { type: 'invoke-delete'; id: number; paths: string[]; permanent: boolean }
+  /** Empties the Recycle Bin of the drive `root` (`C:` + backslash) with Windows' own dialogs. */
+  | { type: 'empty-bin'; id: number; root: string }
   /** Close the worker once it has finished loading (used instead of terminate() before `ready`). */
   | { type: 'exit' }
 

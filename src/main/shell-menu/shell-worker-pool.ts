@@ -289,6 +289,33 @@ export function createShellWorkerPool(deps: ShellWorkerPoolDeps): ShellWorkerPoo
       })
     },
 
+    deleteItems(paths: string[], permanent: boolean) {
+      // Like `show`: a busy pool throws here, synchronously, not as a rejected promise.
+      let finished!: Promise<ShellFinish>
+      start(
+        (id) => ({ type: 'invoke-delete', id, paths, permanent }),
+        (pending) => {
+          finished = new Promise<ShellFinish>((resolve) => {
+            pending.finish = resolve
+          })
+        },
+      )
+      return finished
+    },
+
+    emptyRecycleBin(root: string) {
+      let finished!: Promise<ShellFinish>
+      start(
+        (id) => ({ type: 'empty-bin', id, root }),
+        (pending) => {
+          finished = new Promise<ShellFinish>((resolve) => {
+            pending.finish = resolve
+          })
+        },
+      )
+      return finished
+    },
+
     dispose() {
       disposed = true
       let running = 0

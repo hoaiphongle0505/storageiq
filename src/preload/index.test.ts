@@ -107,6 +107,12 @@ describe('preload bridge', () => {
       20,
       false,
     )
+    await (exposed['deleteNodes'] as unknown as (...args: unknown[]) => Promise<unknown>)(
+      'scan-1',
+      ['d1'],
+      true,
+    )
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('shell:delete', 'scan-1', ['d1'], true)
     await (exposed['copyNodePath'] as unknown as (...args: unknown[]) => Promise<unknown>)(
       'scan-1',
       ['d1', 'f2'],

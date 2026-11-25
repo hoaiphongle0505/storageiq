@@ -9,11 +9,12 @@ import type {
   ShellMenuRequest,
 } from '../shell-menu/context-menu'
 import { nextNewFolderName } from '../shell-menu/menu-commands'
+import { recycleBinRootOf } from '../shell-menu/recycle-bin'
 import { isShellPathGone } from '../shell-menu/shell-menu-error'
 import { ShellBusyError } from '../shell-menu/shell-worker-pool'
 import type { ItemWatcher } from './item-watcher'
 import { mapLimit } from './map-limit'
-import { contextMenuArgs, scanNodeArgs, scanNodesArgs } from './parse-args'
+import { contextMenuArgs, deleteArgs, scanNodeArgs, scanNodesArgs } from './parse-args'
 import type { IpcHandlerMap } from './register'
 import {
   folderIdOf,
@@ -26,7 +27,11 @@ import {
 
 export type ShellHandlers = Pick<
   IpcHandlerMap,
-  'shell:open-in-explorer' | 'shell:context-menu' | 'folder:create' | 'clipboard:copy-path'
+  | 'shell:open-in-explorer'
+  | 'shell:context-menu'
+  | 'shell:delete'
+  | 'folder:create'
+  | 'clipboard:copy-path'
 >
 
 /** For verbs that leave the item in place: the folder is rescanned once more after this delay. */
@@ -71,6 +76,13 @@ export interface ShellHandlerDeps {
    * converts them to screen pixels). Throws `ShellBusyError` when three actions already run.
    */
   showShellMenu(request: ShellMenuRequest): ReturnType<ShellMenuHost['show']>
+  /**
+   * Starts the shell's `"delete"` verb for the paths (Shift+Delete when `permanent`) on a worker
+   * thread. Throws `ShellBusyError` when three actions already run.
+   */
+  deleteShellItems(paths: string[], permanent: boolean): ReturnType<ShellMenuHost['deleteItems']>
+  /** Empties a drive's Recycle Bin (`SHEmptyRecycleBinW`); throws `ShellBusyError` when busy. */
+  emptyRecycleBin(root: string): ReturnType<ShellMenuHost['emptyRecycleBin']>
   /** Whether the path still exists on disk (`fs.promises.lstat`). */
   pathExists(target: string): Promise<boolean>
   /** Polls for items that a shell command is removing, and owns the delayed refresh timers. */
@@ -437,7 +449,64 @@ export function createShellHandlers(deps: ShellHandlerDeps): ShellHandlers {
     }
   }
 
+  /**
+   * Keyboard Delete / Shift+Delete. The same resolution as the context menu, but the root, the
+   * "[N files]" rows and drive roots are never deleted, not even alone (a "[N files]" row's path
+   * is its folder). Rows leave the tree through the same refresh as a menu delete.
+   */
+  const deleteNodes = async (
+    scanId: string,
+    nodeIds: readonly NodeId[],
+    permanent: boolean,
+  ): Promise<ContextMenuOutcome> => {
+    if (scanService.isScanning()) throw new Error(SCAN_RUNNING_MESSAGE)
+    const resolved = await resolveNodes(scanId, nodeIds)
+    if (resolved.length === 0) return { kind: 'gone' }
+    const rows = resolved.filter(
+      (item) =>
+        item.row.id !== ROOT_NODE_ID && item.row.kind !== 'files' && !isDriveRootPath(item.path),
+    )
+    let items = actionable(rows)
+    if (items.length === 0) return { kind: 'dismissed' }
+    items = await existingOnly(scanId, items)
+    if (items.length === 0) return { kind: 'gone' }
+    // A drive's `$RECYCLE.BIN` (or a user's folder in it) is emptied with Windows' own call:
+    // the delete verb would walk every item in it. Decided from the scanner's path only.
+    const bins = items.filter((item) => recycleBinRootOf(item.path) !== null)
+    if (bins.length > 0 && bins.length < items.length) return { kind: 'bin-mixed' }
+    let finished: Promise<ShellFinish>
+    try {
+      if (bins.length > 0) {
+        const roots = [...new Set(bins.map((item) => recycleBinRootOf(item.path) ?? ''))]
+        // One call per drive, one after the other; the busy check is at the first call.
+        const first = deps.emptyRecycleBin(roots[0] ?? '')
+        finished = roots
+          .slice(1)
+          .reduce(
+            (previous, root) =>
+              previous.then((result) => (result.ok ? deps.emptyRecycleBin(root) : result)),
+            first,
+          )
+      } else {
+        finished = deps.deleteShellItems(
+          items.map((item) => item.path),
+          permanent,
+        )
+      }
+    } catch (error) {
+      if (error instanceof ShellBusyError) return { kind: 'busy' }
+      throw error
+    }
+    continueAfterShell(scanId, items, 'delete', finished)
+    return { kind: 'shell', verb: 'delete', changed: true, count: items.length, running: true }
+  }
+
   return {
+    'shell:delete': {
+      parseArgs: deleteArgs,
+      handle: (_event, scanId, nodeIds, permanent) => deleteNodes(scanId, nodeIds, permanent),
+    },
+
     'shell:open-in-explorer': {
       parseArgs: scanNodeArgs,
       handle: async (_event, scanId, nodeId) => {

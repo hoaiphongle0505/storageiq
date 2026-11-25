@@ -41,6 +41,7 @@ test('launches a locked-down renderer with the StorageIQ bridge', async () => {
     'checkForUpdates',
     'copyNodePath',
     'createFolder',
+    'deleteNodes',
     'downloadUpdate',
     'getAppInfo',
     'getChangelog',

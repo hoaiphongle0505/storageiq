@@ -38,6 +38,17 @@ export interface ShellMenuHost {
   }
   /** Builds the menu for `paths` without showing it and returns its labels (`''` = separator). */
   probe(paths: string[], hideDestructive?: boolean): Promise<string[]>
+  /**
+   * Keyboard Delete: runs the shell's delete verb for `paths` with no menu (`permanent` is
+   * Shift+Delete). Resolves when the command returned. Throws `ShellBusyError` synchronously
+   * when three actions already run.
+   */
+  deleteItems(paths: string[], permanent: boolean): Promise<ShellFinish>
+  /**
+   * Empties the Recycle Bin of the drive `root` with `SHEmptyRecycleBinW` (Windows asks for
+   * confirmation and shows progress). Throws `ShellBusyError` synchronously like `deleteItems`.
+   */
+  emptyRecycleBin(root: string): Promise<ShellFinish>
   /** Terminates every worker and rejects pending requests. */
   dispose(): void
 }

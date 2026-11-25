@@ -51,7 +51,28 @@ function fakeHost(choice: ShellMenuChoice) {
     finishes.push(finished.resolve)
     return { chosen: Promise.resolve(choice), finished: finished.promise }
   })
-  return { show, requests, finishes, finish: (index = 0) => finishes[index]?.({ ok: true }) }
+  const empties: string[] = []
+  const emptyBin = vi.fn((root: string): Promise<ShellFinish> => {
+    empties.push(root)
+    return Promise.resolve({ ok: true })
+  })
+  const deletes: Array<{ paths: string[]; permanent: boolean }> = []
+  const deleteItems = vi.fn((paths: string[], permanent: boolean): Promise<ShellFinish> => {
+    deletes.push({ paths, permanent })
+    const finished = deferred<ShellFinish>()
+    finishes.push(finished.resolve)
+    return finished.promise
+  })
+  return {
+    show,
+    deleteItems,
+    deletes,
+    emptyBin,
+    empties,
+    requests,
+    finishes,
+    finish: (index = 0) => finishes[index]?.({ ok: true }),
+  }
 }
 
 function setup(
@@ -82,14 +103,18 @@ function setup(
     readdir: vi.fn(async () => options.existing ?? ['a.jpg']),
     mkdir: vi.fn(async () => undefined),
     showShellMenu: host.show,
+    deleteShellItems: host.deleteItems,
+    emptyRecycleBin: host.emptyBin,
     pathExists,
     watcher,
     warn: vi.fn(),
   }
   const handlers = createShellHandlers(deps)
+  const remove = (ids: NodeId[], permanent = false, scanId = SCAN) =>
+    Promise.resolve(handlers['shell:delete'].handle(event, scanId, ids, permanent))
   const menu = (ids: NodeId[], x = 0, y = 0, extended = false) =>
     Promise.resolve(handlers['shell:context-menu'].handle(event, SCAN, ids, x, y, extended))
-  return { deps, fake, host, pathExists, watcher, handlers, menu }
+  return { deps, fake, host, pathExists, watcher, handlers, menu, remove }
 }
 
 const DELETE: ShellMenuChoice = { kind: 'shell', verb: 'delete', changed: true }
@@ -576,6 +601,8 @@ describe('menu refresh of the scan root', () => {
       readdir: async () => [],
       mkdir: async () => undefined,
       showShellMenu: host.show,
+      deleteShellItems: host.deleteItems,
+      emptyRecycleBin: host.emptyBin,
       pathExists: async () => exists,
       watcher: createItemWatcher({
         pathExists: async () => exists,
@@ -592,5 +619,141 @@ describe('menu refresh of the scan root', () => {
     await vi.waitFor(() =>
       expect(events).toEqual([['scan:restarted', { scanId: 'rescan-1', root: 'D:\\Data' }]]),
     )
+  })
+})
+
+describe('shell:delete', () => {
+  it('resolves ids through the scan and sends only scanner paths with the permanent flag', async () => {
+    const { remove, host } = setup()
+    await expect(remove(['f7', 'd2'], true)).resolves.toEqual({
+      kind: 'shell',
+      verb: 'delete',
+      changed: true,
+      count: 2,
+      running: true,
+    })
+    expect(host.deletes).toEqual([
+      { paths: ['D:\\Data\\Photos\\a.jpg', 'D:\\Data\\Docs'], permanent: true },
+    ])
+    await remove(['f7'], false)
+    expect(host.deletes[1]).toEqual({ paths: ['D:\\Data\\Photos\\a.jpg'], permanent: false })
+  })
+
+  it('never deletes the root, a group row or a drive root, even alone', async () => {
+    const { remove, host } = setup()
+    await expect(remove(['d0'])).resolves.toEqual({ kind: 'dismissed' })
+    await expect(remove(['g1'])).resolves.toEqual({ kind: 'dismissed' })
+    await remove(['d0', 'g1', 'd1'])
+    expect(host.deletes).toEqual([{ paths: ['D:\\Data\\Photos'], permanent: false }])
+  })
+
+  it('drops descendants of a selected ancestor', async () => {
+    const { remove, host } = setup()
+    await remove(['d1', 'f7', 'd2'])
+    expect(host.deletes[0]?.paths).toEqual(['D:\\Data\\Photos', 'D:\\Data\\Docs'])
+  })
+
+  it('returns gone when no id resolves or nothing exists on disk', async () => {
+    const { remove, host, pathExists } = setup()
+    await expect(remove(['f98'])).resolves.toEqual({ kind: 'gone' })
+    pathExists.mockResolvedValue(false)
+    await expect(remove(['f7'])).resolves.toEqual({ kind: 'gone' })
+    expect(host.deleteItems).not.toHaveBeenCalled()
+  })
+
+  it('returns busy on ShellBusyError and rejects other errors', async () => {
+    const { remove, host } = setup()
+    host.deleteItems.mockImplementationOnce(() => {
+      throw new ShellBusyError()
+    })
+    await expect(remove(['f7'])).resolves.toEqual({ kind: 'busy' })
+    host.deleteItems.mockImplementationOnce(() => {
+      throw new Error('disposed')
+    })
+    await expect(remove(['f7'])).rejects.toThrow('disposed')
+  })
+
+  it('refuses another scan and a running scan', async () => {
+    const { remove, host } = setup()
+    await expect(remove(['f7'], false, 'other')).rejects.toThrow(NOT_IN_SCAN_MESSAGE)
+    const running = setup({ scanning: true })
+    await expect(running.remove(['f7'])).rejects.toThrow(SCAN_RUNNING_MESSAGE)
+    expect(host.deleteItems).not.toHaveBeenCalled()
+    expect(running.host.deleteItems).not.toHaveBeenCalled()
+  })
+
+  it('refreshes the folders once the command finished, like a menu delete', async () => {
+    const { remove, host, deps, pathExists } = setup()
+    await remove(['f7'])
+    expect(deps.refreshFolder).not.toHaveBeenCalled()
+    pathExists.mockResolvedValue(false)
+    host.finish()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(refreshCalls(deps)).toEqual(['d1'])
+  })
+
+  it('parses its arguments with the strict boolean', () => {
+    const { handlers } = setup()
+    expect(() => handlers['shell:delete'].parseArgs([SCAN, ['d1'], 'yes'])).toThrow(
+      InvalidIpcArgumentsError,
+    )
+  })
+})
+
+describe('shell:delete: Recycle Bin folders', () => {
+  const bin = (id: string, target: string, ancestorIds: string[] = ['d0']): TreeNodeDetails => ({
+    row: row({ id, name: target.split('\\').at(-1) ?? target }),
+    path: target,
+    ancestorIds,
+    locations: [],
+  })
+  const extra = {
+    b1: bin('b1', 'D:\\$RECYCLE.BIN'),
+    b2: bin('b2', 'D:\\$recycle.bin\\S-1-5-21-1-2-3-1001', ['d0', 'b1']),
+    b3: bin('b3', 'E:\\$RECYCLE.BIN'),
+    b4: bin('b4', 'D:\\$RECYCLE.BIN\\S-1-5-21-1-2-3-1001\\sub'),
+  }
+
+  it('empties the drive Recycle Bin instead of walking the folder', async () => {
+    const { remove, host } = setup({ extra })
+    await expect(remove(['b1'], false)).resolves.toMatchObject({ kind: 'shell', count: 1 })
+    expect(host.empties).toEqual(['D:\\'])
+    expect(host.deleteItems).not.toHaveBeenCalled()
+  })
+
+  it('does the same for Shift+Delete and for a user folder inside the bin', async () => {
+    const { remove, host } = setup({ extra })
+    await remove(['b2'], true)
+    expect(host.empties).toEqual(['D:\\'])
+    expect(host.deleteItems).not.toHaveBeenCalled()
+  })
+
+  it('empties each drive once, in order', async () => {
+    const { remove, host } = setup({ extra })
+    await remove(['b1', 'b2', 'b3'], false)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(host.empties).toEqual(['D:\\', 'E:\\'])
+  })
+
+  it('refuses a bin selected together with other rows, and acts on nothing', async () => {
+    const { remove, host } = setup({ extra })
+    await expect(remove(['b1', 'd2'], false)).resolves.toEqual({ kind: 'bin-mixed' })
+    expect(host.empties).toEqual([])
+    expect(host.deleteItems).not.toHaveBeenCalled()
+  })
+
+  it('a folder deeper in the bin is an ordinary delete', async () => {
+    const { remove, host } = setup({ extra })
+    await remove(['b4'], false)
+    expect(host.empties).toEqual([])
+    expect(host.deletes[0]?.paths).toEqual(['D:\\$RECYCLE.BIN\\S-1-5-21-1-2-3-1001\\sub'])
+  })
+
+  it('a busy pool returns busy', async () => {
+    const { remove, host } = setup({ extra })
+    host.emptyBin.mockImplementationOnce(() => {
+      throw new ShellBusyError()
+    })
+    await expect(remove(['b1'], false)).resolves.toEqual({ kind: 'busy' })
   })
 })

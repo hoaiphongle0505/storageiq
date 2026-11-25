@@ -34,6 +34,8 @@ const VK_CONTROL = 0x11
 const CMIC_MASK_PTINVOKE = 0x20000000
 /** Required when the calling thread has no message loop or ends soon after (a worker thread). */
 const CMIC_MASK_NOASYNC = 0x00000100
+/** Native tests only (never set in production): the verb shows no confirmation or progress UI. */
+const CMIC_MASK_FLAG_NO_UI = 0x00000400
 const SW_SHOWNORMAL = 1
 const WM_DRAWITEM = 0x2b
 const WM_MEASUREITEM = 0x2c
@@ -100,6 +102,43 @@ export function invokeMask(shiftDown: boolean, controlDown: boolean): number {
     (shiftDown ? CMIC_MASK_SHIFT_DOWN : 0) |
     (controlDown ? CMIC_MASK_CONTROL_DOWN : 0)
   )
+}
+
+/**
+ * The `fMask` of a keyboard delete: Unicode and NOASYNC, no click point. SHIFT_DOWN is how
+ * Explorer itself asks the delete verb for a permanent delete; the live key state is not read.
+ */
+export function deleteInvokeMask(permanent: boolean, noUi = false): number {
+  return (
+    CMIC_MASK_UNICODE |
+    CMIC_MASK_NOASYNC |
+    (permanent ? CMIC_MASK_SHIFT_DOWN : 0) |
+    (noUi ? CMIC_MASK_FLAG_NO_UI : 0)
+  )
+}
+
+/**
+ * The `CMINVOKECOMMANDINFOEX` of the canonical `"delete"` verb. `lpVerb` / `lpVerbW` are pointers
+ * to NUL-terminated strings (ANSI and UTF-16), not offsets; the buffers must outlive the call.
+ */
+export function deleteInvokeInfo(owner: unknown, permanent: boolean, size: number, noUi = false) {
+  return {
+    cbSize: size,
+    fMask: deleteInvokeMask(permanent, noUi),
+    hwnd: owner,
+    lpVerb: Buffer.from('delete\0', 'latin1'),
+    lpParameters: null,
+    lpDirectory: null,
+    nShow: SW_SHOWNORMAL,
+    dwHotKey: 0,
+    hIcon: null,
+    lpTitle: null,
+    lpVerbW: Buffer.from('delete\0', 'utf16le'),
+    lpParametersW: null,
+    lpDirectoryW: null,
+    lpTitleW: null,
+    ptInvoke: { x: 0, y: 0 },
+  }
 }
 
 /** Everything a built menu owns, so it can be released on every path. */
@@ -184,6 +223,9 @@ export async function createWinShellNative(): Promise<ShellNative> {
   const CoTaskMemFree = ole32.func('void __stdcall CoTaskMemFree(void *pv)')
   const CoCreateInstance = ole32.func(
     'int __stdcall CoCreateInstance(SIQ_GUID *clsid, void *outer, uint32_t context, SIQ_GUID *iid, _Out_ void **ppv)',
+  )
+  const SHEmptyRecycleBinW = shell32.func(
+    'int __stdcall SHEmptyRecycleBinW(void *hwnd, const char16_t *root, uint32_t flags)',
   )
   const SHParseDisplayName = shell32.func(
     'int __stdcall SHParseDisplayName(const char16_t *name, void *bindCtx, _Out_ void **pidl, uint32_t sfgaoIn, void *sfgaoOut)',
@@ -633,6 +675,25 @@ export async function createWinShellNative(): Promise<ShellNative> {
         if (failed(hr)) throw new ShellMenuError('InvokeCommand', hr >>> 0)
       },
 
+      invokeDelete(permanent, noUi = false) {
+        if (!contextMenu) {
+          // The fallback menu has no shell items: it can only recycle, with IFileOperation.
+          if (permanent) throw new Error('this menu cannot delete permanently')
+          recyclePaths(owner, paths)
+          return
+        }
+        const info = deleteInvokeInfo(owner, permanent, koffi.sizeof(CMINVOKECOMMANDINFOEX), noUi)
+        const hr = Number(
+          koffi.call(
+            method(contextMenu, VT_CONTEXTMENU_INVOKE_COMMAND),
+            InvokeCommand,
+            contextMenu,
+            info,
+          ),
+        )
+        if (failed(hr)) throw new ShellMenuError('InvokeCommand', hr >>> 0)
+      },
+
       recycle() {
         if (contextMenu) throw new Error('only the fallback menu recycles with IFileOperation')
         recyclePaths(owner, paths)
@@ -688,6 +749,17 @@ export async function createWinShellNative(): Promise<ShellNative> {
         throw error
       }
       return makeBuilt(parts, paths)
+    },
+
+    emptyRecycleBin(root: string): void {
+      const owner = createOwner()
+      try {
+        // Flags 0: Windows asks "empty the Recycle Bin?" and shows its progress.
+        const hr = Number(SHEmptyRecycleBinW(owner, root, 0))
+        if (failed(hr)) throw new ShellMenuError('SHEmptyRecycleBinW', hr >>> 0)
+      } finally {
+        DestroyWindow(owner)
+      }
     },
 
     buildFallback(paths: readonly string[]): BuiltShellMenu {

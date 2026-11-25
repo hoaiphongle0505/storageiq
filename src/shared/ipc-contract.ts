@@ -78,6 +78,8 @@ export type ContextMenuOutcome =
       /** The command is still running in Windows when this outcome is returned. */
       running: boolean
     }
+  /** A Recycle Bin folder was selected together with other rows: nothing was done. */
+  | { kind: 'bin-mixed' }
   /** Three Explorer actions are already running; try again in a moment. */
   | { kind: 'busy' }
 
@@ -171,6 +173,10 @@ export interface IpcContract {
   'shell:open-in-explorer': { args: [scanId: string, nodeId: NodeId]; result: void }
   'shell:context-menu': {
     args: [scanId: string, nodeIds: NodeId[], x: number, y: number, extended: boolean]
+    result: ContextMenuOutcome
+  }
+  'shell:delete': {
+    args: [scanId: string, nodeIds: NodeId[], permanent: boolean]
     result: ContextMenuOutcome
   }
   'folder:create': { args: [scanId: string, nodeId: NodeId]; result: CreateFolderResult }
@@ -267,6 +273,12 @@ export interface StorageIQApi {
     y: number,
     extended: boolean,
   ): Promise<ContextMenuOutcome>
+  /**
+   * Keyboard Delete (Recycle Bin) or Shift+Delete (`permanent`) for rows of the current scan:
+   * main runs the shell's delete verb, so Windows shows its own dialogs. The outcome is
+   * `shell` (started), `gone`, `dismissed` (nothing deletable) or `busy`.
+   */
+  deleteNodes(scanId: string, nodeIds: NodeId[], permanent: boolean): Promise<ContextMenuOutcome>
   /** Creates "New folder" (or "New folder (2)", …) in the row's folder and rescans that folder. */
   createFolder(scanId: string, nodeId: NodeId): Promise<CreateFolderResult>
   /**

@@ -26,6 +26,7 @@ const api: StorageIQApi = {
   openInExplorer: (scanId, nodeId) => invoke('shell:open-in-explorer', scanId, nodeId),
   showContextMenu: (scanId, nodeIds, x, y, extended) =>
     invoke('shell:context-menu', scanId, nodeIds, x, y, extended),
+  deleteNodes: (scanId, nodeIds, permanent) => invoke('shell:delete', scanId, nodeIds, permanent),
   createFolder: (scanId, nodeId) => invoke('folder:create', scanId, nodeId),
   copyNodePath: (scanId, nodeIds) => invoke('clipboard:copy-path', scanId, nodeIds),
   getIcons: (scanId, nodeIds) => invoke('icons:for-nodes', scanId, nodeIds),
