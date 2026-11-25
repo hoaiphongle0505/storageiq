@@ -67,7 +67,7 @@ describe('<UpdateBanner />', () => {
     expect(api.installUpdate).toHaveBeenCalledTimes(1)
   })
 
-  it('idle, checking, up-to-date and error render nothing', () => {
+  it('idle, checking, up-to-date and a check error render nothing', () => {
     const { api, container } = renderWithStores(<UpdateBanner />)
     expect(container).toBeEmptyDOMElement()
     for (const state of [
@@ -94,6 +94,9 @@ describe('<UpdateBanner />', () => {
     expect(screen.getByRole('status')).toHaveTextContent(
       'Could not download the update. Try again.',
     )
+    // An error uses the danger tone, not the info tone.
+    expect(screen.getByRole('status').className).toContain('border-l-danger')
+    expect(screen.getByRole('status').className).not.toContain('border-l-info')
     await user.click(screen.getByRole('button', { name: 'Try again' }))
     expect(api.checkForUpdates).toHaveBeenCalledTimes(1)
     await user.click(screen.getByRole('button', { name: 'Later' }))
@@ -110,6 +113,77 @@ describe('<UpdateBanner />', () => {
     expect(screen.getByRole('status')).toContainElement(document.activeElement as HTMLElement)
     act(() => api.emitUpdateState({ kind: 'ready', version: '0.2.0' }))
     expect(screen.getByRole('button', { name: 'Restart to update' })).toHaveFocus()
+  })
+
+  it('Update does not steal focus the user moved elsewhere', async () => {
+    const user = userEvent.setup()
+    const api = createFakeApi()
+    renderWithStores(
+      <>
+        <input aria-label="Filter" />
+        <UpdateBanner />
+      </>,
+      api,
+    )
+    act(() => api.emitUpdateState(available))
+    await user.click(screen.getByRole('button', { name: 'Update' }))
+    const input = screen.getByLabelText('Filter')
+    input.focus()
+    act(() => api.emitUpdateState({ kind: 'downloading', version: '0.2.0', percent: 1 }))
+    expect(input).toHaveFocus()
+    act(() => api.emitUpdateState({ kind: 'ready', version: '0.2.0' }))
+    expect(input).toHaveFocus()
+  })
+
+  const downloadError = {
+    kind: 'error' as const,
+    message: 'Could not download the update. Try again.',
+    during: 'download' as const,
+  }
+
+  it('Try again keeps the banner and the focus in it while checking', async () => {
+    const user = userEvent.setup()
+    const { api } = renderWithStores(<UpdateBanner />)
+    act(() => api.emitUpdateState(downloadError))
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+    act(() => api.emitUpdateState({ kind: 'checking' }))
+    const status = screen.getByRole('status')
+    expect(status).toHaveTextContent('Checking for updates…')
+    expect(status).toContainElement(document.activeElement as HTMLElement)
+    expect(document.activeElement).not.toBe(document.body)
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('a failed re-check shows its error with Try again and Later', async () => {
+    const user = userEvent.setup()
+    const { api, container } = renderWithStores(<UpdateBanner />)
+    act(() => api.emitUpdateState(downloadError))
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+    act(() => api.emitUpdateState({ kind: 'checking' }))
+    act(() =>
+      api.emitUpdateState({
+        kind: 'error',
+        message: 'Could not check for updates.',
+        during: 'check',
+      }),
+    )
+    expect(screen.getByRole('status')).toHaveTextContent('Could not check for updates.')
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
+    expect(document.activeElement).not.toBe(document.body)
+    await user.click(screen.getByRole('button', { name: 'Later' }))
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('a successful re-check hands over to the normal banner', async () => {
+    const user = userEvent.setup()
+    const { api, container } = renderWithStores(<UpdateBanner />)
+    act(() => api.emitUpdateState(downloadError))
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+    act(() => api.emitUpdateState({ kind: 'checking' }))
+    act(() => api.emitUpdateState({ kind: 'up-to-date' }))
+    expect(container).toBeEmptyDOMElement()
+    act(() => api.emitUpdateState({ kind: 'checking' }))
+    expect(container).toBeEmptyDOMElement()
   })
 
   it('does not take focus when nothing in the banner was used', () => {
