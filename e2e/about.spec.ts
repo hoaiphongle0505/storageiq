@@ -49,7 +49,7 @@ test('What’s new lists the CHANGELOG entry 0.2.0-beta.1 with its sections', as
     dialog.getByRole('heading', { level: 3, name: /^Version 0\.2\.0-beta\.1/ }),
   ).toBeVisible()
   for (const section of ['Added', 'Changed', 'Fixed']) {
-    await expect(dialog.getByRole('heading', { level: 4, name: section })).toBeVisible()
+    await expect(dialog.getByRole('heading', { level: 4, name: section }).first()).toBeVisible()
   }
 })
 

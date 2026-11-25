@@ -73,6 +73,7 @@ export const SCAN_CRASH_MESSAGE = 'The scan stopped unexpectedly. You can try ag
 export const PATH_COPIED = 'Path copied.'
 export const GONE_MESSAGE = 'That item no longer exists. The list was refreshed.'
 export const BUSY_MESSAGE = 'Windows is still working on earlier actions. Try again in a moment.'
+export const BIN_MIXED_MESSAGE = 'Select the Recycle Bin on its own to empty it.'
 export const TOO_MANY_MESSAGE = 'Too many items selected (the limit is 1,000).'
 /** Rows one Explorer action takes (the same limit as main). */
 export const MAX_ACTION_ITEMS = 1000
@@ -187,6 +188,12 @@ export interface WorkspaceState {
   /** Shows the Explorer menu for these rows (1 to 1,000 after rows inside others are dropped). */
   showContextMenu(ids: readonly NodeId[], x: number, y: number, extended: boolean): Promise<void>
   createFolder(id: NodeId): Promise<void>
+  /**
+   * Keyboard Delete and the ribbon button: sends the selection (the active row when none is
+   * selected) to the Recycle Bin, or deletes it permanently. Windows shows its own dialogs.
+   * Does nothing while a scan runs, and announces the rows it skips.
+   */
+  deleteSelection(permanent: boolean): Promise<void>
   /** Lays out the treemap of `treemapRootId` for a canvas of `width` × `height` CSS px. */
   fetchTreemap(width: number, height: number): Promise<TreemapLayout | null>
   setTreemapDepth(depth: number): void
@@ -387,6 +394,7 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
           banner: null,
         })
       if (outcome.kind === 'busy') set({ announcement: BUSY_MESSAGE })
+      if (outcome.kind === 'bin-mixed') set({ announcement: BIN_MIXED_MESSAGE })
       if (outcome.kind === 'copied') {
         set({
           announcement:
@@ -711,6 +719,34 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
             ),
             sent.length + removed,
           )
+        } catch (error) {
+          fail(error)
+        }
+      },
+
+      async deleteSelection(permanent) {
+        const { scanId, phase, selectedId, selectedIds } = get()
+        if (scanId === null || phase === 'scanning') return
+        const selection =
+          selectedIds.size > 0 ? [...selectedIds] : selectedId === null ? [] : [selectedId]
+        if (selection.length === 0) return
+        // The root and "[N files]" rows are never deleted, not even alone (actionIds only drops
+        // them from a multi-row selection).
+        const deletable = selection.filter((id) => id !== ROOT_NODE_ID && !id.startsWith('g'))
+        const { ids: sent, removed } =
+          deletable.length === 0 ? { ids: [], removed: selection.length } : actionIds(selection)
+        if (sent.length === 0) {
+          set({
+            announcement: `Skipped ${removed} ${removed === 1 ? 'row' : 'rows'} that cannot be acted on.`,
+          })
+          return
+        }
+        if (sent.length > MAX_ACTION_ITEMS) {
+          set({ announcement: TOO_MANY_MESSAGE })
+          return
+        }
+        try {
+          handleOutcome(await api.deleteNodes(scanId, sent, permanent), sent.length + removed)
         } catch (error) {
           fail(error)
         }

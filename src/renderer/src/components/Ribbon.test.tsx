@@ -325,3 +325,37 @@ describe('<Ribbon />', () => {
     expect(command('Refresh').className).toContain('aria-disabled:[&_svg]:opacity-40')
   })
 })
+
+describe('<Ribbon /> Delete', () => {
+  async function ready() {
+    const utils = renderRibbon()
+    await act(() => utils.workspace.getState().startScan('D:\\'))
+    act(() => utils.api.emitScanDone(makeDone()))
+    return utils
+  }
+
+  it('has a Delete button next to New folder, with Delete permanently in its menu', async () => {
+    const user = userEvent.setup()
+    const { api, workspace } = await ready()
+    const folder = within(toolbar()).getByRole('group', { name: 'Folder' })
+    const names = within(folder)
+      .getAllByRole('button')
+      .map((button) => button.getAttribute('aria-label') ?? button.textContent)
+    expect(names.indexOf('Delete')).toBe(names.indexOf('New folder') + 1)
+    act(() => workspace.getState().select('d1'))
+    await user.click(command('Delete'))
+    expect(api.deleteNodes).toHaveBeenCalledWith('scan-1', ['d1'], false)
+    await user.click(command('More delete options'))
+    await user.click(screen.getByRole('menuitem', { name: 'Delete permanently' }))
+    expect(api.deleteNodes).toHaveBeenLastCalledWith('scan-1', ['d1'], true)
+  })
+
+  it('is disabled without a selection and while scanning, and keyboard reachable', async () => {
+    const { workspace } = renderRibbon()
+    expect(command('Delete')).toHaveAttribute('aria-disabled', 'true')
+    expect(command('More delete options')).toHaveAttribute('aria-disabled', 'true')
+    await act(() => workspace.getState().startScan('D:\\'))
+    expect(command('Delete')).toHaveAttribute('aria-disabled', 'true')
+    expect(command('Delete')).not.toHaveAttribute('disabled')
+  })
+})

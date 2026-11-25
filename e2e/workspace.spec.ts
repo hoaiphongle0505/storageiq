@@ -519,3 +519,24 @@ test('a second instance with --scan makes the open window scan that folder', asy
   )
   await exited // the second process quit by itself
 })
+
+test('Delete and Shift+Delete send delete requests (recorded, nothing is deleted)', async () => {
+  const { fixture: f } = await scanFixture()
+  await treeRow(page, 'folder-12').click()
+  const requests = () =>
+    app!.evaluate(() =>
+      (
+        globalThis as unknown as {
+          __storageiqDeleteRequests: () => Array<{ paths: string[]; permanent: boolean }>
+        }
+      ).__storageiqDeleteRequests(),
+    )
+  await page.keyboard.press('Delete')
+  await expect.poll(async () => (await requests()).length).toBe(1)
+  await page.keyboard.press('Shift+Delete')
+  await expect.poll(async () => (await requests()).length).toBe(2)
+  const sent = await requests()
+  expect(sent[0]).toEqual({ paths: [path.join(f.root, 'folder-12')], permanent: false })
+  expect(sent[1]).toEqual({ paths: [path.join(f.root, 'folder-12')], permanent: true })
+  expect(existsSync(path.join(f.root, 'folder-12'))).toBe(true)
+})

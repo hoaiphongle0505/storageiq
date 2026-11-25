@@ -451,3 +451,49 @@ describe('<TreeGrid /> multi-select', () => {
     expect(videos.querySelector('[data-chevron]')).not.toBeNull()
   })
 })
+
+describe('<TreeGrid /> Delete key', () => {
+  const rowOf = (name: RegExp) => screen.getByRole('row', { name })
+  const ready = async () => {
+    const utils = await renderTree()
+    act(() => utils.api.emitScanDone(makeDone()))
+    await userEvent.setup().click(rowOf(/Videos/))
+    grid().focus()
+    return utils
+  }
+
+  it('Delete sends the selection to the Recycle Bin and Shift+Delete deletes permanently', async () => {
+    const user = userEvent.setup()
+    const { api } = await ready()
+    await user.keyboard('{Delete}')
+    await waitFor(() => expect(api.deleteNodes).toHaveBeenCalledWith('scan-1', ['d1'], false))
+    await user.keyboard('{Shift>}{Delete}{/Shift}')
+    await waitFor(() => expect(api.deleteNodes).toHaveBeenLastCalledWith('scan-1', ['d1'], true))
+  })
+
+  it('Ctrl+Delete, Alt+Delete and Ctrl+Shift+Delete do nothing', async () => {
+    const user = userEvent.setup()
+    const { api } = await ready()
+    await user.keyboard('{Control>}{Delete}{/Control}')
+    await user.keyboard('{Alt>}{Delete}{/Alt}')
+    await user.keyboard('{Control>}{Shift>}{Delete}{/Shift}{/Control}')
+    expect(api.deleteNodes).not.toHaveBeenCalled()
+  })
+
+  it('does nothing while a scan is running', async () => {
+    const { api } = await renderTree()
+    await userEvent.setup().click(rowOf(/Videos/))
+    grid().focus()
+    await userEvent.setup().keyboard('{Delete}')
+    expect(api.deleteNodes).not.toHaveBeenCalled()
+  })
+
+  it('announces the skipped row when only the root is selected', async () => {
+    const { api, workspace } = await ready()
+    await userEvent.setup().click(rowOf(/D:\\/))
+    grid().focus()
+    await userEvent.setup().keyboard('{Delete}')
+    expect(api.deleteNodes).not.toHaveBeenCalled()
+    expect(workspace.getState().announcement).toBe('Skipped 1 row that cannot be acted on.')
+  })
+})

@@ -333,6 +333,7 @@ export function createFakeApi(overrides: Partial<StorageIQApi> = {}): FakeApi {
     ),
     openInExplorer: vi.fn(async () => undefined),
     showContextMenu: vi.fn(async () => ({ kind: 'dismissed' as const })),
+    deleteNodes: vi.fn(async () => ({ kind: 'dismissed' as const })),
     createFolder: vi.fn(async () => ({ parentId: 'd1', name: 'New folder' })),
     copyNodePath: vi.fn(async () => undefined),
     getIcons: vi.fn(async (): Promise<IconBatch> => ({ keys: {}, images: {}, pending: [] })),

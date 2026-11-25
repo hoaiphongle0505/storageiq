@@ -818,6 +818,100 @@ describe('multi-select', () => {
     expect(store.getState().selectedId).toBe('d2')
   })
 
+  describe('deleteSelection', () => {
+    const shellDelete = (count: number): ContextMenuOutcome => ({
+      kind: 'shell',
+      verb: 'delete',
+      changed: true,
+      count,
+      running: true,
+    })
+
+    async function finished(api = createFakeApi()) {
+      const { store } = await scanning(api)
+      api.emitScanDone(makeDone())
+      return { api, store }
+    }
+
+    it('sends the selection through actionIds with the permanent flag', async () => {
+      const { api, store } = await finished()
+      store.getState().requestChunks([
+        { nodeId: 'd0', chunk: 0 },
+        { nodeId: 'd1', chunk: 0 },
+      ])
+      await flush()
+      store.getState().setSelection({
+        ids: new Set(['d0', 'd1', 'd3', 'd2', 'g0']),
+        activeId: 'd2',
+        anchorId: 'd0',
+      })
+      await store.getState().deleteSelection(false)
+      // The root and the group row are dropped, and d3 is inside d1.
+      expect(api.deleteNodes).toHaveBeenCalledWith('scan-1', ['d1', 'd2'], false)
+      await store.getState().deleteSelection(true)
+      expect(api.deleteNodes).toHaveBeenLastCalledWith('scan-1', ['d1', 'd2'], true)
+    })
+
+    it('uses the active row when the selection set is empty', async () => {
+      const { api, store } = await finished()
+      store.setState({ selectedId: 'd2', selectedIds: new Set() })
+      await store.getState().deleteSelection(false)
+      expect(api.deleteNodes).toHaveBeenCalledWith('scan-1', ['d2'], false)
+    })
+
+    it('a root-only selection sends nothing and announces the skipped row', async () => {
+      const { api, store } = await finished()
+      store.getState().setSelection({ ids: new Set(['d0']), activeId: 'd0', anchorId: 'd0' })
+      await store.getState().deleteSelection(false)
+      expect(api.deleteNodes).not.toHaveBeenCalled()
+      expect(store.getState().announcement).toBe('Skipped 1 row that cannot be acted on.')
+    })
+
+    it('does nothing without a selection, while scanning, or without a scan', async () => {
+      const { api, store } = await finished()
+      store.setState({ selectedId: null, selectedIds: new Set() })
+      await store.getState().deleteSelection(false)
+      expect(api.deleteNodes).not.toHaveBeenCalled()
+      const running = await scanning()
+      running.store.setState({ selectedId: 'd2', selectedIds: new Set(['d2']) })
+      await running.store.getState().deleteSelection(false)
+      expect(running.api.deleteNodes).not.toHaveBeenCalled()
+      const idle = createWorkspaceStore(createFakeApi())
+      await idle.getState().deleteSelection(false)
+    })
+
+    it('a busy outcome shows the existing message and a failure becomes a banner', async () => {
+      const api = createFakeApi({ deleteNodes: vi.fn(async () => ({ kind: 'busy' as const })) })
+      const { store } = await finished(api)
+      store.getState().select('d2')
+      await store.getState().deleteSelection(false)
+      expect(store.getState().announcement).toBe(BUSY_MESSAGE)
+      vi.mocked(api.deleteNodes).mockRejectedValue(new Error('Access is denied.'))
+      await store.getState().deleteSelection(true)
+      expect(store.getState().banner).toEqual({
+        tone: 'error',
+        message: 'StorageIQ couldn’t do that: Access is denied.',
+      })
+    })
+
+    it('a started delete reduces the selection to the active row, like the menu', async () => {
+      const api = createFakeApi({ deleteNodes: vi.fn(async () => shellDelete(2)) })
+      const { store } = await finished(api)
+      store.getState().setSelection({ ids: new Set(['d1', 'd2']), activeId: 'd2', anchorId: 'd1' })
+      await store.getState().deleteSelection(false)
+      expect([...store.getState().selectedIds]).toEqual(['d2'])
+    })
+
+    it('more than 1000 rows announce the limit and send nothing', async () => {
+      const { api, store } = await finished()
+      const ids = Array.from({ length: 1001 }, (_, i) => `f${i + 10}`)
+      store.getState().setSelection({ ids: new Set(ids), activeId: 'f10', anchorId: 'f10' })
+      await store.getState().deleteSelection(false)
+      expect(api.deleteNodes).not.toHaveBeenCalled()
+      expect(store.getState().announcement).toBe('Too many items selected (the limit is 1,000).')
+    })
+  })
+
   it('copyPaths announces the count', async () => {
     const { api, store } = await scanning()
     await store.getState().copyPaths(['d1', 'd2', 'g0'])
