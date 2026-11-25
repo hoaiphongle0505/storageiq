@@ -1,5 +1,6 @@
-// Report-only metrics for CI (roadmap carry-over 7): renderer bundle size, installer size,
-// idle RAM, scan time of a generated ~20,000-file tree, and cancel latency. Never fails the build.
+// Report-only metrics for CI: renderer bundle size, installer size, idle RAM, scan time of a
+// generated ~20,000-file tree, cancel latency, and the 1M-file tree-store perf figures (whose
+// limits are enforced by src/worker/scanner/tree-store.perf.test.ts). Never fails the build.
 import { appendFileSync, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 
@@ -27,7 +28,13 @@ function e2eMetrics() {
   return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null
 }
 
+function perfMetrics() {
+  const file = path.join('metrics', 'perf.json')
+  return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null
+}
+
 const bundle = rendererBundleBytes()
+const perf = perfMetrics()
 const installer = installerBytes()
 const e2e = e2eMetrics()
 const rows = [
@@ -42,6 +49,12 @@ const rows = [
     e2e ? `${(e2e.scanWallMs / 1000).toFixed(1)} s` : 'n/a',
   ],
   ['Cancel latency, system drive (target < 500 ms)', e2e ? `${e2e.cancelMs} ms` : 'n/a'],
+  [
+    'Tree memory, 1M files (limits 300 MB and 125 B/file)',
+    perf ? `${perf.memoryMb.toFixed(1)} MB (${perf.bytesPerFile.toFixed(0)} B/file)` : 'n/a',
+  ],
+  ['First tree page, 1M files (limit 100 ms)', perf ? `${perf.firstPageMs.toFixed(1)} ms` : 'n/a'],
+  ['Treemap layout, 1M files (limit 100 ms)', perf ? `${perf.treemapMs.toFixed(1)} ms` : 'n/a'],
 ]
 const table = [
   '| Metric | Value |',

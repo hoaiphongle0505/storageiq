@@ -1,9 +1,11 @@
 import type { IpcMainInvokeEvent } from 'electron'
 import { describe, expect, it, vi } from 'vitest'
+import type { ScanVolume } from '@shared/scanner-protocol'
 import { InvalidIpcArgumentsError } from './parse-args'
 import { createScanHandlers } from './scan-handlers'
 
 const event = {} as IpcMainInvokeEvent
+const VOLUME: ScanVolume = { clusterBytes: 8192, freeBytes: null }
 
 function setup() {
   const folders = new Set(['D:\\Photos', 'D:/Photos', 'C:\\'])
@@ -15,7 +17,15 @@ function setup() {
     if (files.has(target)) return { isDirectory: () => false }
     throw Object.assign(new Error(`ENOENT: ${target}`), { code: 'ENOENT' })
   })
-  return { handlers: createScanHandlers({ scanService: { start, cancel }, stat }), start, cancel }
+  const volumeFor = vi.fn(async () => VOLUME)
+  const addRecent = vi.fn(async () => undefined)
+  return {
+    handlers: createScanHandlers({ scanService: { start, cancel }, stat, volumeFor, addRecent }),
+    start,
+    cancel,
+    volumeFor,
+    addRecent,
+  }
 }
 
 describe('scan:start', () => {
@@ -47,12 +57,14 @@ describe('scan:start', () => {
     ).rejects.toThrow(InvalidIpcArgumentsError)
   })
 
-  it('starts the scan through the scan service', async () => {
-    const { handlers, start } = setup()
+  it('starts the scan with the drive’s cluster size and remembers the path', async () => {
+    const { handlers, start, volumeFor, addRecent } = setup()
     await expect(
       Promise.resolve(handlers['scan:start'].handle(event, 'D:\\Photos')),
     ).resolves.toEqual({ scanId: 'scan-1' })
-    expect(start).toHaveBeenCalledWith('D:\\Photos')
+    expect(volumeFor).toHaveBeenCalledWith('D:\\Photos')
+    expect(start).toHaveBeenCalledWith('D:\\Photos', VOLUME)
+    expect(addRecent).toHaveBeenCalledWith('D:\\Photos')
   })
 })
 

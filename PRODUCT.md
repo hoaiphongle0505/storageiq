@@ -28,7 +28,7 @@ StorageIQ scans a drive or folder and shows, clearly and quickly, where the spac
 - **Honest totals:** online-only cloud files never count as space on disk, hardlinks are counted once, and the app shows how its total compares with the used space Windows reports.
 - **Free and open source:** MIT licensed, no nags, no account. It includes features that paid disk analyzers keep in paid tiers.
 
-No claims about scan speed (the fastest approach needs admin rights, which we rule out), and marketing never names a competitor.
+No scan-speed claims beyond what was measured (about 100–130 s for 1.9 million files on the development machine), and marketing never names a competitor.
 
 ## Operating Context
 
@@ -38,11 +38,13 @@ No claims about scan speed (the fastest approach needs admin rights, which we ru
 
 ## Capabilities and Constraints
 
-- MVP: drive scan, folder scan, recursive traversal, folder size, file count, folder count, tree view, largest files view, progress reporting, cancel scan.
-- Later: treemap, CSV/Excel export, scan history, duplicate finder, AI insights.
+- Roadmap v3 (2026-11-19): Phase 3 analyzer workspace (ribbon, Select menu, column tree, file-type treemap with legend, status bar, Strata look); Phase 4 side views (top files, file types, file age); Phase 5 charts and export; Phase 6 actions (delete to Recycle Bin with confirmation, search) — MVP complete and first release; Phase 7+ honest totals, duplicates, history, explanations, AI.
+- Read-only by default: StorageIQ's own commands never delete or move files until Phase 6. Since Phase 3 a right-click shows the Windows Explorer context menu for the item, so Explorer's own commands (Open, Send to, Delete to the Recycle Bin, Properties, …) are available exactly as in Explorer; StorageIQ adds only "New folder" and refreshes the folder after a command that may change it.
+- Scans run in parallel and without elevation. The only measured figure is about 100–130 s for 1.9 million files on the development machine; no speed claim is made beyond that.
+- The installer offers a per-user or an all-users install. Installed copies update themselves from GitHub Releases (see docs/RELEASING.md). Code signing through SignPath is pending, so builds are unsigned for now.
 - Windows 10 1809+ and Windows 11, x64 only.
 - License: MIT.
-- Undecided: whether StorageIQ will ever delete files itself (MVP shows data only), and how AI insights will run (locally or through a cloud service).
+- Undecided: how AI insights will run (locally or through a cloud service).
 
 ## Evidence on Hand
 

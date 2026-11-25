@@ -9,18 +9,10 @@ export function makeProgress(overrides: Partial<ScanProgress> = {}): ScanProgres
     files: 420,
     folders: 17,
     bytes: 5 * MB,
+    allocatedBytes: 6 * MB,
     currentPath: 'D:\\Photos\\2024\\Summer',
     elapsedMs: 1500,
-    topFolders: [
-      {
-        kind: 'folder',
-        name: 'Photos',
-        path: 'D:\\Photos',
-        bytes: 5 * MB,
-        files: 420,
-        folders: 17,
-      },
-    ],
+    errorCount: 0,
     ...overrides,
   }
 }
@@ -29,29 +21,11 @@ export function makeDone(overrides: Partial<ScanDone> = {}): ScanDone {
   return {
     scanId: 'scan-1',
     status: 'complete',
-    files: 1234,
-    folders: 56,
+    files: 1014,
+    folders: 53,
     bytes: 3 * GB,
+    allocatedBytes: 3 * GB + 8 * MB,
     elapsedMs: 12_400,
-    topFolders: [
-      { kind: 'folder', name: 'Videos', path: 'D:\\Videos', bytes: 2 * GB, files: 10, folders: 1 },
-      {
-        kind: 'folder',
-        name: 'Photos',
-        path: 'D:\\Photos',
-        bytes: 768 * MB,
-        files: 1000,
-        folders: 50,
-      },
-      {
-        kind: 'everything-else',
-        name: 'Everything else',
-        path: 'D:\\',
-        bytes: 256 * MB,
-        files: 224,
-        folders: 3,
-      },
-    ],
     errors: [
       {
         path: 'D:\\System Volume Information',

@@ -1,6 +1,7 @@
 import { type ElectronApplication, expect, type Page, test } from '@playwright/test'
 import type { StorageIQApi } from '../src/shared/ipc-contract'
 import type { ScanDone } from '../src/shared/scan-types'
+import type { TreePage } from '../src/shared/tree-types'
 import { createScanFixture } from './support/fixture'
 import { consoleErrors, cspListenerReady, launchApp } from './support/launch'
 
@@ -20,9 +21,7 @@ test.afterEach(async () => {
 
 test('launches a locked-down renderer with the StorageIQ bridge', async () => {
   await expect(page).toHaveTitle('StorageIQ')
-  await expect(
-    page.getByRole('heading', { level: 1, name: 'See what’s filling your disk' }),
-  ).toBeVisible()
+  await expect(page.getByRole('tablist', { name: 'Ribbon' })).toBeVisible()
 
   const exposure = await page.evaluate(() => {
     const scope = globalThis as unknown as Record<string, unknown>
@@ -39,13 +38,45 @@ test('launches a locked-down renderer with the StorageIQ bridge', async () => {
   )
   expect(keys).toEqual([
     'cancelScan',
+    'checkForUpdates',
+    'copyNodePath',
+    'createFolder',
+    'downloadUpdate',
     'getAppInfo',
+    'getChangelog',
+    'getChildren',
+    'getDriveInfo',
+    'getExpandIds',
+    'getIcons',
+    'getNode',
+    'getOptionsState',
+    'getReleaseNotes',
+    'getTreemap',
+    'getTypeIcons',
+    'getUpdateState',
+    'getWhatsNewDue',
+    'installUpdate',
     'listDrives',
+    'listPlaces',
+    'markWhatsNewSeen',
+    'onLaunchRequest',
     'onScanDone',
     'onScanFailed',
     'onScanProgress',
+    'onScanRestarted',
+    'onTreeChanged',
+    'onUpdateState',
+    'openInExplorer',
+    'openLink',
+    'openNotices',
+    'quit',
+    'refreshFolder',
     'selectFolder',
+    'setExplorerMenu',
+    'setRunAsAdmin',
+    'showContextMenu',
     'startScan',
+    'takeLaunchRequest',
   ])
 })
 
@@ -70,56 +101,97 @@ test('the listeners really catch a CSP violation', async () => {
     .toContainEqual(expect.stringContaining('[csp] script-src'))
 })
 
-test('scans a folder through the bridge in the scanner process', async () => {
+test('scans a folder through the bridge and pages its children from the scanner', async () => {
   const fixture = createScanFixture()
   try {
-    const done = await page.evaluate((root) => {
+    const result = await page.evaluate(async (root) => {
       const api = (globalThis as unknown as { storageiq: StorageIQApi }).storageiq
-      return new Promise<ScanDone>((resolve, reject) => {
-        const off = api.onScanDone((result) => {
+      const done = await new Promise<ScanDone>((resolve, reject) => {
+        const off = api.onScanDone((value) => {
           off()
-          resolve(result)
+          resolve(value)
         })
         api.startScan(root).catch(reject)
       })
+      const page: TreePage | null = await api.getChildren(done.scanId, 'd0', 'name', 'asc', 0, 5)
+      return { done, page }
     }, fixture.root)
 
-    expect(done).toMatchObject({
+    expect(result.done).toMatchObject({
       status: 'complete',
       files: fixture.expected.files,
       folders: fixture.expected.folders,
       bytes: fixture.expected.bytes,
       errorCount: 0,
     })
-    expect(done.topFolders.map((row) => row.name)).toEqual([
-      ...fixture.expected.topFolderNames,
-      'Everything else',
+    // The parallel walker pool is the default (at least one walker ran).
+    expect(result.done.walkers).toBeGreaterThanOrEqual(1)
+    expect(result.page?.total).toBe(13)
+    expect(result.page?.rows.map((row) => row.name || '[files]')).toEqual([
+      '[files]',
+      'folder-01',
+      'folder-02',
+      'folder-03',
+      'folder-04',
     ])
   } finally {
     fixture.remove()
   }
 })
 
-test('rejects a relative scan path before the scanner sees it', async () => {
+test('rejects a relative scan path and a malformed tree query before the scanner sees them', async () => {
   const outcome = await page.evaluate(async () => {
     const api = (globalThis as unknown as { storageiq: StorageIQApi }).storageiq
-    try {
-      await api.startScan('relative\\folder')
-      return 'resolved'
-    } catch (error) {
-      return String(error)
+    const attempt = async (call: () => Promise<unknown>) => {
+      try {
+        await call()
+        return 'resolved'
+      } catch (error) {
+        return String(error)
+      }
+    }
+    return {
+      relative: await attempt(() => api.startScan('relative\\folder')),
+      node: await attempt(() => api.getChildren('scan', '../../etc', 'size', 'desc', 0, 10)),
+      limit: await attempt(() => api.getChildren('scan', 'd0', 'size', 'desc', 0, 1_000_000)),
     }
   })
-  expect(outcome).toContain('Invalid IPC arguments')
+  expect(outcome.relative).toContain('Invalid IPC arguments')
+  expect(outcome.node).toContain('Invalid IPC arguments')
+  expect(outcome.limit).toContain('Invalid IPC arguments')
 })
 
-test('lists the system drive through koffi', async () => {
+test('opens in Explorer and copies only paths of the current scan', async () => {
+  const outcome = await page.evaluate(async () => {
+    const api = (globalThis as unknown as { storageiq: StorageIQApi }).storageiq
+    const stale = '00000000-0000-0000-0000-000000000000'
+    const attempt = async (call: () => Promise<unknown>) => {
+      try {
+        await call()
+        return 'resolved'
+      } catch (error) {
+        return String(error)
+      }
+    }
+    return {
+      open: await attempt(() => api.openInExplorer(stale, 'd0')),
+      copy: await attempt(() => api.copyNodePath(stale, ['d0'])),
+    }
+  })
+  expect(outcome.open).toContain('not part of the current scan')
+  expect(outcome.copy).toContain('not part of the current scan')
+})
+
+test('lists the system drive and reads its cluster size through koffi', async () => {
   const systemRoot = `${process.env['SystemDrive'] ?? 'C:'}\\`
-  const drives = await page.evaluate(() =>
-    (globalThis as unknown as { storageiq: StorageIQApi }).storageiq.listDrives(),
-  )
+  const { drives, details } = await page.evaluate(async (root) => {
+    const api = (globalThis as unknown as { storageiq: StorageIQApi }).storageiq
+    return { drives: await api.listDrives(), details: await api.getDriveInfo(root) }
+  }, systemRoot)
   expect(drives).toContainEqual(expect.objectContaining({ root: systemRoot, kind: 'fixed' }))
   for (const drive of drives) expect(['fixed', 'removable']).toContain(drive.kind)
+  expect(details).toMatchObject({ root: systemRoot, fileSystem: 'NTFS' })
+  expect(details?.clusterBytes).toBeGreaterThanOrEqual(512)
 })
 
 test('quits cleanly when closed while the first page is still loading', async () => {

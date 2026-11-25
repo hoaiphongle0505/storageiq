@@ -10,6 +10,16 @@ files:
   - out/**/*
   - package.json
   - '!**/*.map'
+  - '!out/THIRD_PARTY_NOTICES.txt'
+
+# scripts/build-notices.cjs writes out/THIRD_PARTY_NOTICES.txt (the licences of the runtime
+# dependencies) before every pack; it ships next to the executable, outside the asar.
+beforePack: scripts/build-notices.cjs
+extraResources:
+  - from: out/THIRD_PARTY_NOTICES.txt
+    to: THIRD_PARTY_NOTICES.txt
+  - from: CHANGELOG.md
+    to: CHANGELOG.md
 
 asar: true
 
@@ -22,21 +32,32 @@ electronFuses:
   enableCookieEncryption: true
 
 win:
+  icon: build/icon.ico
   target:
     - target: nsis
       arch:
         - x64
   artifactName: ${productName}-Setup-${version}-${arch}.${ext}
 
+# GitHub Releases feed the auto-update; electron-builder writes app-update.yml from this block.
+publish:
+  provider: github
+  owner: hoaiphongle0505
+  repo: storageiq
+  releaseType: release
+
 nsis:
   oneClick: false
   perMachine: false
-  allowElevation: false
+  allowElevation: true
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: StorageIQ
   uninstallDisplayName: StorageIQ
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
 
 # koffi (drive listing) is a native Node-API module; koffi 3 loads it from the optional package
 # @koromix/koffi-win32-x64. Both stay outside app.asar so Windows can load koffi.node. Electron
@@ -46,6 +67,15 @@ nsis:
 asarUnpack:
   - node_modules/koffi/**
   - node_modules/@koromix/koffi-win32-x64/**
+  # The walker, shell worker and icon worker threads load out/main/walker.js, shell-worker.js and
+  # icon-worker.js from the unpacked tree, so neither the scripts nor their koffi import rely on
+  # asar patching in a thread. electron.vite.config.ts builds all three as self-contained bundles
+  # (no shared chunks), so
+  # nothing else leaves the asar: the app and scanner code stay covered by the asar integrity
+  # check. Never add out/main/chunks here.
+  - out/main/walker.js
+  - out/main/shell-worker.js
+  - out/main/icon-worker.js
 
 # koffi ships prebuilt, ABI-stable Node-API binaries: nothing needs rebuilding for Electron.
 npmRebuild: false

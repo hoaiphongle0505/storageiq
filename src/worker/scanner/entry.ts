@@ -1,20 +1,83 @@
-import { createScannerHost, parseScannerRequest } from './scanner-host'
-import { nodeWalkFs } from './walk'
+import path from 'node:path'
+import { Worker } from 'node:worker_threads'
+import { createScannerHost, parseScannerRequest, type ScannerHostDeps } from './scanner-host'
+import type { DirectoryLister } from './walk'
+import { createWalkerPool, defaultWalkerCount, walkerCountFromEnv } from './walker-pool'
+import { createWinFindLister } from './win-find'
 
-// Count `.asar` archives on the scanned disk as files; never walk into them as folders.
-process.noAsar = true
+export const DISK_READER_MESSAGE = 'The disk reader could not be loaded.'
 
-const host = createScannerHost({
-  fs: nodeWalkFs,
-  post: (message) => process.parentPort.postMessage(message),
-  now: () => performance.now(),
-  startTicker: (tick, intervalMs) => {
-    const timer = setInterval(tick, intervalMs)
-    return () => clearInterval(timer)
-  },
-})
+/**
+ * The walker worker script, from the unpacked tree when packaged: a worker thread then loads the
+ * script and `require('koffi')` from real files, independent of Electron's asar patching.
+ */
+export function walkerScriptPath(): string {
+  const script = path.join(__dirname, 'walker.js')
+  return script.includes('app.asar.unpacked')
+    ? script
+    : script.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1')
+}
+
+/** Main passes this argument when it forks the scanner of a packaged app. */
+export const PACKAGED_FLAG = '--storageiq-packaged'
+
+/**
+ * `STORAGEIQ_WALKERS=1` forces the single-thread walk; 2..8 forces that many walkers. Only in
+ * unpackaged runs: the scanner learns from main (`PACKAGED_FLAG`) whether this is an installed app.
+ */
+function createWalkParallel(): ScannerHostDeps['walkParallel'] {
+  const packaged = process.argv.includes(PACKAGED_FLAG)
+  const walkers = walkerCountFromEnv(
+    process.env['STORAGEIQ_WALKERS'],
+    defaultWalkerCount(),
+    packaged,
+  )
+  if (walkers === 1) return undefined
+  const pool = createWalkerPool({
+    walkers,
+    createPort: (index, abortFlag) =>
+      new Worker(walkerScriptPath(), { workerData: { abortFlag, index } }),
+  })
+  return (root, handle, sink, signal) => pool.walk(root, handle, sink, signal)
+}
+
+// The listing is created before any request is handled. If koffi cannot load, every scan start
+// is answered with a plain failure instead of a silent crash.
+const listerPromise: Promise<DirectoryLister | null> = createWinFindLister().catch(() => null)
+
+const hostPromise = listerPromise.then((lister) =>
+  lister === null
+    ? null
+    : createScannerHost({
+        lister,
+        walkParallel: createWalkParallel(),
+        post: (message) => process.parentPort.postMessage(message),
+        now: () => performance.now(),
+        startTicker: (tick, intervalMs) => {
+          const timer = setInterval(tick, intervalMs)
+          return () => clearInterval(timer)
+        },
+      }),
+)
 
 process.parentPort.on('message', (event) => {
   const request = parseScannerRequest(event.data)
-  if (request) host.handle(request)
+  if (!request) return
+  void hostPromise.then((host) => {
+    if (host !== null) {
+      host.handle(request)
+    } else if (request.type === 'start') {
+      process.parentPort.postMessage({
+        type: 'failed',
+        payload: { scanId: request.scanId, message: DISK_READER_MESSAGE },
+      })
+    } else if (request.type === 'query') {
+      process.parentPort.postMessage({
+        type: 'reply',
+        requestId: request.requestId,
+        ok: false,
+        message: DISK_READER_MESSAGE,
+      })
+    }
+  })
 })

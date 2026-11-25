@@ -1,7 +1,22 @@
 import type { IpcMainInvokeEvent } from 'electron'
 import { describe, expect, it, vi } from 'vitest'
 import type { AppInfo } from '@shared/ipc-contract'
-import { InvalidIpcArgumentsError, noArgs, oneString } from './parse-args'
+import {
+  childrenArgs,
+  contextMenuArgs,
+  expandArgs,
+  iconNodesArgs,
+  iconTypesArgs,
+  InvalidIpcArgumentsError,
+  nodeArgs,
+  noArgs,
+  aboutLinkArg,
+  oneBoolean,
+  oneString,
+  scanNodeArgs,
+  scanNodesArgs,
+  treemapArgs,
+} from './parse-args'
 import {
   type IpcHandlerMap,
   type IpcRegistrar,
@@ -17,15 +32,68 @@ const appInfo: AppInfo = {
   platform: 'win32',
   arch: 'x64',
   electronVersion: '38.0.0',
+  chromeVersion: '140.0.0',
+  channel: 'Stable',
 }
 
 function createHandlers(overrides: Partial<IpcHandlerMap> = {}): IpcHandlerMap {
   return {
     'app:get-info': { parseArgs: noArgs, handle: () => appInfo },
+    'app:quit': { parseArgs: noArgs, handle: () => undefined },
     'dialog:select-folder': { parseArgs: noArgs, handle: () => ({ canceled: true }) },
     'drives:list': { parseArgs: noArgs, handle: () => [] },
+    'drive:info': { parseArgs: oneString, handle: () => null },
+    'places:list': { parseArgs: noArgs, handle: () => ({ places: [], recent: [] }) },
     'scan:start': { parseArgs: oneString, handle: () => ({ scanId: 'scan-1' }) },
     'scan:cancel': { parseArgs: oneString, handle: () => undefined },
+    'tree:children': { parseArgs: childrenArgs, handle: () => null },
+    'tree:node': { parseArgs: nodeArgs, handle: () => null },
+    'tree:expand-ids': { parseArgs: expandArgs, handle: () => [] },
+    'tree:refresh': { parseArgs: scanNodeArgs, handle: () => null },
+    'treemap:layout': { parseArgs: treemapArgs, handle: () => null },
+    'icons:for-nodes': {
+      parseArgs: iconNodesArgs,
+      handle: () => ({ keys: {}, images: {}, pending: [] }),
+    },
+    'icons:for-types': { parseArgs: iconTypesArgs, handle: () => ({}) },
+    'update:install': { parseArgs: noArgs, handle: () => undefined },
+    'update:get-state': { parseArgs: noArgs, handle: () => ({ kind: 'idle' }) },
+    'update:check': { parseArgs: noArgs, handle: () => ({ kind: 'idle' }) },
+    'update:download': { parseArgs: noArgs, handle: () => undefined },
+    'update:get-release-notes': { parseArgs: noArgs, handle: () => null },
+    'app:get-changelog': { parseArgs: noArgs, handle: () => [] },
+    'app:open-notices': { parseArgs: noArgs, handle: () => ({ opened: true }) },
+    'app:open-link': { parseArgs: aboutLinkArg, handle: () => undefined },
+    'app:get-whats-new-due': { parseArgs: noArgs, handle: () => null },
+    'app:mark-whats-new-seen': { parseArgs: noArgs, handle: () => undefined },
+    'options:get-state': {
+      parseArgs: noArgs,
+      handle: () => ({
+        available: true,
+        explorerMenu: false,
+        runAsAdmin: false,
+        runAsAdminLocked: false,
+      }),
+    },
+    'options:set-explorer-menu': {
+      parseArgs: oneBoolean,
+      handle: () => ({
+        error: null,
+        state: { available: true, explorerMenu: true, runAsAdmin: false, runAsAdminLocked: false },
+      }),
+    },
+    'options:set-run-as-admin': {
+      parseArgs: oneBoolean,
+      handle: () => ({
+        error: null,
+        state: { available: true, explorerMenu: false, runAsAdmin: true, runAsAdminLocked: false },
+      }),
+    },
+    'launch:take-request': { parseArgs: noArgs, handle: () => null },
+    'shell:open-in-explorer': { parseArgs: scanNodeArgs, handle: () => undefined },
+    'shell:context-menu': { parseArgs: contextMenuArgs, handle: () => ({ kind: 'dismissed' }) },
+    'folder:create': { parseArgs: scanNodeArgs, handle: () => ({ parentId: 'd0', name: 'x' }) },
+    'clipboard:copy-path': { parseArgs: scanNodesArgs, handle: () => undefined },
     ...overrides,
   }
 }
@@ -63,11 +131,39 @@ describe('registerIpcHandlers', () => {
     const ipc = createFakeIpc()
     registerIpcHandlers(ipc, createHandlers(), isTrusted)
     expect([...ipc.listeners.keys()].sort()).toEqual([
+      'app:get-changelog',
       'app:get-info',
+      'app:get-whats-new-due',
+      'app:mark-whats-new-seen',
+      'app:open-link',
+      'app:open-notices',
+      'app:quit',
+      'clipboard:copy-path',
       'dialog:select-folder',
+      'drive:info',
       'drives:list',
+      'folder:create',
+      'icons:for-nodes',
+      'icons:for-types',
+      'launch:take-request',
+      'options:get-state',
+      'options:set-explorer-menu',
+      'options:set-run-as-admin',
+      'places:list',
       'scan:cancel',
       'scan:start',
+      'shell:context-menu',
+      'shell:open-in-explorer',
+      'tree:children',
+      'tree:expand-ids',
+      'tree:node',
+      'tree:refresh',
+      'treemap:layout',
+      'update:check',
+      'update:download',
+      'update:get-release-notes',
+      'update:get-state',
+      'update:install',
     ])
   })
 
@@ -88,6 +184,77 @@ describe('registerIpcHandlers', () => {
     )
     expect(parseArgs).not.toHaveBeenCalled()
     expect(handle).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['update:get-state', []],
+    ['update:check', []],
+    ['update:download', []],
+    ['update:get-release-notes', []],
+    ['app:get-changelog', []],
+    ['app:open-notices', []],
+    ['app:open-link', ['repo']],
+    ['app:get-whats-new-due', []],
+    ['app:mark-whats-new-seen', []],
+    ['options:get-state', []],
+    ['options:set-explorer-menu', [true]],
+    ['options:set-run-as-admin', [true]],
+    ['launch:take-request', []],
+  ])(
+    'refuses an untrusted sender on every update and about channel (%s)',
+    async (channel, args) => {
+      const ipc = createFakeIpc()
+      const handle = vi.fn(() => undefined)
+      const parseArgs = vi.fn((a: readonly unknown[]) => a as never)
+      registerIpcHandlers(
+        ipc,
+        createHandlers({ [channel]: { parseArgs, handle } } as Partial<IpcHandlerMap>),
+        isTrusted,
+      )
+      await expect(call(ipc, channel, 'https://evil.example/', args)).rejects.toThrow(
+        UntrustedSenderError,
+      )
+      expect(handle).not.toHaveBeenCalled()
+    },
+  )
+
+  it('refuses an untrusted sender on update:install', async () => {
+    const ipc = createFakeIpc()
+    const handle = vi.fn(() => undefined)
+    registerIpcHandlers(
+      ipc,
+      createHandlers({ 'update:install': { parseArgs: noArgs, handle } }),
+      isTrusted,
+    )
+    await expect(call(ipc, 'update:install', 'https://evil.example/', [])).rejects.toThrow(
+      UntrustedSenderError,
+    )
+    expect(handle).not.toHaveBeenCalled()
+    await expect(call(ipc, 'update:install', TRUSTED, [])).resolves.toBeUndefined()
+    expect(handle).toHaveBeenCalledTimes(1)
+  })
+
+  it('icons channels reject a sender that is not the main window', async () => {
+    const ipc = createFakeIpc()
+    const forNodes = vi.fn(() => ({ keys: {}, images: {}, pending: [] }))
+    const forTypes = vi.fn(() => ({}))
+    registerIpcHandlers(
+      ipc,
+      createHandlers({
+        'icons:for-nodes': { parseArgs: iconNodesArgs, handle: forNodes },
+        'icons:for-types': { parseArgs: iconTypesArgs, handle: forTypes },
+      }),
+      isTrusted,
+    )
+    await expect(
+      call(ipc, 'icons:for-nodes', 'https://evil.example/', ['0d6b2f6e-8a3c', ['f1']]),
+    ).rejects.toThrow(UntrustedSenderError)
+    await expect(call(ipc, 'icons:for-types', 'https://evil.example/', [['dir']])).rejects.toThrow(
+      UntrustedSenderError,
+    )
+    expect(forNodes).not.toHaveBeenCalled()
+    expect(forTypes).not.toHaveBeenCalled()
+    await expect(call(ipc, 'icons:for-types', TRUSTED, [['dir']])).resolves.toEqual({})
   })
 
   it('rejects malformed arguments without running the handler', async () => {

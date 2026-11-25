@@ -14,6 +14,8 @@ export interface MainWindowConfig {
   preloadPath: string
   rendererRoot: string
   devServerUrl?: string
+  /** Window icon for unpackaged runs (build/icon.ico); omit when packaged. */
+  iconPath?: string
   /** True once the app has started quitting; renderer exits during quit are ignored. */
   isQuitting(): boolean
   /** Called just before the window reloads after a renderer crash. */
@@ -40,6 +42,7 @@ export function createMainWindow(config: MainWindowConfig): BrowserWindow {
     createMainWindowOptions({
       preloadPath: config.preloadPath,
       dark: nativeTheme.shouldUseDarkColors,
+      iconPath: config.iconPath,
     }),
   )
   let loaded = false
