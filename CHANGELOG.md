@@ -22,7 +22,7 @@ All notable changes to StorageIQ are listed here, newest first. The format follo
 
 ### Changed
 
-- Scanning is much faster because several folders are read at the same time. About 1.5 to 2.5 minutes for 1.9 million files on the developer's machine.
+- Scanning is about twice as fast as before, because several folders are read at the same time: about 1.5 to 2.5 minutes for 1.9 million files on the developer's machine, down from about 5 minutes.
 - Deleting many items no longer freezes the window. Windows shows its own progress while StorageIQ stays usable.
 
 ### Fixed
