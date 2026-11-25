@@ -8,10 +8,16 @@ import { Button } from './Button'
 export function Dialog({
   title,
   onClose,
+  closeLabel = 'Close',
+  actions,
   children,
 }: {
   title: string
   onClose(): void
+  /** The button that closes the dialog (it takes focus first); default "Close". */
+  closeLabel?: string
+  /** Extra buttons shown before the close button. */
+  actions?: ReactNode
   children: ReactNode
 }) {
   const ref = useRef<HTMLDialogElement>(null)
@@ -55,9 +61,10 @@ export function Dialog({
           {title}
         </h2>
         <div className="min-h-0 overflow-auto">{children}</div>
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          {actions}
           <Button ref={closeRef} variant="secondary" onClick={onClose} autoFocus>
-            Close
+            {closeLabel}
           </Button>
         </div>
       </div>

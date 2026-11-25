@@ -46,6 +46,11 @@ const api: StorageIQApi = {
   openLink: (link) => invoke('app:open-link', link),
   getWhatsNewDue: () => invoke('app:get-whats-new-due'),
   markWhatsNewSeen: () => invoke('app:mark-whats-new-seen'),
+  getOptionsState: () => invoke('options:get-state'),
+  setExplorerMenu: (enabled) => invoke('options:set-explorer-menu', enabled),
+  setRunAsAdmin: (enabled) => invoke('options:set-run-as-admin', enabled),
+  takeLaunchRequest: () => invoke('launch:take-request'),
+  onLaunchRequest: (listener) => subscribe(ipcRenderer, 'launch:request', listener),
 }
 
 contextBridge.exposeInMainWorld('storageiq', api)

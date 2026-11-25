@@ -2,7 +2,8 @@
 // drive must be listed, the Explorer context menu must build through COM, and the scanner
 // utilityProcess must complete a scan of the resources folder without walking into app.asar, and the
 // shell worker thread must build the Explorer menu (so a missing shell-worker.js fails), and the
-// icon worker thread must return a PNG for .txt (so a missing icon-worker.js fails).
+// icon worker thread must return a PNG for .txt (so a missing icon-worker.js fails), and a registry
+// round trip under a throwaway HKCU key must work (advapi32 through koffi; the real entries are never touched).
 // Exit code 0 means pass (codes: src/main/self-test.ts).
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
@@ -72,5 +73,5 @@ if (result.status !== 0) {
   process.exit(1)
 }
 console.log(
-  'Packaged self-test passed: koffi loaded from app.asar.unpacked; the Explorer menu built; the icon worker returned a PNG; the scanner ran; the exe carries the StorageIQ icon.',
+  'Packaged self-test passed: koffi loaded from app.asar.unpacked; the Explorer menu built; the icon worker returned a PNG; the registry round trip worked; the scanner ran; the exe carries the StorageIQ icon.',
 )

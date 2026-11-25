@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Banner } from './components/Banner'
 import { AboutDialog } from './components/AboutDialog'
+import { LaunchScanDialog } from './components/LaunchScanDialog'
 import { Ribbon } from './components/Ribbon'
 import { Splitter } from './components/Splitter'
 import { StatusBar } from './components/StatusBar'
@@ -24,6 +25,8 @@ export function App() {
   const treemapVisible = useWorkspace((s) => s.treemapVisible)
   const rescan = useWorkspace((s) => s.rescan)
   const whatsNew = useWorkspace((s) => s.whatsNew)
+  const watchLaunchRequests = useWorkspace((s) => s.watchLaunchRequests)
+  const pendingLaunchScan = useWorkspace((s) => s.pendingLaunchScan)
   const [treemapHeight, setTreemapHeight] = useState(TREEMAP_DEFAULT_HEIGHT)
   const [aboutOpen, setAboutOpen] = useState(false)
   const [windowHeight, setWindowHeight] = useState(() => window.innerHeight)
@@ -44,6 +47,9 @@ export function App() {
     void loadAppInfo()
     void loadMenuData()
   }, [loadAppInfo, loadMenuData])
+
+  // A `--scan` launch (Explorer's menu or the command line); see watchLaunchRequests.
+  useEffect(() => watchLaunchRequests(), [watchLaunchRequests])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -80,6 +86,7 @@ export function App() {
       <StatusBar />
       {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
       {whatsNew !== null && !aboutOpen && <WhatsNewDialog target={whatsNew} />}
+      {pendingLaunchScan !== null && <LaunchScanDialog />}
     </div>
   )
 }

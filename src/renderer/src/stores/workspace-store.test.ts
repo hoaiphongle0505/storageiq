@@ -861,4 +861,84 @@ describe('multi-select', () => {
     expect(api.showContextMenu).not.toHaveBeenCalled()
     expect(store.getState().announcement).toBe('Skipped 2 rows that cannot be acted on.')
   })
+
+  describe('launch requests', () => {
+    it('receiveLaunchRequest starts a scan at once when idle', async () => {
+      const api = createFakeApi()
+      const store = createWorkspaceStore(api)
+      store.getState().receiveLaunchRequest({ kind: 'scan', path: 'D:\\Data' })
+      await flush()
+      expect(api.startScan).toHaveBeenCalledWith('D:\\Data')
+      expect(store.getState().pendingLaunchScan).toBeNull()
+    })
+
+    it('receiveLaunchRequest replaces a finished scan at once', async () => {
+      const { api, store } = await scanning()
+      api.emitScanDone(makeDone())
+      await flush()
+      expect(store.getState().phase).toBe('done')
+      store.getState().receiveLaunchRequest({ kind: 'scan', path: 'E:\\' })
+      await flush()
+      expect(api.startScan).toHaveBeenLastCalledWith('E:\\')
+      expect(store.getState().pendingLaunchScan).toBeNull()
+    })
+
+    it('receiveLaunchRequest asks first while scanning', async () => {
+      const { api, store } = await scanning()
+      store.getState().receiveLaunchRequest({ kind: 'scan', path: 'E:\\Games' })
+      expect(store.getState().pendingLaunchScan).toBe('E:\\Games')
+      expect(api.startScan).toHaveBeenCalledTimes(1)
+      expect(store.getState().target).toBe('D:\\')
+    })
+
+    it('confirming the launch dialog scans the new path', async () => {
+      const { api, store } = await scanning()
+      store.getState().receiveLaunchRequest({ kind: 'scan', path: 'E:\\Games' })
+      await store.getState().confirmLaunchScan()
+      expect(api.startScan).toHaveBeenLastCalledWith('E:\\Games')
+      expect(store.getState().pendingLaunchScan).toBeNull()
+      expect(store.getState().target).toBe('E:\\Games')
+    })
+
+    it('declining keeps the current scan', async () => {
+      const { api, store } = await scanning()
+      store.getState().receiveLaunchRequest({ kind: 'scan', path: 'E:\\Games' })
+      store.getState().declineLaunchScan()
+      expect(store.getState().pendingLaunchScan).toBeNull()
+      expect(api.startScan).toHaveBeenCalledTimes(1)
+      expect(store.getState().phase).toBe('scanning')
+    })
+
+    it('an invalid request sets the error banner', () => {
+      const store = createWorkspaceStore(createFakeApi())
+      store
+        .getState()
+        .receiveLaunchRequest({ kind: 'invalid', message: 'That folder could not be found.' })
+      expect(store.getState().banner).toEqual({
+        tone: 'error',
+        message: 'That folder could not be found.',
+      })
+      expect(store.getState().phase).toBe('empty')
+    })
+
+    it('a second request replaces the dialog’s path', async () => {
+      const { store } = await scanning()
+      store.getState().receiveLaunchRequest({ kind: 'scan', path: 'E:\\One' })
+      store.getState().receiveLaunchRequest({ kind: 'scan', path: 'E:\\Two' })
+      expect(store.getState().pendingLaunchScan).toBe('E:\\Two')
+    })
+
+    it('the options wrappers return null when the bridge rejects', async () => {
+      const store = createWorkspaceStore(
+        createFakeApi({
+          getOptionsState: vi.fn().mockRejectedValue(new Error('x')),
+          setExplorerMenu: vi.fn().mockRejectedValue(new Error('x')),
+          setRunAsAdmin: vi.fn().mockRejectedValue(new Error('x')),
+        }),
+      )
+      await expect(store.getState().loadOptionsState()).resolves.toBeNull()
+      await expect(store.getState().changeExplorerMenu(true)).resolves.toBeNull()
+      await expect(store.getState().changeRunAsAdmin(true)).resolves.toBeNull()
+    })
+  })
 })

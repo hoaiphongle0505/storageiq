@@ -33,6 +33,8 @@ import { createAboutHandlers } from './ipc/about-handlers'
 import { createAppHandlers } from './ipc/app-handlers'
 import { createDriveHandlers } from './ipc/drive-handlers'
 import { createIconHandlers } from './ipc/icon-handlers'
+import { createLaunchHandlers } from './ipc/launch-handlers'
+import { createOptionsHandlers } from './ipc/options-handlers'
 import { type IpcHandlerMap, registerIpcHandlers } from './ipc/register'
 import { createScanHandlers } from './ipc/scan-handlers'
 import { createEventSender } from './ipc/send-event'
@@ -40,6 +42,9 @@ import { createItemWatcher } from './ipc/item-watcher'
 import { createShellHandlers, itemExists } from './ipc/shell-handlers'
 import { createFolderRefresher, createTreeHandlers } from './ipc/tree-handlers'
 import { autoUpdater } from 'electron-updater'
+import { createLaunchCoordinator } from './launch/launch-coordinator'
+import { createOptionsService } from './options/options-service'
+import { createWinRegistry } from './registry/win-registry'
 import { createRecentScans, listPlaces, RECENT_SCANS_FILE } from './places/places'
 import { createScanService, type ScannerChild } from './scan/scan-service'
 import { hardenWebContents } from './security/harden-web-contents'
@@ -264,6 +269,16 @@ const scanService = createScanService({
   createScanId: () => randomUUID(),
 })
 
+/**
+ * `--scan <path>` launches (Explorer's menu, or the command line). Main validates the path and
+ * hands it to the renderer, which starts the scan through the normal `scan:start` flow.
+ */
+const launch = createLaunchCoordinator({
+  stat,
+  send: (request) => sendEvent('launch:request', request),
+  focus: focusMainWindow,
+})
+
 /** Self-test only: one scan in a fresh scanner process, plus the root's child rows. */
 function scanOnce(root: string): Promise<SelfTestScan> {
   return new Promise((resolve) => {
@@ -353,6 +368,19 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
               { key: 'ext:txt', target: { kind: 'file', ext: 'txt' } },
             ])
           ).images['ext:txt']?.small ?? '',
+        probeRegistry: () => {
+          // Only a throwaway key: the real Explorer and compatibility entries are never touched.
+          const registry = createWinRegistry()
+          const key = 'Software\\StorageIQ-Test\\self-test'
+          try {
+            registry.setString(key, 'Probe', 'round-trip ✓')
+            if (registry.getString('HKCU', key, 'Probe') !== 'round-trip ✓') {
+              throw new Error('the value read back differs from the value written')
+            }
+          } finally {
+            registry.deleteTree(key)
+          }
+        },
         log: (line) => {
           process.stdout.write(`[self-test] ${line}\n`)
         },
@@ -368,7 +396,10 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
 } else if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', focusMainWindow)
+  app.on('second-instance', (_event, argv) => {
+    focusMainWindow()
+    void launch.handleArgv(argv)
+  })
   hardenWebContents(app, isTrustedUrl)
   app.on('window-all-closed', () => app.quit())
   app.on('before-quit', () => {
@@ -409,6 +440,12 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
         file: path.join(app.getPath('userData'), RECENT_SCANS_FILE),
         readFile: (file) => readFile(file, 'utf8'),
         writeFile: (file, text) => writeFile(file, text, 'utf8'),
+      })
+      const options = createOptionsService({
+        registry: createWinRegistry(),
+        exePath: process.execPath,
+        isPackaged: app.isPackaged,
+        warn: (message, error) => console.warn(message, error),
       })
       const refreshFolder = createFolderRefresher(scanService, sendEvent, volumeFor)
 
@@ -451,6 +488,8 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
           openExternal: (url) => shell.openExternal(url),
           log: (message, error) => console.warn(message, error),
         }),
+        ...createOptionsHandlers(options),
+        ...createLaunchHandlers(launch),
         ...createScanHandlers({
           scanService,
           stat,
@@ -522,6 +561,11 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
       mainWindow.on('closed', () => {
         mainWindow = null
       })
+      // A reload or navigation starts over: a request waits until the page asks for it again.
+      mainWindow.webContents.on('did-start-loading', () => launch.rendererGone())
+      void launch.handleArgv(process.argv)
+      // The install folder may have changed (update, moved app): point the menu at this exe.
+      if (app.isPackaged) options.repairExplorerMenu()
 
       updater = createUpdater({
         autoUpdater,

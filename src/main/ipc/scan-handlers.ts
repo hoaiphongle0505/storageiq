@@ -16,7 +16,12 @@ export interface ScanHandlerDeps {
 export type ScanHandlers = Pick<IpcHandlerMap, 'scan:start' | 'scan:cancel'>
 
 /** `C:\…` or `C:/…`: a drive letter, a colon and a separator. */
-const DRIVE_ABSOLUTE = /^[A-Za-z]:[\\/]/
+export const DRIVE_ABSOLUTE = /^[A-Za-z]:[\\/]/
+
+/** UNC and `\\?\` forms; shared with the `--scan` launch validation so the two cannot drift. */
+export function isNetworkRoot(root: string): boolean {
+  return root.startsWith('\\\\') || root.startsWith('//')
+}
 
 /** `scan:start` rule: one string; absolute; not UNC; an existing directory. */
 export async function parseScanRoot(
@@ -24,7 +29,7 @@ export async function parseScanRoot(
   stat: ScanHandlerDeps['stat'],
 ): Promise<[string]> {
   const [root] = oneString(args)
-  if (root.startsWith('\\\\') || root.startsWith('//')) {
+  if (isNetworkRoot(root)) {
     throw new InvalidIpcArgumentsError('network (UNC) paths cannot be scanned')
   }
   if (!DRIVE_ABSOLUTE.test(root)) {

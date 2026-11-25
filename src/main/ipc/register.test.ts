@@ -11,6 +11,7 @@ import {
   nodeArgs,
   noArgs,
   aboutLinkArg,
+  oneBoolean,
   oneString,
   scanNodeArgs,
   scanNodesArgs,
@@ -65,6 +66,30 @@ function createHandlers(overrides: Partial<IpcHandlerMap> = {}): IpcHandlerMap {
     'app:open-link': { parseArgs: aboutLinkArg, handle: () => undefined },
     'app:get-whats-new-due': { parseArgs: noArgs, handle: () => null },
     'app:mark-whats-new-seen': { parseArgs: noArgs, handle: () => undefined },
+    'options:get-state': {
+      parseArgs: noArgs,
+      handle: () => ({
+        available: true,
+        explorerMenu: false,
+        runAsAdmin: false,
+        runAsAdminLocked: false,
+      }),
+    },
+    'options:set-explorer-menu': {
+      parseArgs: oneBoolean,
+      handle: () => ({
+        error: null,
+        state: { available: true, explorerMenu: true, runAsAdmin: false, runAsAdminLocked: false },
+      }),
+    },
+    'options:set-run-as-admin': {
+      parseArgs: oneBoolean,
+      handle: () => ({
+        error: null,
+        state: { available: true, explorerMenu: false, runAsAdmin: true, runAsAdminLocked: false },
+      }),
+    },
+    'launch:take-request': { parseArgs: noArgs, handle: () => null },
     'shell:open-in-explorer': { parseArgs: scanNodeArgs, handle: () => undefined },
     'shell:context-menu': { parseArgs: contextMenuArgs, handle: () => ({ kind: 'dismissed' }) },
     'folder:create': { parseArgs: scanNodeArgs, handle: () => ({ parentId: 'd0', name: 'x' }) },
@@ -120,6 +145,10 @@ describe('registerIpcHandlers', () => {
       'folder:create',
       'icons:for-nodes',
       'icons:for-types',
+      'launch:take-request',
+      'options:get-state',
+      'options:set-explorer-menu',
+      'options:set-run-as-admin',
       'places:list',
       'scan:cancel',
       'scan:start',
@@ -167,6 +196,10 @@ describe('registerIpcHandlers', () => {
     ['app:open-link', ['repo']],
     ['app:get-whats-new-due', []],
     ['app:mark-whats-new-seen', []],
+    ['options:get-state', []],
+    ['options:set-explorer-menu', [true]],
+    ['options:set-run-as-admin', [true]],
+    ['launch:take-request', []],
   ])(
     'refuses an untrusted sender on every update and about channel (%s)',
     async (channel, args) => {

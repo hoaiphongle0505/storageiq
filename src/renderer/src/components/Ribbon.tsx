@@ -25,21 +25,24 @@ import { useFocusgroupFallback } from '../lib/use-focusgroup'
 import { EXPAND_ALL_LEVELS } from '../stores/workspace-store'
 import { useWorkspace } from '../stores/workspace-store-context'
 import { MenuButton } from './MenuButton'
+import { OptionsGroup } from './OptionsGroup'
 import {
   NotificationDot,
   RIBBON_BUTTON_CLASS,
   RIBBON_SMALL_CLASS,
   RibbonButton,
 } from './RibbonButton'
+import { Group } from './RibbonGroup'
 import { SelectMenu } from './SelectMenu'
 
-export type RibbonTab = 'file' | 'home' | 'scan' | 'view' | 'help'
+export type RibbonTab = 'file' | 'home' | 'scan' | 'view' | 'options' | 'help'
 
 const TABS: Array<{ id: RibbonTab; label: string }> = [
   { id: 'file', label: 'File' },
   { id: 'home', label: 'Home' },
   { id: 'scan', label: 'Scan' },
   { id: 'view', label: 'View' },
+  { id: 'options', label: 'Options' },
   { id: 'help', label: 'Help' },
 ]
 
@@ -67,21 +70,7 @@ const MODES: Array<{ mode: SizeMode; label: string; icon: FluentIcon; title: str
 
 const UNIT_LABELS: Record<SizeUnit, string> = { auto: 'Auto', gb: 'GB', mb: 'MB', kb: 'KB' }
 
-function Group({ label, children }: { label: string; children: ReactNode }) {
-  const captionId = useId()
-  return (
-    <div role="group" aria-labelledby={captionId} className="flex flex-col gap-0.5">
-      <div className="flex items-start gap-0.5 rounded-group border border-line bg-raised p-0.5 shadow-raised">
-        {children}
-      </div>
-      <span id={captionId} className="text-center text-xs leading-4 font-small text-ink-muted">
-        {label}
-      </span>
-    </div>
-  )
-}
-
-/** The window's command ribbon: tabs File, Home, Scan, View and Help over a toolbar of groups. */
+/** The window's command ribbon: tabs File, Home, Scan, View, Options and Help over a toolbar of groups. */
 export function Ribbon({ onAbout }: { onAbout(): void }) {
   const [tab, setTab] = useState<RibbonTab>('home')
   const tablistRef = useRef<HTMLDivElement>(null)
@@ -309,6 +298,7 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
         </Group>
       </>
     ),
+    options: <OptionsGroup />,
     help: helpPanel,
   }
 

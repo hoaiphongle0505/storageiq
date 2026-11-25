@@ -17,10 +17,18 @@ const toolbar = () => screen.getByRole('toolbar')
 const command = (name: RegExp | string) => within(toolbar()).getByRole('button', { name })
 
 describe('<Ribbon />', () => {
-  it('has File, Home, Scan, View and Help tabs with Home selected', () => {
+  it('has the tabs File, Home, Scan, View and Options in that order', () => {
     renderRibbon()
     const tabs = screen.getAllByRole('tab')
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['File', 'Home', 'Scan', 'View', 'Help'])
+    // Options follows View; Help stays last.
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
+      'File',
+      'Home',
+      'Scan',
+      'View',
+      'Options',
+      'Help',
+    ])
     expect(screen.getByRole('tab', { name: 'Home' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tabpanel')).toHaveAccessibleName('Home')
     expect(toolbar()).toHaveAccessibleName('Home commands')
@@ -148,6 +156,24 @@ describe('<Ribbon />', () => {
     await user.click(screen.getByRole('tab', { name: 'View' }))
     await user.click(command('Treemap'))
     expect(workspace.getState().treemapVisible).toBe(false)
+  })
+
+  it('the Options tab shows the Application group', async () => {
+    const user = userEvent.setup()
+    renderRibbon()
+    await user.click(screen.getByRole('tab', { name: 'Options' }))
+    expect(toolbar()).toHaveAccessibleName('Options commands')
+    expect(within(toolbar()).getByRole('group', { name: 'Application' })).toBeInTheDocument()
+    expect(within(toolbar()).getAllByRole('checkbox')).toHaveLength(2)
+  })
+
+  it('arrow keys reach the Options tab', async () => {
+    const user = userEvent.setup()
+    renderRibbon()
+    screen.getByRole('tab', { name: 'View' }).focus()
+    await user.keyboard('{ArrowRight}')
+    expect(screen.getByRole('tab', { name: 'Options' })).toHaveFocus()
+    expect(screen.getByRole('tab', { name: 'Options' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it('the Help tab is last and shows the Help and Version groups', async () => {

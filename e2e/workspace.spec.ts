@@ -445,3 +445,54 @@ test('the Explorer menu request carries every selected row, with the scanner’s
   ])
   expect(requests[0]?.hideDestructive).toBe(false)
 })
+
+test('the Options tab renders its Application group', async () => {
+  await page.getByRole('tab', { name: 'Options' }).click()
+  const group = page.getByRole('group', { name: 'Application' })
+  await expect(group).toBeVisible()
+  await expect(group.getByRole('checkbox')).toHaveCount(2)
+  await expect(
+    group.getByRole('checkbox', { name: 'Show StorageIQ in Explorer’s context menu' }),
+  ).toBeVisible()
+  await expect(
+    group.getByRole('checkbox', { name: 'Always start StorageIQ as administrator' }),
+  ).toBeVisible()
+})
+
+test('both Options checkboxes are disabled in an unpackaged run with the explanation', async () => {
+  await page.getByRole('tab', { name: 'Options' }).click()
+  const group = page.getByRole('group', { name: 'Application' })
+  await expect(group.getByText('Available in the installed app')).toBeVisible()
+  for (const box of await group.getByRole('checkbox').all()) {
+    await expect(box).toBeDisabled()
+  }
+})
+
+/** Restarts the app the way Explorer's menu would: with `--scan <path>` after the app folder. */
+async function relaunchWithScan(target: string): Promise<void> {
+  await app?.close()
+  const launched = await launchApp(['--scan', target])
+  app = launched.app
+  page = launched.page
+}
+
+test('launching with --scan <fixture folder> starts a scan of it', async () => {
+  fixture = createScanFixture()
+  await relaunchWithScan(fixture.root)
+  await expect(treeRow(page, 'folder-12')).toBeVisible()
+  await expect(page.getByRole('contentinfo')).toContainText(
+    `${count.format(fixture.expected.files)} files found`,
+  )
+  await expect(page.getByRole('alert')).toHaveCount(0)
+})
+
+test('launching with --scan <missing folder> shows the calm message and no scan', async () => {
+  const missing = path.join(`${systemDrive}\\`, `storageiq-no-such-folder-${Date.now()}`)
+  await relaunchWithScan(missing)
+  await expect(page.getByRole('alert')).toHaveText(/That folder could not be found\./)
+  await expect(page.getByRole('alert')).not.toContainText('storageiq-no-such-folder')
+  // No scan started: nothing to stop and nothing to refresh.
+  await expect(ribbonButton(page, 'Stop')).toBeDisabled()
+  await expect(ribbonButton(page, 'Refresh')).toBeDisabled()
+  await expect(page.getByRole('contentinfo')).not.toContainText('files found')
+})

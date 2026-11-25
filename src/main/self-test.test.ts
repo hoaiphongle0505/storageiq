@@ -61,6 +61,7 @@ function setup(overrides: Partial<SelfTestDeps> = {}) {
     scanOnce: vi.fn(async () => completed()),
     probeShellMenu: vi.fn(async () => MENU),
     probeIcon: vi.fn(async () => `${PNG_DATA_URL_PREFIX}AAAA`),
+    probeRegistry: vi.fn(() => undefined),
     log: (line) => {
       lines.push(line)
     },
@@ -121,6 +122,21 @@ describe('runSelfTest', () => {
       const { deps } = setup({ probeIcon })
       expect(await runSelfTest(deps)).toBe(SELF_TEST_EXIT.iconFailed)
     }
+  })
+
+  it('fails when the registry round trip throws', async () => {
+    const probeRegistry = vi.fn(() => {
+      throw new Error('advapi32 did not load')
+    })
+    const { deps, lines } = setup({ probeRegistry })
+    expect(await runSelfTest(deps)).toBe(SELF_TEST_EXIT.registryFailed)
+    expect(lines.some((line) => line.startsWith('registry round trip'))).toBe(true)
+  })
+
+  it('logs the registry round trip when it works', async () => {
+    const { deps, lines } = setup()
+    expect(await runSelfTest(deps)).toBe(SELF_TEST_EXIT.ok)
+    expect(lines).toContain('registry round trip: ok')
   })
 
   it('fails when the scanner process fails', async () => {

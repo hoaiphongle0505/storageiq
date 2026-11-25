@@ -39,6 +39,18 @@ export function oneString(args: readonly unknown[]): [string] {
   return [value]
 }
 
+/** `parseArgs` for channels that take exactly one boolean (no truthy numbers or strings). */
+export function oneBoolean(args: readonly unknown[]): [boolean] {
+  if (args.length !== 1) {
+    throw new InvalidIpcArgumentsError(`expected 1 argument, got ${args.length}`)
+  }
+  const [value] = args
+  if (typeof value !== 'boolean') {
+    throw new InvalidIpcArgumentsError(`expected true or false, got ${typeof value}`)
+  }
+  return [value]
+}
+
 /** Throws unless exactly `count` arguments were sent. */
 export function expectCount(args: readonly unknown[], count: number): void {
   if (args.length !== count) {

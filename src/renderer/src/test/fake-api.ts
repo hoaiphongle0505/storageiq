@@ -3,6 +3,9 @@ import type {
   AppInfo,
   ChangelogEntry,
   IconBatch,
+  LaunchRequest,
+  OptionsChangeResult,
+  OptionsState,
   SelectFolderResult,
   StorageIQApi,
   UpdateState,
@@ -36,6 +39,13 @@ export const TEST_APP_INFO: AppInfo = {
   electronVersion: '45.3.4',
   chromeVersion: '150.0.7000.0',
   channel: 'Stable',
+}
+
+export const TEST_OPTIONS_STATE: OptionsState = {
+  available: true,
+  explorerMenu: false,
+  runAsAdmin: false,
+  runAsAdminLocked: false,
 }
 
 export const TEST_CHANGELOG: ChangelogEntry[] = [
@@ -274,6 +284,7 @@ export interface FakeApi extends StorageIQApi {
   emitScanRestarted(restarted: ScanRestarted): void
   emitTreeChanged(changed: TreeChanged): void
   emitUpdateState(state: UpdateState): void
+  emitLaunchRequest(request: LaunchRequest): void
   /** Subscribed event listeners across all channels. */
   listenerCount(): number
 }
@@ -301,6 +312,7 @@ export function createFakeApi(overrides: Partial<StorageIQApi> = {}): FakeApi {
   const restarted = createChannel<ScanRestarted>()
   const changed = createChannel<TreeChanged>()
   const updateState = createChannel<UpdateState>()
+  const launchRequest = createChannel<LaunchRequest>()
   return {
     getAppInfo: vi.fn(async () => TEST_APP_INFO),
     quit: vi.fn(async () => undefined),
@@ -341,6 +353,17 @@ export function createFakeApi(overrides: Partial<StorageIQApi> = {}): FakeApi {
     openLink: vi.fn(async () => undefined),
     getWhatsNewDue: vi.fn(async () => null),
     markWhatsNewSeen: vi.fn(async () => undefined),
+    getOptionsState: vi.fn(async (): Promise<OptionsState> => TEST_OPTIONS_STATE),
+    setExplorerMenu: vi.fn(async (enabled: boolean): Promise<OptionsChangeResult> => ({
+      state: { ...TEST_OPTIONS_STATE, explorerMenu: enabled },
+      error: null,
+    })),
+    setRunAsAdmin: vi.fn(async (enabled: boolean): Promise<OptionsChangeResult> => ({
+      state: { ...TEST_OPTIONS_STATE, runAsAdmin: enabled },
+      error: null,
+    })),
+    takeLaunchRequest: vi.fn(async (): Promise<LaunchRequest | null> => null),
+    onLaunchRequest: vi.fn(launchRequest.subscribe),
     ...overrides,
     emitScanProgress: progress.emit,
     emitScanDone: done.emit,
@@ -348,12 +371,14 @@ export function createFakeApi(overrides: Partial<StorageIQApi> = {}): FakeApi {
     emitScanRestarted: restarted.emit,
     emitTreeChanged: changed.emit,
     emitUpdateState: updateState.emit,
+    emitLaunchRequest: launchRequest.emit,
     listenerCount: () =>
       progress.size() +
       done.size() +
       failed.size() +
       restarted.size() +
       changed.size() +
-      updateState.size(),
+      updateState.size() +
+      launchRequest.size(),
   }
 }

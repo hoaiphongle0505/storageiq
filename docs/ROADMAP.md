@@ -215,6 +215,7 @@ Deviations from the plan (made after reviews, approved by the owner):
 - [x] T8c Strata look: pill ribbon, file-type treemap with legend and cushion shading, calm banner
 - [x] T9 2a screens removed, workspace E2E, CI perf report, docs
 - [x] T10 All-users installer option and auto-update from GitHub Releases ([RELEASING.md](RELEASING.md))
+- [x] T14 Options tab: Explorer "Scan with StorageIQ" menu (`--scan`) and always-run-as-administrator switch (HKCU registry through koffi, NSIS cleanup)
 - [ ] Owner checks pending: manual Explorer-menu and keyboard checks, High Contrast, installer and auto-update N→N+1, full C: scan timing; SignPath code signing (not set up yet)
 
 ### Phase 3 — Outcome

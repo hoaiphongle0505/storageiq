@@ -132,4 +132,34 @@ describe('preload bridge', () => {
     ])
     expect(ipcRenderer.invoke).toHaveBeenCalledWith('icons:for-types', ['dir', 'ext:txt'])
   })
+
+  it('exposes the five option and launch functions', async () => {
+    const { ipcRenderer } = await import('electron')
+    vi.mocked(ipcRenderer.invoke).mockClear()
+    const call = (name: string, ...args: unknown[]) =>
+      (exposed[name] as unknown as (...a: unknown[]) => Promise<unknown>)(...args)
+    await call('getOptionsState')
+    await call('setExplorerMenu', true)
+    await call('setRunAsAdmin', false)
+    await call('takeLaunchRequest')
+    expect(vi.mocked(ipcRenderer.invoke).mock.calls).toEqual([
+      ['options:get-state'],
+      ['options:set-explorer-menu', true],
+      ['options:set-run-as-admin', false],
+      ['launch:take-request'],
+    ])
+    expect(typeof exposed['onLaunchRequest']).toBe('function')
+  })
+
+  it('onLaunchRequest returns an unsubscribe', () => {
+    const received: unknown[] = []
+    const unsubscribe = (
+      exposed['onLaunchRequest'] as unknown as (cb: (p: unknown) => void) => () => void
+    )((payload) => received.push(payload))
+    const [forward] = listeners.get('launch:request') ?? []
+    forward?.({ sender: 'leaky' }, { kind: 'scan', path: 'D:\\Data' })
+    expect(received).toEqual([{ kind: 'scan', path: 'D:\\Data' }])
+    unsubscribe()
+    expect(listeners.get('launch:request')).toEqual([])
+  })
 })

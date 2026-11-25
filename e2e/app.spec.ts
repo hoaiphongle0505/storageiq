@@ -49,6 +49,7 @@ test('launches a locked-down renderer with the StorageIQ bridge', async () => {
     'getExpandIds',
     'getIcons',
     'getNode',
+    'getOptionsState',
     'getReleaseNotes',
     'getTreemap',
     'getTypeIcons',
@@ -58,6 +59,7 @@ test('launches a locked-down renderer with the StorageIQ bridge', async () => {
     'listDrives',
     'listPlaces',
     'markWhatsNewSeen',
+    'onLaunchRequest',
     'onScanDone',
     'onScanFailed',
     'onScanProgress',
@@ -70,8 +72,11 @@ test('launches a locked-down renderer with the StorageIQ bridge', async () => {
     'quit',
     'refreshFolder',
     'selectFolder',
+    'setExplorerMenu',
+    'setRunAsAdmin',
     'showContextMenu',
     'startScan',
+    'takeLaunchRequest',
   ])
 })
 

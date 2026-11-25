@@ -109,6 +109,26 @@ export interface CreateFolderResult {
  * Single source of truth for every renderer → main request.
  * Each channel maps to its argument tuple and its resolved result.
  */
+export interface OptionsState {
+  /** false when unpackaged (or not Windows): both switches are shown disabled. */
+  available: boolean
+  /** All three Explorer verbs exist with a command for the current exe. */
+  explorerMenu: boolean
+  /** HKCU or HKLM carries RUNASADMIN for the current exe. */
+  runAsAdmin: boolean
+  /** RUNASADMIN comes from HKLM (policy or an administrator): it cannot be turned off here. */
+  runAsAdminLocked: boolean
+}
+
+export interface OptionsChangeResult {
+  state: OptionsState
+  /** Calm one-line message when Windows refused the change; null on success. */
+  error: string | null
+}
+
+/** A launch with `--scan <path>`: main already validated the path (or says why it is not usable). */
+export type LaunchRequest = { kind: 'scan'; path: string } | { kind: 'invalid'; message: string }
+
 export interface IpcContract {
   'drives:list': { args: []; result: DriveInfo[] }
   'drive:info': { args: [root: string]; result: DriveDetails | null }
@@ -165,6 +185,10 @@ export interface IpcContract {
   'app:open-link': { args: [link: AboutLink]; result: void }
   'app:get-whats-new-due': { args: []; result: ChangelogEntry | null }
   'app:mark-whats-new-seen': { args: []; result: void }
+  'options:get-state': { args: []; result: OptionsState }
+  'options:set-explorer-menu': { args: [enabled: boolean]; result: OptionsChangeResult }
+  'options:set-run-as-admin': { args: [enabled: boolean]; result: OptionsChangeResult }
+  'launch:take-request': { args: []; result: LaunchRequest | null }
 }
 
 export type IpcChannel = keyof IpcContract
@@ -179,6 +203,7 @@ export interface IpcEventContract {
   'scan:restarted': ScanRestarted
   'tree:changed': TreeChanged
   'update:state': UpdateState
+  'launch:request': LaunchRequest
 }
 
 export type IpcEventChannel = keyof IpcEventContract
@@ -282,4 +307,14 @@ export interface StorageIQApi {
   getWhatsNewDue(): Promise<ChangelogEntry | null>
   /** Records that the running version's What's new was shown. */
   markWhatsNewSeen(): Promise<void>
+  /** What Windows has for the two Options switches (read from the registry on every call). */
+  getOptionsState(): Promise<OptionsState>
+  /** Adds or removes “Scan with StorageIQ” in Explorer’s context menu (HKCU, no admin needed). */
+  setExplorerMenu(enabled: boolean): Promise<OptionsChangeResult>
+  /** Sets or clears Windows’ “run as administrator” flag for StorageIQ; effective next start. */
+  setRunAsAdmin(enabled: boolean): Promise<OptionsChangeResult>
+  /** The validated `--scan` request that started the app, once; null when there is none. */
+  takeLaunchRequest(): Promise<LaunchRequest | null>
+  /** A `--scan` request from a later launch (Explorer’s menu while the app is open). */
+  onLaunchRequest(listener: (request: LaunchRequest) => void): Unsubscribe
 }

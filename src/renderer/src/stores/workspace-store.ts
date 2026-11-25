@@ -3,6 +3,9 @@ import type {
   AboutLink,
   ChangelogEntry,
   ContextMenuOutcome,
+  LaunchRequest,
+  OptionsChangeResult,
+  OptionsState,
   ReleaseNotes,
   StorageIQApi,
   UpdateState,
@@ -155,6 +158,8 @@ export interface WorkspaceState {
   /** Short polite message for screen readers (copied, created, …). */
   announcement: string
   folderPickerOpen: boolean
+  /** A launched `--scan` path waiting for the owner to confirm stopping the running scan. */
+  pendingLaunchScan: string | null
 
   loadMenuData(): Promise<void>
   chooseFolder(): Promise<void>
@@ -187,6 +192,23 @@ export interface WorkspaceState {
   setTreemapDepth(depth: number): void
   setTreemapVisible(visible: boolean): void
   dismissBanner(): void
+  /** A validated `--scan` request from main: scans now, or asks first while a scan runs. */
+  receiveLaunchRequest(request: LaunchRequest): void
+  /**
+   * Follows `--scan` launches: subscribes first, then takes the request that started the app, so
+   * none is lost in between. Returns the unsubscribe.
+   */
+  watchLaunchRequests(): () => void
+  /** The launch dialog's "Scan …" button: stops the running scan and scans the new path. */
+  confirmLaunchScan(): Promise<void>
+  /** The launch dialog's "Keep current scan" button. */
+  declineLaunchScan(): void
+  /** What Windows has for the Options switches; null when the call fails. */
+  loadOptionsState(): Promise<OptionsState | null>
+  /** Result of changing the Explorer menu option; null when the call itself fails. */
+  changeExplorerMenu(enabled: boolean): Promise<OptionsChangeResult | null>
+  /** Result of changing the administrator option; null when the call itself fails. */
+  changeRunAsAdmin(enabled: boolean): Promise<OptionsChangeResult | null>
   checkForUpdates(): Promise<void>
   downloadUpdate(): Promise<void>
   installUpdate(): Promise<void>
@@ -430,6 +452,7 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
       dismissedDownloadError: false,
       announcement: '',
       folderPickerOpen: false,
+      pendingLaunchScan: null,
 
       async loadMenuData() {
         if (get().menuDataStatus === 'loading') return
@@ -764,6 +787,63 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
           set({ dismissedUpdateVersion: updateState.version })
         } else if (updateState.kind === 'error' && updateState.during === 'download') {
           set({ dismissedDownloadError: true })
+        }
+      },
+
+      receiveLaunchRequest(request) {
+        if (request.kind === 'invalid') {
+          set({ banner: { tone: 'error', message: request.message } })
+          return
+        }
+        if (get().phase === 'scanning') {
+          set({ pendingLaunchScan: request.path }) // a later request replaces an earlier one
+          return
+        }
+        void get().startScan(request.path)
+      },
+
+      watchLaunchRequests() {
+        const unsubscribe = api.onLaunchRequest((request) => get().receiveLaunchRequest(request))
+        api.takeLaunchRequest().then(
+          (request) => {
+            if (request !== null) get().receiveLaunchRequest(request)
+          },
+          () => undefined,
+        )
+        return unsubscribe
+      },
+
+      async confirmLaunchScan() {
+        const path = get().pendingLaunchScan
+        set({ pendingLaunchScan: null })
+        if (path !== null) await get().startScan(path)
+      },
+
+      declineLaunchScan() {
+        set({ pendingLaunchScan: null })
+      },
+
+      async loadOptionsState() {
+        try {
+          return await api.getOptionsState()
+        } catch {
+          return null
+        }
+      },
+
+      async changeExplorerMenu(enabled) {
+        try {
+          return await api.setExplorerMenu(enabled)
+        } catch {
+          return null
+        }
+      },
+
+      async changeRunAsAdmin(enabled) {
+        try {
+          return await api.setRunAsAdmin(enabled)
+        } catch {
+          return null
         }
       },
 

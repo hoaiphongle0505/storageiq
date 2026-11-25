@@ -11,6 +11,7 @@ export const SELF_TEST_EXIT = {
   nativeNotUnpacked: 12,
   shellMenuFailed: 13,
   iconFailed: 14,
+  registryFailed: 15,
   scanFailed: 20,
   asarEntered: 21,
   walkEmpty: 22,
@@ -41,6 +42,8 @@ export interface SelfTestDeps {
   probeShellMenu(path: string): Promise<string[]>
   /** The icon worker's small `.txt` icon as a data URL; empty when the worker did not answer. */
   probeIcon(): Promise<string>
+  /** Writes, reads and deletes a value under a throwaway HKCU key; throws when it fails. */
+  probeRegistry(): void
   log(line: string): void
 }
 
@@ -90,6 +93,14 @@ export async function runSelfTest(deps: SelfTestDeps): Promise<number> {
     return SELF_TEST_EXIT.iconFailed
   }
   deps.log('icon: ext:txt PNG')
+
+  try {
+    deps.probeRegistry()
+  } catch (error) {
+    deps.log(`registry round trip: ${String(error)}`)
+    return SELF_TEST_EXIT.registryFailed
+  }
+  deps.log('registry round trip: ok')
 
   const result = await deps.scanOnce(deps.scanRoot)
   if ('failed' in result) {

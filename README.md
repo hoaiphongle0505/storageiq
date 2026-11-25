@@ -35,6 +35,15 @@ Notes:
 
 Installers are currently unsigned, so Windows SmartScreen will warn on first run. An all-users (per-machine) install shows a Windows administrator (UAC) prompt, also when an update installs at quit.
 
+## Windows integration (Options tab)
+
+The installed app has an **Options** tab with two switches. Both show what Windows has set (they are read from the registry each time the tab opens, and StorageIQ keeps no copy). They are disabled in `npm run dev`, so a development run never writes to the registry.
+
+- **Show StorageIQ in Explorer's context menu** adds “Scan with StorageIQ” when you right-click a folder, a drive or the empty space inside a folder. It writes three per-user keys under `HKEY_CURRENT_USER\Software\Classes` (no administrator approval needed) and starts the app with `--scan <folder>`; if StorageIQ is already open it comes forward and scans that folder, and if a scan is running it asks first. On Windows 11 the entry sits under **Show more options** (or Shift+F10): per-user registry entries do not appear in the new top-level menu, which needs a packaged shell extension (not built yet).
+- **Always start StorageIQ as administrator** sets Windows' own “Run this program as an administrator” compatibility flag for StorageIQ (the same setting as the exe's Properties, Compatibility tab), so protected folders such as the Windows folder and other users' profiles can be read. Windows asks for approval each time StorageIQ starts; the change takes effect the next time it starts. The scanner itself never asks for elevation, and nothing in StorageIQ elevates itself. If an administrator or a policy sets the flag for all users, the box is checked and disabled.
+
+Limits while StorageIQ runs as administrator: Windows does not let a non-elevated Explorer drop files onto an elevated window (StorageIQ accepts no dropped files today, so nothing is lost yet). When StorageIQ runs as administrator, start it from its own icon first: Windows may not deliver a “Scan with StorageIQ” click from the normal Explorer to an elevated copy that is already open (Explorer's menu works when StorageIQ is closed; see [docs/RELEASING.md](docs/RELEASING.md)). Uninstalling removes both settings for the current user.
+
 ## Architecture
 
 - `src/main`: Electron main process (window, security policy, IPC handlers, drive and volume details through koffi, the Explorer context menu through COM, Windows shell icons on a worker thread, auto-update)

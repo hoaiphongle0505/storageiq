@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
-import { act, fireEvent, screen } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import { EMPTY_TREE_TEXT } from './components/TreeGrid'
 import { SCAN_CRASH_MESSAGE } from './stores/workspace-store'
-import { TEST_APP_INFO } from './test/fake-api'
+import { createFakeApi, TEST_APP_INFO } from './test/fake-api'
 import { renderWithStores } from './test/render'
 import { makeDone, makeFailed, makeProgress } from './test/scan-fixtures'
 
@@ -100,5 +100,47 @@ describe('<App />', () => {
     await user.click(screen.getByRole('button', { name: 'About' }))
     fireEvent.keyDown(window, { key: 'F5' })
     expect(api.startScan).toHaveBeenCalledTimes(1)
+  })
+
+  it('subscribes before it takes the pending launch request', async () => {
+    const order: string[] = []
+    const api = createFakeApi({
+      onLaunchRequest: vi.fn(() => {
+        order.push('subscribe')
+        return () => undefined
+      }),
+      takeLaunchRequest: vi.fn(async () => {
+        order.push('take')
+        return { kind: 'scan' as const, path: 'D:\\Data' }
+      }),
+    })
+    renderWithStores(<App />, api)
+    await waitFor(() => expect(api.startScan).toHaveBeenCalledWith('D:\\Data'))
+    expect(order).toEqual(['subscribe', 'take'])
+  })
+
+  it('unsubscribes on unmount', () => {
+    const unsubscribe = vi.fn()
+    const { unmount } = renderWithStores(
+      <App />,
+      createFakeApi({ onLaunchRequest: vi.fn(() => unsubscribe) }),
+    )
+    unmount()
+    expect(unsubscribe).toHaveBeenCalled()
+  })
+
+  it('shows the confirmation dialog while scanning', async () => {
+    const user = userEvent.setup()
+    const { api, workspace } = renderWithStores(<App />)
+    await act(() => workspace.getState().startScan('D:\\'))
+    act(() => api.emitLaunchRequest({ kind: 'scan', path: 'E:\\Games' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Scan another folder?' })
+    expect(dialog).toHaveTextContent('StorageIQ is still scanning D:\\.')
+    expect(dialog).toHaveTextContent('Stop it and scan E:\\Games instead?')
+    await user.click(screen.getByRole('button', { name: 'Keep current scan' }))
+    expect(screen.queryByRole('dialog', { name: 'Scan another folder?' })).toBeNull()
+    act(() => api.emitLaunchRequest({ kind: 'scan', path: 'E:\\Games' }))
+    await user.click(await screen.findByRole('button', { name: 'Scan Games' }))
+    expect(api.startScan).toHaveBeenLastCalledWith('E:\\Games')
   })
 })

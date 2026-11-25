@@ -12,6 +12,7 @@ import {
   nodeArgs,
   nodeIdListArg,
   noArgs,
+  oneBoolean,
   oneString,
   scanNodeArgs,
   treemapArgs,
@@ -249,5 +250,23 @@ describe('aboutLinkArg', () => {
     for (const bad of [[], ['x'], ['https://a.example'], ['repo', 'repo'], [1]]) {
       expect(() => aboutLinkArg(bad)).toThrow(InvalidIpcArgumentsError)
     }
+  })
+})
+
+describe('oneBoolean', () => {
+  it('oneBoolean accepts true and false', () => {
+    expect(oneBoolean([true])).toEqual([true])
+    expect(oneBoolean([false])).toEqual([false])
+  })
+
+  it("oneBoolean rejects 1, 'true', null, undefined, objects", () => {
+    for (const bad of [1, 0, 'true', 'false', null, undefined, {}, [true]]) {
+      expect(() => oneBoolean([bad])).toThrow(InvalidIpcArgumentsError)
+    }
+  })
+
+  it('oneBoolean rejects zero or two arguments', () => {
+    expect(() => oneBoolean([])).toThrow(InvalidIpcArgumentsError)
+    expect(() => oneBoolean([true, false])).toThrow(InvalidIpcArgumentsError)
   })
 })
