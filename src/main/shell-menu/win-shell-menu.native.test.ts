@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
@@ -73,7 +74,9 @@ function recycledUnder(prefix: string): string[] | null {
   if (!existsSync(bin)) return null // this drive has no Recycle Bin: skip the bin assertions
   let sid: string
   try {
-    sid = execFileSync('whoami.exe', ['/user', '/fo', 'csv', '/nh'], { encoding: 'utf8' })
+    // The system copy by full path: a Git for Windows `whoami` earlier on PATH rejects /user.
+    const whoami = path.join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32', 'whoami.exe')
+    sid = execFileSync(whoami, ['/user', '/fo', 'csv', '/nh'], { encoding: 'utf8' })
       .split(',')[1]!
       .replace(/[\r\n"]/g, '')
   } catch {
@@ -106,7 +109,9 @@ function recycledUnder(prefix: string): string[] | null {
 describe.skipIf(!onWindows)('the shell worker thread (native)', () => {
   beforeAll(async () => {
     const script = await buildWorkerBundle()
-    workRoot = mkdtempSync(path.join(os.tmpdir(), 'storageiq-t11-'))
+    // The long form of the path: os.tmpdir() can be an 8.3 short name (C:\Users\RUNNER~1\…) on
+    // CI, while the Recycle Bin records the long original path the shell resolved.
+    workRoot = realpathSync.native(mkdtempSync(path.join(os.tmpdir(), 'storageiq-t11-')))
     pool = createShellWorkerPool({
       spawn: () =>
         new Worker(script, { workerData: SHELL_WORKER_TEST_DATA }) as unknown as WorkerLike,
