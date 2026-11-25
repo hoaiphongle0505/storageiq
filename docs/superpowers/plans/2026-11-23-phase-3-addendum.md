@@ -1160,6 +1160,384 @@ The owner approved this rendering as it is: the white round caps overlap the red
 
 **Commit:** `feat(brand): add the StorageIQ logo and Windows app icon`, with explicit paths and no AI attribution.
 
+### Task 13: Help tab, About, update checks and What's new
+
+**Implementer tier:** standard (state machine in main, IPC surface, a ribbon tab, two dialogs, a bundled changelog). Do the steps in order; the renderer comes last.
+
+**Why (owner request, 2026-11-25):** the About box is a placeholder (a version line and one sentence). The owner wants (1) an About section with an update button, (2) a notification when a new version is released, (3) a click to update, and (4) after the update, details of what is new or changed. Task 10's updater downloads silently and only announces `update:ready` after the download; the user cannot choose, cannot check by hand and never sees what changed. Task 14 (separate: Explorer context-menu integration and “always run as administrator”) will add an Options tab; this task adds **no** Options tab.
+
+**Start state (read these first, extend, do not duplicate):** `src/main/updater/updater.ts` (`createUpdater`, `UpdaterLike`, `hasPrereleaseTag`, `UPDATE_FIRST_CHECK_DELAY_MS` 10 s, `UPDATE_CHECK_INTERVAL_MS` 6 h, nothing runs unpackaged or under `--self-test`); `src/main/index.ts` (creates the updater after the window, `installUpdate: () => updater?.install()`, re-sends `update:ready` on `did-finish-load`); `src/main/ipc/app-handlers.ts` (`app:get-info`, `update:install`); `src/shared/ipc-contract.ts` (`AppInfo` with `electronVersion`, `UpdateReady`, `'update:ready'`, `onUpdateReady`); `components/UpdateBanner.tsx` (store field `updateReady`, `installUpdate`, `dismissUpdate`). **An About screen already exists and is reused, not duplicated:** `App.tsx` holds local `aboutOpen` and an inline `<Dialog title="About StorageIQ">` (version line plus one sentence), opened by the **About** `RibbonButton` in the **File** tab (`Ribbon.tsx`, group “App”, prop `onAbout`). This task turns that inline dialog into `AboutDialog` and moves the About button to the new Help tab. Also read `components/Dialog.tsx` (native modal `<dialog>`, Esc closes, focus returns to the opener, Close button autofocused), `Ribbon.tsx` (`RibbonTab = 'file' | 'home' | 'scan' | 'view'`, `TABS`, `panels`, `Group`), `RibbonButton.tsx`, `scripts/build-notices.cjs` and `electron-builder.yml` (`extraResources` already ships `THIRD_PARTY_NOTICES.txt` to `resources/`), and `docs/RELEASING.md`. Task 12b creates `build/icon.svg` and edits `electron-builder.yml` (icon keys) and `package.json` scripts: do not start the logo step before `build/icon.svg` exists, and start from the working tree of those files.
+
+**Decisions (owner can overrule, see Open questions):**
+
+- `autoDownload = false`: the user chooses. A found update is announced; **Update** downloads it; **Restart to update** installs. `autoInstallOnAppQuit` stays `true`, so a downloaded update still installs at the next normal quit.
+- The state machine lives in main and the renderer only reads it (pull once, then push).
+- What's new has three sources: the bundled `CHANGELOG.md` (installed versions), electron-updater's release notes converted to plain text (a version not yet installed), and a link to the release page as the fallback. Nothing is ever rendered as HTML or Markdown.
+- The renderer never sends a URL or a path: it sends fixed keys, main owns the targets.
+- Entry points live in a new **Help** ribbon tab (rule 17). The File tab keeps only Exit.
+- This task does **not** bump `package.json` (stays `0.1.0`); the owner bumps to `0.2.0-beta.1` when releasing (docs/RELEASING.md).
+
+**Files:**
+
+- Create: `CHANGELOG.md`; `src/shared/semver.ts` (+ `semver.test.ts`); `src/main/about/parse-changelog.ts` (+ test); `src/main/about/release-notes.ts` (+ test); `src/main/about/whats-new-store.ts` (+ test); `src/main/ipc/update-handlers.ts` (+ test); `src/main/ipc/about-handlers.ts` (+ test); `src/renderer/src/components/AppLogo.tsx` (+ `AppLogo.test.tsx`); `AboutDialog.tsx` (+ test); `WhatsNewDialog.tsx` (+ test); `e2e/about.spec.ts`.
+- Modify: `src/main/updater/updater.ts` (+ `updater.test.ts`); `src/shared/ipc-contract.ts`; `src/main/ipc/parse-args.ts` (+ test); `src/main/ipc/register.test.ts`; `src/main/ipc/app-handlers.ts` (+ test, `AppInfo` extras only); `src/main/index.ts`; `src/preload/index.ts` (+ test); `src/renderer/src/stores/workspace-store.ts` (+ test); `src/renderer/src/test/fake-api.ts`; `components/UpdateBanner.tsx` (+ test); `components/Ribbon.tsx`, `components/RibbonButton.tsx` (+ tests); `src/renderer/src/App.tsx` (+ `App.test.tsx`); `electron-builder.yml` (one `extraResources` entry only); `scripts/check-packaged-app.mjs`; `docs/RELEASING.md`. Another change set (Task 12b) may be open on `electron-builder.yml` and `package.json`: keep its edits.
+
+**Interfaces:**
+
+`ipc-contract.ts` (types, then channels):
+
+```ts
+export type UpdateState =
+  | { kind: 'idle' }
+  | { kind: 'checking' }
+  | { kind: 'up-to-date' }
+  | { kind: 'unavailable'; message: string } // unpackaged or self-test run
+  | { kind: 'available'; version: string }
+  | { kind: 'downloading'; version: string; percent: number } // integer 0..100
+  | { kind: 'ready'; version: string }
+  | { kind: 'error'; message: string }
+export interface ChangelogSection {
+  title: string
+  items: string[]
+}
+export interface ChangelogEntry {
+  version: string
+  date: string | null
+  sections: ChangelogSection[]
+}
+export type AboutLink = 'repo' | 'license' | 'releases' | 'help' | 'issues'
+export type ReleaseNotes = { version: string; text: string | null }
+```
+
+- `AppInfo` gains `chromeVersion: string` and `channel: 'Beta' | 'Stable'` (`electronVersion` already exists; `app:get-info` stays the About data source, no new About channel).
+- New channels: `'update:get-state': { args: []; result: UpdateState }`, `'update:check': { args: []; result: UpdateState }`, `'update:download': { args: []; result: void }`, `'update:get-release-notes': { args: []; result: ReleaseNotes | null }`, `'app:get-changelog': { args: []; result: ChangelogEntry[] }`, `'app:open-notices': { args: []; result: { opened: boolean } }`, `'app:open-link': { args: [link: AboutLink]; result: void }`, `'app:get-whats-new-due': { args: []; result: ChangelogEntry | null }`, `'app:mark-whats-new-seen': { args: []; result: void }`. `'update:install'` stays.
+- Event: `'update:state': UpdateState` **replaces** `'update:ready'`. `UpdateReady`, `onUpdateReady` and the store's `updateReady` are deleted.
+- `StorageIQApi`: `getUpdateState()`, `checkForUpdates()`, `downloadUpdate()`, `installUpdate()` (exists), `getReleaseNotes()`, `onUpdateState(listener)`, `getChangelog()`, `openNotices()`, `openLink(link)`, `getWhatsNewDue()`, `markWhatsNewSeen()`.
+
+`semver.ts`: `parseVersion(v: string): ParsedVersion | null`, `compareVersions(a: string, b: string): -1 | 0 | 1 | null` (null when either is invalid).
+
+`updater.ts`: `UpdaterLike` gains `downloadUpdate(): Promise<unknown>` and the events `'checking-for-update'`, `'update-available'` (`info: { version: string; releaseNotes?: unknown }`), `'update-not-available'`, `'download-progress'` (`{ percent: number }`) beside the existing two. `UpdaterDeps.send` is `(event: 'update:state', payload: UpdateState) => void`. `Updater` becomes `{ start(); checkNow(): UpdateState; download(): void; install(): void; dispose(); readonly state: UpdateState; readonly releaseNotes: ReleaseNotes | null }`. New constant `UPDATE_CHECK_TIMEOUT_MS = 60_000`.
+
+`whats-new-store.ts`: `createWhatsNewStore(deps: { filePath: string; readFile; writeFile; rename; log })` returning `{ read(): Promise<string | null>; write(version: string): Promise<void> }`; the file is `<userData>/whats-new.json`, `{ "lastSeenVersion": "<semver>" }`.
+
+**Rules:**
+
+_Semver and changelog (pure, tested first)_
+
+1. `parseVersion` accepts `MAJOR.MINOR.PATCH`, optional `-prerelease` (dot-separated `[0-9A-Za-z-]+` identifiers) and optional `+build`, at most 64 characters, numeric parts at most 9 digits, no leading `v`, no leading zeros in numeric parts; anything else is `null`. `compareVersions` follows semver 2.0 precedence: build metadata ignored; a version with a prerelease is lower than the same version without; prerelease identifiers compare left to right, numeric ones numerically, numeric lower than alphanumeric, a shorter set lower when all earlier identifiers are equal (`0.2.0-beta.2` < `0.2.0-beta.10` < `0.2.0` < `0.10.0`).
+2. `parseChangelog(text: string): ChangelogEntry[]` never throws. Heading `^##\s+\[([^\]\s]+)\]\s*(?:-\s*(\d{4}-\d{2}-\d{2}))?\s*$` starts an entry; an invalid version (including `Unreleased`) skips that entry and everything under it. `^###\s+(.+?)\s*$` starts a section; a bullet `^[-*]\s+(.+)$` is an item; a following non-blank line indented by two or more spaces is appended to the item with a single space; bullets before any `###` go to a section titled `Changes`; empty sections and entries with no items are dropped. Limits: input longer than 262,144 characters is cut there; at most 50 entries, 12 sections per entry, 40 items per section; an item is cut at 400 characters; titles at 60. Order is file order (newest first by convention). CRLF is accepted. Text is kept verbatim (no Markdown processing, no tag stripping: the renderer only ever shows text nodes).
+3. `htmlToPlainText(notes: unknown): string | null` for electron-updater's `releaseNotes` (a string, an array of `{ version, note }`, or null): a string is converted, an array is joined by blank lines (each item's `note` only), anything else is `null`. Conversion: `<li>` becomes `- `, `</p>`, `<br>`, `</h1>` to `</h6>`, `</li>`, `</ul>` become a newline, every other tag is removed with `/<[^>]*>/g`, then the entities `&amp; &lt; &gt; &quot; &#39; &nbsp;` are decoded once, runs of three or more newlines collapse to two, the result is trimmed and cut at 20,000 characters. An empty result is `null`.
+
+_Updater state machine (main)_
+
+4. States and transitions (the list is the spec; every transition emits `update:state` only when the state actually changed, compared with `JSON.stringify`):
+   - start: `idle`.
+   - `checkNow()` unpackaged or under `--self-test`: state `{ kind: 'unavailable', message: 'Updates are available in the installed app.' }`, no listener registered, no network call, never throws.
+   - `checkNow()` while `checking`, `downloading`, `available` or `ready`: no-op, returns the current state.
+   - `checkNow()` otherwise: `checking`, calls `checkForUpdates()` (a synchronous throw or a rejection is handled like the `error` event) and arms a one-shot `UPDATE_CHECK_TIMEOUT_MS` guard.
+   - `update-available` becomes `available` (version from `info.version`; its release notes are kept as plain text for `releaseNotes`); `update-not-available` becomes `up-to-date`.
+   - `download()` only from `available`: state `downloading` at 0, calls `downloadUpdate()` (a rejection is handled like an error). `download-progress` sets `percent = clamp(round(percent), 0, 100)`. `update-downloaded` becomes `ready` and cancels the timers. Any other state: no-op.
+   - `install()` only from `ready`: `quitAndInstall(false, true)` (unchanged from Task 10).
+   - Errors: the raw error is logged with `deps.log`; the state carries only a fixed message: during a check `Could not check for updates. Check your connection and try again.`, during a download `Could not download the update. Try again.`. A background check (started by the timers) that fails or times out returns to `idle` quietly; a manual check or a download shows `error`. The timeout guard turns a stuck `checking` into the same outcome.
+   - `error` and `up-to-date` allow a new `checkNow()`.
+5. Background schedule is Task 10's (first check 10 s after start, then every 6 h) with one change: a timer tick starts a background check only in `idle`, `up-to-date` or `error`. `start()` sets `autoDownload = false`, `autoInstallOnAppQuit = true`, `allowPrerelease = hasPrereleaseTag(version)` (channel rule unchanged: see docs/RELEASING.md “Update channel”). A found update therefore stops the schedule (state is `available`); the timers are cancelled in `update-downloaded` and in `dispose`.
+6. `Updater.state` and `releaseNotes` are read-only getters. `releaseNotes` is `{ version, text }` for the state's version when `available`, `downloading` or `ready`, else `null`.
+
+_What's new bookkeeping and About actions (main)_
+
+7. `app:get-whats-new-due` returns the changelog entry for the running version at most once per install of that version:
+   - no file, an unreadable or corrupt file, or a `lastSeenVersion` that does not parse: write the current version, return `null` (a first install shows nothing);
+   - current version lower than `lastSeenVersion` (a downgrade): write the current version, return `null`;
+   - current version higher than `lastSeenVersion` and `CHANGELOG.md` has an entry with exactly that version: return the entry **without writing**;
+   - current higher but no entry: write the current version, return `null`;
+   - equal: `null`.
+     `app:mark-whats-new-seen` writes the running version. The renderer sends no version in either call. The write is atomic (write `whats-new.json.tmp`, then `rename` over the file; reuse an existing atomic-write helper if `src/main` has one, search for `rename(` first); a failed write is logged and never thrown.
+8. `app:get-changelog` reads the bundled file and returns `parseChangelog`'s entries, at most 10; an unreadable file returns `[]`. Path: `path.join(process.resourcesPath, 'CHANGELOG.md')` when `app.isPackaged`, else `path.join(app.getAppPath(), 'CHANGELOG.md')`. The file is read at most 256 KiB and cached in memory for the session.
+9. `app:open-notices` opens `THIRD_PARTY_NOTICES.txt` with `shell.openPath`: `path.join(process.resourcesPath, 'THIRD_PARTY_NOTICES.txt')` packaged, `path.join(app.getAppPath(), 'out', 'THIRD_PARTY_NOTICES.txt')` unpackaged. A missing file or a non-empty `openPath` result returns `{ opened: false }`; the renderer sends no path.
+10. `app:open-link` takes exactly one argument that must be one of `'repo'`, `'license'`, `'releases'`, `'help'`, `'issues'` (`InvalidIpcArgumentsError('expected a known link')` otherwise) and calls `shell.openExternal` with the fixed URL: `https://github.com/hoaiphongle0505/storageiq`, `https://github.com/hoaiphongle0505/storageiq/blob/main/LICENSE`, `https://github.com/hoaiphongle0505/storageiq/releases`, `https://github.com/hoaiphongle0505/storageiq#readme`, `https://github.com/hoaiphongle0505/storageiq/issues/new/choose`. A rejected `openExternal` is logged, not thrown.
+11. IPC hygiene: every new channel is registered through the existing `register.ts` registry, so the sender check (trusted renderer URL, Task 4) and `InvalidIpcArgumentsError` apply with no new code; the zero-argument channels use `noArgs`; `update:download`, `update:install` and `update:check` ignore a state that does not allow them (rule 4) instead of throwing. `index.ts` passes `getUpdateState: () => updater?.state ?? { kind: 'idle' }`, `checkForUpdates: () => updater?.checkNow() ?? { kind: 'idle' }`, `downloadUpdate: () => updater?.download()`, and keeps `installUpdate`. The `did-finish-load` re-send becomes `sendEvent('update:state', updater.state)` when the state is not `idle`.
+12. `AppInfo.channel` is `'Beta'` when `hasPrereleaseTag(version)`, else `'Stable'`; `chromeVersion` is `process.versions.chrome`.
+
+_Packaging_
+
+13. `CHANGELOG.md` ships outside the asar: `electron-builder.yml` `extraResources` gains `- from: CHANGELOG.md` / `to: CHANGELOG.md` next to the notices entry. `files`, `asarUnpack` and every other key stay as they are. `scripts/check-packaged-app.mjs` also fails when `resources/CHANGELOG.md` is missing, with the same message style as the notices check.
+14. A repository test (in `parse-changelog.test.ts`) reads the real `CHANGELOG.md` and `package.json`: the real file parses to at least one entry, and the newest entry is not older than `package.json`'s version (so a release bump without a changelog entry fails the gate).
+
+_Renderer: store, banner, Help tab_
+
+15. Store: `updateState: UpdateState` (initial `{ kind: 'idle' }`), `dismissedUpdateVersion: string | null`, `whatsNew: WhatsNewTarget | null` where `type WhatsNewTarget = { kind: 'history' } | { kind: 'installed'; version: string } | { kind: 'update'; version: string }`. Actions: `checkForUpdates()`, `downloadUpdate()`, `installUpdate()` (exists), `dismissUpdate()` (sets `dismissedUpdateVersion` to the current `available`/`ready` version; session memory only), `openWhatsNew(target)`, `closeWhatsNew()`. `updateReady` and `onUpdateReady` are removed. A failing API call goes through the existing error/announcement pattern, never an unhandled rejection. On store start, in this order: subscribe `api.onUpdateState` (stores the payload), call `api.getUpdateState()` and store it (the pull reply and later pushes share one ordered channel, so a late reply cannot overwrite a newer push), then once per session call `api.getWhatsNewDue()`; when it returns an entry the store calls `api.markWhatsNewSeen()` **immediately** and opens `{ kind: 'installed', version: entry.version }` (marking at open time keeps “once” true even if the app is closed with the dialog open). A `whatsNewChecked` flag stops a store re-init from reopening it.
+16. `UpdateBanner` (same slot in `App.tsx`, `role="status"`, never takes focus) shows by state:
+
+- `available` (and `dismissedUpdateVersion !== version`): text `StorageIQ {version} is available.`, buttons `Update` (primary, `downloadUpdate`), `What's new` (`openWhatsNew({ kind: 'update', version })`), `Later` (`dismissUpdate`);
+- `downloading`: text `Downloading StorageIQ {version}… {percent}%` and a `<progress>` with `aria-label="Update download"`, `value`, `max=100`; no buttons;
+- `ready` (not dismissed): text `StorageIQ {version} is ready. Restart to update.`, buttons `Restart to update`, `What's new`, `Later`;
+- any other state, or dismissed: renders nothing. A manual-check `error` is shown in About only, never in the banner.
+  A dismissed version comes back for a **different** version (a newer release) because the key is the version string. The polite live text changes at most once per 10 percent (`Math.floor(percent / 10)`), so a screen reader is not flooded.
+
+17. **Help tab.** `RibbonTab` becomes `'file' | 'home' | 'scan' | 'view' | 'help'`; `TABS` gets `{ id: 'help', label: 'Help' }` as the last tab; the `panels` record gets a `help` panel with two groups, using the existing `Group` and `RibbonButton` (Fluent icons from `lib/icons`; reuse `IconAbout`; for the others pick the closest existing glyphs and add missing ones in the same style, 24 px as in Task 12; no new icon library):
+
+- Group **Help**: `Help` (`openLink('help')`, title `Open the StorageIQ guide in your browser`) and `Report a problem` (`openLink('issues')`, title `Open the issue form in your browser`);
+- Group **Version**: `About` (opens `AboutDialog`, the existing `onAbout`), `Check for updates` (calls `checkForUpdates()` and opens `AboutDialog`, whose status region shows the result), `What's new` (`openWhatsNew({ kind: 'history' })`).
+  The File tab keeps only the Exit button (group “App”); About moves to the Help tab, and the existing tab-order, arrow-key and `aria-selected` tests are updated for the extra tab. The renderer sends only the keys of rule 10.
+
+18. **Notification dot.** `RibbonButton` gains `badge?: boolean`: an 8 px `aria-hidden` dot in `--accent` at the icon's top right, and the button's accessible name gets `, update available` appended (`aria-label`), visible label and `title` unchanged. The tab label button gets the same dot through the tab rendering in `Ribbon.tsx` (`aria-label` `Help, update available`). While `updateState.kind` is `available`, `downloading` or `ready` the dot shows on the **Help tab** and on the **Check for updates** button, regardless of the banner being dismissed. Under `forced-colors` the dot uses `Highlight`. No animation, no count.
+
+_Renderer: dialogs_
+
+19. `AppLogo({ size })`: the master artwork of `build/icon.svg` (Task 12b) as a React SVG component, `aria-hidden="true"`, `viewBox="0 0 64 64"`, `width`/`height` = size (About uses 64), with the file's `rect` and `path` attributes copied verbatim. It needs no asset loading, so the CSP (`img-src 'self' data:`) is untouched. `AppLogo.test.tsx` reads `build/icon.svg` with `fs` and asserts that the sorted multiset of `d`, `fill`, `stroke`, `stroke-width`, `rx` values of the file equals the one in the rendered markup, so the logo cannot drift from the master. If `build/icon.svg` does not exist, stop and report (Task 12b not merged).
+20. `AboutDialog` replaces the inline About in `App.tsx` and keeps using the existing `Dialog` (modal, focus trap by `showModal`, Esc closes, labelled by its title, Close button autofocused, focus returns to the opener). Content, top to bottom:
+
+- `AppLogo` (64), the name `StorageIQ`, `Version {version}` with a pill `{channel}` (`Beta` or `Stable`), the muted line `Electron {electronVersion}, Chromium {chromeVersion}`;
+- the sentence already there (`Shows where your disk space went. Free and open source under the MIT license.`);
+- the update block, a polite `role="status"` region whose text and buttons follow the state: `idle` shows `Check for updates`; `checking` shows `Checking for updates…` with `Check for updates` as `aria-disabled`; `up-to-date` shows `You have the latest version.` and `Check for updates`; `unavailable` shows its message and `Check for updates`; `available` shows `StorageIQ {version} is available.` with `Update` and `What's new`; `downloading` shows `Downloading StorageIQ {version}… {percent}%` plus the same `<progress>` as the banner and no buttons; `ready` shows `StorageIQ {version} is ready.` with `Restart to update`; `error` shows its message and `Check for updates`;
+- a button row (all `Button variant="quiet"`, real `<button>`s): `What's new` (`openWhatsNew({ kind: 'history' })`), `GitHub repository` (`openLink('repo')`), `MIT licence` (`openLink('license')`), `Third-party notices` (`api.openNotices()`; on `{ opened: false }` the status region shows `The notices file was not found.`).
+  Opening What's new from About closes About first (`onClose()` then `openWhatsNew`), so only one modal is open at a time. Progress text follows rule 16's 10 percent step.
+
+21. `WhatsNewDialog` (uses `Dialog`; title `What's new`) renders by target:
+
+- `history`: the first 10 entries of `api.getChangelog()`, newest first; each entry is a `<section>` with an `<h3>` `Version {version}` plus ` ({date})` when a date exists, each section an `<h4>` title and a `<ul>` of items;
+- `installed`: only the entry whose version equals `target.version`, same markup (when absent: `No release notes are bundled with this version.` and a `View release page` button, `openLink('releases')`);
+- `update`: `api.getReleaseNotes()` text in a `<div className="whitespace-pre-wrap">` (a text node, never HTML); when `text` is `null` or the call fails: `Release notes are on the release page.` and the `View release page` button.
+  While loading it shows `Loading…` in a polite status. All text goes through React text nodes; the files contain no `dangerouslySetInnerHTML`.
+
+22. `App.tsx`: `aboutOpen` stays local; `whatsNew` comes from the store and renders `WhatsNewDialog` when non-null. The F5 guard (`dialog[open]`) already covers both dialogs. F1 is not added.
+
+**Open questions (owner):**
+
+1. **Behaviour change:** Task 10 downloaded updates silently and installed them on the next quit with no action. Now a user who never clicks **Update** is never updated. Say if a setting “download updates automatically” is wanted later (it fits Task 14's Options tab; not built here).
+2. **`unavailable` is a state beyond the owner's list**, used for the unpackaged message so it is not styled as an error.
+3. **What's new for a stable release after beta:** a beta user updating to `0.2.0` sees notes only if `CHANGELOG.md` has a `0.2.0` entry (rule 7); rule 14 makes the gate enforce an entry at release time.
+4. **About moves from File to Help.** Say if it should also stay on the File tab.
+
+**Initial `CHANGELOG.md` (include exactly this text):**
+
+```markdown
+# Changelog
+
+All notable changes to StorageIQ are listed here, newest first. The format follows Keep a Changelog and the versions follow Semantic Versioning.
+
+## [0.2.0-beta.1] - 2026-11-25
+
+### Added
+
+- A workspace with a folder tree and a treemap side by side. The treemap colours each kind of file, and a legend explains the colours.
+- The Strata look: a refreshed design for the ribbon, the tree and the treemap.
+- Windows shell icons for files and folders in the tree, and Fluent icons in the ribbon.
+- Explorer's own right-click menu on every row, with Open, Properties, Send to and the rest.
+- Select several rows at once and act on them together.
+- A new StorageIQ logo and app icon.
+- An installer that can install StorageIQ for you only or for everyone who uses the computer.
+- Automatic update checks. When a new version is out, StorageIQ tells you and you choose when to update.
+- A Help tab with Help, Report a problem, About, Check for updates and What's new.
+- An About window with the version, the licence, third-party notices and a Check for updates button.
+- What's new: the changes of a version open once after an update, and from the Help tab at any time.
+
+### Changed
+
+- Scanning is much faster because several folders are read at the same time. About 1.5 minutes for 1.9 million files on the developer's machine.
+- Deleting many items no longer freezes the window. Windows shows its own progress while StorageIQ stays usable.
+
+### Fixed
+
+- Rows no longer stay in the tree after the item was deleted in Explorer or from the menu, and folder totals update.
+```
+
+**Tests (names exact, by file):**
+
+`src/shared/semver.test.ts`:
+
+- `parseVersion accepts release, prerelease and build versions`
+- `parseVersion rejects leading v, leading zeros, extra parts and long input`
+- `compareVersions orders prerelease below release`
+- `compareVersions compares numeric prerelease identifiers numerically`
+- `compareVersions ignores build metadata`
+- `compareVersions returns null for an invalid version`
+
+`src/main/about/parse-changelog.test.ts`:
+
+- `parses entries, dates and sections in file order`
+- `joins wrapped bullet lines`
+- `puts bullets without a section under Changes`
+- `skips Unreleased and invalid versions`
+- `drops empty sections and entries`
+- `accepts CRLF line endings`
+- `returns an empty list for empty, binary or malformed input without throwing`
+- `applies the entry, section, item and length limits`
+- `keeps HTML and Markdown characters as plain text`
+- `the real CHANGELOG parses and is not older than package.json`
+
+`src/main/about/release-notes.test.ts`:
+
+- `converts list items and paragraphs to plain lines`
+- `removes every tag including script and style tags` (no `<` survives; script text stays inert text)
+- `decodes the common entities once`
+- `joins an array of notes and ignores versions`
+- `returns null for null, numbers and empty results`
+- `cuts the text at 20000 characters`
+
+`src/main/about/whats-new-store.test.ts` (fake fs):
+
+- `a missing file reads as null`
+- `a corrupt file reads as null`
+- `write goes through a temp file and a rename`
+- `a failed write is logged and not thrown`
+
+`src/main/ipc/about-handlers.test.ts`:
+
+- `get-whats-new-due returns null and records the version on a first install`
+- `get-whats-new-due returns the entry after an upgrade and does not write`
+- `get-whats-new-due compares prerelease versions (beta.1 to beta.2, beta to stable)`
+- `get-whats-new-due returns null and records the version on a downgrade`
+- `get-whats-new-due returns null and records the version when the changelog has no entry`
+- `mark-whats-new-seen writes the running version`
+- `get-changelog returns at most 10 entries and an empty list when the file is missing`
+- `open-notices returns opened false when the file is missing or openPath fails`
+- `open-link opens only the five fixed URLs`
+- `open-link rejects an unknown key, a URL, a missing argument and extra arguments`
+- `zero-argument channels reject any argument`
+
+`src/main/ipc/update-handlers.test.ts`:
+
+- `update:get-state, update:check, update:download and update:get-release-notes call the updater`
+- `update:check and update:download reject any argument`
+- `the handlers answer idle when there is no updater`
+
+`src/main/ipc/register.test.ts` (extend):
+
+- `refuses an untrusted sender on every update and about channel` (`it.each` over the nine new channels)
+
+`src/main/updater/updater.test.ts` (fake `autoUpdater` extended with an event emitter and `downloadUpdate`):
+
+- `start sets autoDownload false, autoInstallOnAppQuit true and the channel`
+- `an unpackaged or self-test checkNow reports unavailable and never calls the updater`
+- `checkNow moves idle to checking to up-to-date`
+- `update-available moves to available and keeps plain-text release notes`
+- `checkNow is a no-op while checking, available, downloading or ready`
+- `download only runs from available and moves to downloading`
+- `download-progress rounds and clamps the percent`
+- `update-downloaded moves to ready and cancels the timers`
+- `install quits and installs only from ready`
+- `a manual check error shows the fixed message and logs the raw error`
+- `a background check error returns to idle and shows nothing`
+- `a download error shows the fixed download message`
+- `a stuck check times out after UPDATE_CHECK_TIMEOUT_MS`
+- `the first background check runs after 10 s and the interval skips available, downloading and ready`
+- `a state is only sent when it changed`
+
+`src/preload/index.test.ts` (extend; remove the `onUpdateReady` test):
+
+- `each new method invokes its channel with the documented arguments` (`openLink` passes its one key)
+- `onUpdateState subscribes to update:state and returns an unsubscribe`
+
+`src/renderer/src/stores/workspace-store.test.ts` (extend; replace the `update:ready` tests):
+
+- `update:state events set updateState`
+- `startup pulls the state and subscribes`
+- `dismissUpdate remembers the version and a newer version shows again`
+- `checkForUpdates, downloadUpdate and installUpdate call the api`
+- `a failing update call does not throw`
+- `a due What's new entry opens once, marks it seen at once and is not opened twice`
+- `no due entry opens nothing`
+
+`src/renderer/src/components/UpdateBanner.test.tsx`:
+
+- `available shows the message with Update, What's new and Later`
+- `Update calls downloadUpdate`
+- `What's new opens the update target`
+- `Later hides the banner until a different version is available`
+- `downloading shows a labelled progress bar and no buttons`
+- `ready shows Restart to update, which calls installUpdate`
+- `idle, checking, up-to-date and error render nothing`
+- `the progress text changes once per ten percent`
+
+`AboutDialog.test.tsx`:
+
+- `shows the logo, name, version, channel and engine versions`
+- `labels the channel Beta for a prerelease version and Stable otherwise`
+- `idle offers Check for updates and clicking it calls checkForUpdates`
+- `checking is announced and the button is aria-disabled`
+- `up-to-date, unavailable and error show their text`
+- `available offers Update and What's new`
+- `downloading shows progress and hides the buttons`
+- `ready offers Restart to update`
+- `What's new closes About and opens the history target`
+- `links call openLink with repo and license`
+- `Third-party notices calls openNotices and reports a missing file`
+- `is a labelled modal dialog and Escape closes it`
+
+`WhatsNewDialog.test.tsx`:
+
+- `history lists entries newest first with date and sections`
+- `installed shows only the matching entry`
+- `installed without an entry shows the message and the release page button`
+- `update shows the release notes as plain text and does not parse HTML` (an `<img onerror>` string appears as text and no `img` exists)
+- `update with null text falls back to the release page button`
+- `a failing getReleaseNotes falls back to the release page button`
+- `Escape closes it`
+
+`AppLogo.test.tsx`: `matches build/icon.svg`, `is hidden from assistive technology`.
+
+`Ribbon.test.tsx` (extend):
+
+- `the Help tab is last and shows the Help and Version groups`
+- `the File tab keeps Exit and no longer has About`
+- `Help and Report a problem call openLink with help and issues`
+- `About opens the About dialog`
+- `Check for updates calls checkForUpdates and opens the About dialog`
+- `What's new opens the history target`
+- `the Help tab and the Check for updates button show a dot while an update is available, downloading or ready`
+- `no dot when idle, checking, up-to-date or error`
+
+`RibbonButton.test.tsx` (extend): `badge adds a hidden dot and update available to the accessible name`.
+
+`App.test.tsx` (extend): `About opens from the Help tab`, `the What's new dialog opens from the banner`.
+
+`e2e/about.spec.ts` (launches the built, unpackaged app with `launchApp`):
+
+- `About opens from the Help tab, shows the version and the logo, and closes with Escape`
+- `Check for updates in an unpackaged app shows “Updates are available in the installed app.” and makes no network request`
+- `What's new lists the CHANGELOG entry 0.2.0-beta.1 with its sections`
+- `the Help tab has Help, Report a problem, About, Check for updates and What's new buttons` (nothing is clicked that opens a browser)
+- `no console or CSP errors while About and What's new are open` (use `consoleErrors`)
+
+**Steps:**
+
+- [ ] **Step 1: Prerequisites.** Confirm `build/icon.svg` exists (Task 12b). Read the files in “Start state”. Run `npx vitest run` and note the baseline.
+- [ ] **Step 2: Pure modules, tests first.** `semver.ts`, `parse-changelog.ts`, `release-notes.ts`, `whats-new-store.ts` with their tests (red, then green). Create `CHANGELOG.md` from the block above.
+- [ ] **Step 3: Contract and parsers.** `ipc-contract.ts` (types, channels, event, API), `parse-args.ts` (`aboutLinkArg`), `AppInfo` extras in `app-handlers.ts`.
+- [ ] **Step 4: Updater state machine.** Rewrite `updater.ts` per rules 4 to 6 with the extended fake; delete the `update:ready` tests and keep the schedule tests that still apply.
+- [ ] **Step 5: Handlers and wiring.** `update-handlers.ts`, `about-handlers.ts`, register them, extend `register.test.ts`, wire `index.ts` (including the `did-finish-load` re-send), `src/preload/index.ts` and its test, `fake-api.ts` (`emitUpdateState`, new fakes).
+- [ ] **Step 6: Packaging and docs.** `extraResources` entry for `CHANGELOG.md`, `check-packaged-app.mjs` check, `docs/RELEASING.md`: replace the “An update downloads in the background…” paragraph with the new flow (banner and Help tab, **Update**, **Restart to update**, installs at quit when downloaded, What's new once after the update), add a release step “add the `## [X.Y.Z]` entry to `CHANGELOG.md` before bumping the version”, and update “Testing an update” to click **Update** then **Restart to update**.
+- [ ] **Step 7: Store, banner, Help tab and dot.** Rules 15 to 18 with their tests.
+- [ ] **Step 8: Dialogs.** `AppLogo`, `AboutDialog`, `WhatsNewDialog`, `App.tsx` (rules 19 to 22) with their tests. Run `impeccable detect --json src/renderer` (expected `[]`).
+- [ ] **Step 9: e2e.** `e2e/about.spec.ts`.
+- [ ] **Step 10: Gate** (below).
+- [ ] **Step 11: Commit** with explicit paths:
+
+```bash
+git add CHANGELOG.md docs/RELEASING.md electron-builder.yml scripts/check-packaged-app.mjs e2e/about.spec.ts src/shared/semver.ts src/shared/semver.test.ts src/shared/ipc-contract.ts src/main/about src/main/ipc src/main/updater src/main/index.ts src/preload/index.ts src/preload/index.test.ts src/renderer/src/stores/workspace-store.ts src/renderer/src/stores/workspace-store.test.ts src/renderer/src/test/fake-api.ts src/renderer/src/lib/icons.ts src/renderer/src/App.tsx src/renderer/src/App.test.tsx src/renderer/src/components/AppLogo.tsx src/renderer/src/components/AppLogo.test.tsx src/renderer/src/components/AboutDialog.tsx src/renderer/src/components/AboutDialog.test.tsx src/renderer/src/components/WhatsNewDialog.tsx src/renderer/src/components/WhatsNewDialog.test.tsx src/renderer/src/components/UpdateBanner.tsx src/renderer/src/components/UpdateBanner.test.tsx src/renderer/src/components/Ribbon.tsx src/renderer/src/components/Ribbon.test.tsx src/renderer/src/components/RibbonButton.tsx src/renderer/src/components/RibbonButton.test.tsx
+git status --short   # nothing unrelated staged (drop src/renderer/src/lib/icons.ts if no glyph was added)
+```
+
+**Owner manual checks** (need two published versions; use docs/RELEASING.md “Testing an update” with `0.1.1-test.N`, and add a `CHANGELOG.md` entry for the newer one):
+
+1. Open the Help tab: Help and Report a problem open the README and the issue form in the browser; About shows logo, version, `Beta` or `Stable`, Electron and Chromium versions; its links open in the default browser; Third-party notices opens the file; Esc closes and focus returns to the button; the dialog is readable with Narrator.
+2. Install version N, publish N+1, start N: within about 10 seconds the banner `StorageIQ N+1 is available.` shows with **Update**, **What's new**, **Later**; the Help tab and the Check for updates button show the dot. **What's new** shows the release notes as plain text. **Later** hides the banner for the session; the dot stays.
+3. Click **Update**: progress shows in the banner and in About; then **Restart to update** installs and relaunches (per-machine installs ask for administrator approval).
+4. After the restart, What's new opens once with the changelog of N+1; relaunch: it does not open again; Help → **What's new** still lists it.
+5. First install of N on a clean profile: no What's new dialog.
+6. Help → **Check for updates** on the newest version says `You have the latest version.`; offline it shows the connection message, no raw error text.
+
+**Gate:**
+
+- `npm run format`, `npm run format:check`, `npm run lint`;
+- `npm run typecheck:node` and `npm run typecheck:web`;
+- `npx vitest run`;
+- `npm run test:e2e`;
+- the package build, then `npm run test:packaged` (it must report `CHANGELOG.md` and `THIRD_PARTY_NOTICES.txt` in `resources`, and the unpacked list unchanged).
+
+**Commit:** `feat(update): add the Help tab, About, update checks, update notification and What's new`, with explicit paths and no AI attribution.
+
 ## Self-review
 
 **Coverage against the brief.** 8a: typed `ShellMenuError` with HRESULT, gone pre-check plus HRESULT mapping, `{ kind: 'gone' }` outcome and message, 500 ms / 15 s watcher with cancel on new scan and quit, logged refresh failures, handler and store tests. 8b: `win-find.ts` with the constants and the 592-byte struct, `fn.async` for the open with the synchronous next-loop (justified, benchmarked against a batched variant), 8 directories in flight (to be confirmed by measurement), injectable lister, removal of the lstat path, packaging check, 1000 ms renderer throttle, bench script, 3x acceptance on `C:\Program Files`, tests. 10: all-users installer, electron-updater 6.8.12, publish block, channel rule, updater module and IPC, banner, release workflow, docs with the signing TODO, tests and manual checks. Task 8c is written separately and is not covered here.
