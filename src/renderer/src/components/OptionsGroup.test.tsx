@@ -28,11 +28,11 @@ const menuBox = () => screen.getByRole('checkbox', { name: MENU })
 const adminBox = () => screen.getByRole('checkbox', { name: ADMIN })
 
 describe('<OptionsGroup />', () => {
-  it('renders the Application group with two checkboxes', async () => {
+  it('renders the Application group with three checkboxes', async () => {
     renderOptions()
     expect(screen.getByRole('group', { name: 'Application' })).toBeInTheDocument()
     await waitFor(() => expect(menuBox()).toBeEnabled())
-    expect(screen.getAllByRole('checkbox')).toHaveLength(2)
+    expect(screen.getAllByRole('checkbox')).toHaveLength(3)
   })
 
   it('both are disabled with “Available in the installed app” when unavailable', async () => {
@@ -160,5 +160,55 @@ describe('<OptionsGroup />', () => {
     for (const box of screen.getAllByRole('checkbox')) {
       expect(box).toHaveAccessibleName(/\S/)
     }
+  })
+})
+
+describe('<OptionsGroup /> automatic update checks', () => {
+  const AUTO = 'Check for updates automatically'
+  const CAPTION =
+    'When off, StorageIQ checks for a new version only when you choose Check for updates.'
+  const autoBox = () => screen.getByRole('checkbox', { name: AUTO })
+
+  it('is checked by default, with a visible caption that describes it', async () => {
+    renderOptions()
+    await waitFor(() => expect(autoBox()).toBeChecked())
+    const caption = screen.getByText(CAPTION)
+    expect(caption).toBeVisible()
+    expect(autoBox().getAttribute('aria-describedby')).toBe(caption.id)
+  })
+
+  it('reflects an off setting', async () => {
+    renderOptions(OFF, { getAutoUpdate: vi.fn(async () => false) })
+    await waitFor(() => expect(autoBox()).not.toBeChecked())
+  })
+
+  it('is enabled even when the Windows switches are unavailable (unpackaged)', async () => {
+    renderOptions(UNAVAILABLE)
+    await screen.findByText('Available in the installed app')
+    await waitFor(() => expect(autoBox()).toBeEnabled())
+    expect(menuBox()).toBeDisabled()
+  })
+
+  it('toggling it calls the API with the new value and shows the result', async () => {
+    const user = userEvent.setup()
+    const { api } = renderOptions(OFF, {
+      setAutoUpdate: vi.fn(async (enabled: boolean) => enabled),
+    })
+    await waitFor(() => expect(autoBox()).toBeEnabled())
+    await user.click(autoBox())
+    expect(api.setAutoUpdate).toHaveBeenCalledWith(false)
+    await waitFor(() => expect(autoBox()).not.toBeChecked())
+    await user.click(autoBox())
+    expect(api.setAutoUpdate).toHaveBeenLastCalledWith(true)
+    await waitFor(() => expect(autoBox()).toBeChecked())
+  })
+
+  it('keeps the old value and says so when saving fails', async () => {
+    const user = userEvent.setup()
+    renderOptions(OFF, { setAutoUpdate: vi.fn().mockRejectedValue(new Error('no')) })
+    await waitFor(() => expect(autoBox()).toBeEnabled())
+    await user.click(autoBox())
+    expect(await screen.findByText(/Your settings are unchanged/)).toBeInTheDocument()
+    expect(autoBox()).toBeChecked()
   })
 })

@@ -926,6 +926,21 @@ describe('multi-select', () => {
     })
   })
 
+  it('loads and changes the automatic update check setting through the API, null on failure', async () => {
+    const api = createFakeApi({
+      getAutoUpdate: vi.fn(async () => false),
+      setAutoUpdate: vi.fn(async (enabled: boolean) => enabled),
+    })
+    const store = createWorkspaceStore(api)
+    await expect(store.getState().loadAutoUpdate()).resolves.toBe(false)
+    await expect(store.getState().changeAutoUpdate(true)).resolves.toBe(true)
+    expect(api.setAutoUpdate).toHaveBeenCalledWith(true)
+    vi.mocked(api.getAutoUpdate).mockRejectedValue(new Error('x'))
+    vi.mocked(api.setAutoUpdate).mockRejectedValue(new Error('x'))
+    await expect(store.getState().loadAutoUpdate()).resolves.toBeNull()
+    await expect(store.getState().changeAutoUpdate(false)).resolves.toBeNull()
+  })
+
   it('copyPaths announces the count', async () => {
     const { api, store } = await scanning()
     await store.getState().copyPaths(['d1', 'd2', 'g0'])

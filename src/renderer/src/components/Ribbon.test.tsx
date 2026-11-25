@@ -164,7 +164,7 @@ describe('<Ribbon />', () => {
     await user.click(screen.getByRole('tab', { name: 'Options' }))
     expect(toolbar()).toHaveAccessibleName('Options commands')
     expect(within(toolbar()).getByRole('group', { name: 'Application' })).toBeInTheDocument()
-    expect(within(toolbar()).getAllByRole('checkbox')).toHaveLength(2)
+    expect(within(toolbar()).getAllByRole('checkbox')).toHaveLength(3)
   })
 
   it('loads state again when the tab is shown again', async () => {

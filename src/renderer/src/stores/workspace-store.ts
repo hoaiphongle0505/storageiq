@@ -216,6 +216,10 @@ export interface WorkspaceState {
   changeExplorerMenu(enabled: boolean): Promise<OptionsChangeResult | null>
   /** Result of changing the administrator option; null when the call itself fails. */
   changeRunAsAdmin(enabled: boolean): Promise<OptionsChangeResult | null>
+  /** The automatic update check setting; null when the call fails. */
+  loadAutoUpdate(): Promise<boolean | null>
+  /** Changes it; resolves with the value now in effect, null when the call fails. */
+  changeAutoUpdate(enabled: boolean): Promise<boolean | null>
   checkForUpdates(): Promise<void>
   downloadUpdate(): Promise<void>
   installUpdate(): Promise<void>
@@ -878,6 +882,22 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
       async changeExplorerMenu(enabled) {
         try {
           return await api.setExplorerMenu(enabled)
+        } catch {
+          return null
+        }
+      },
+
+      async loadAutoUpdate() {
+        try {
+          return await api.getAutoUpdate()
+        } catch {
+          return null
+        }
+      },
+
+      async changeAutoUpdate(enabled) {
+        try {
+          return await api.setAutoUpdate(enabled)
         } catch {
           return null
         }

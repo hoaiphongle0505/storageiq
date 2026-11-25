@@ -21,7 +21,8 @@ function setup() {
     setExplorerMenu: vi.fn(() => change),
     setRunAsAdmin: vi.fn(() => change),
   }
-  return { service, handlers: createOptionsHandlers(service) }
+  const autoUpdate = { get: vi.fn(() => true), set: vi.fn(async (value: boolean) => value) }
+  return { service, autoUpdate, handlers: createOptionsHandlers(service, autoUpdate) }
 }
 
 describe('options handlers', () => {
@@ -78,10 +79,44 @@ describe('options handlers', () => {
       'options:get-state',
       'options:set-explorer-menu',
       'options:set-run-as-admin',
+      'options:get-auto-update',
+      'options:set-auto-update',
     ]) {
       await expect(listeners.get(channel)?.(event, true)).rejects.toThrow(UntrustedSenderError)
     }
     expect(service.getState).not.toHaveBeenCalled()
     expect(service.setExplorerMenu).not.toHaveBeenCalled()
+  })
+})
+
+describe('auto-update options handlers', () => {
+  it('get takes no arguments and returns the setting', async () => {
+    const { handlers, autoUpdate } = setup()
+    expect(handlers['options:get-auto-update'].parseArgs([])).toEqual([])
+    expect(() => handlers['options:get-auto-update'].parseArgs([true])).toThrow(
+      InvalidIpcArgumentsError,
+    )
+    expect(handlers['options:get-auto-update'].handle(event)).toBe(true)
+    expect(autoUpdate.get).toHaveBeenCalled()
+  })
+
+  it('set parses a strict boolean and stores it', async () => {
+    const { handlers, autoUpdate } = setup()
+    expect(handlers['options:set-auto-update'].parseArgs([false])).toEqual([false])
+    await expect(handlers['options:set-auto-update'].handle(event, false)).resolves.toBe(false)
+    expect(autoUpdate.set).toHaveBeenCalledWith(false)
+  })
+
+  it('rejects a non-boolean through the registry before the setting changes', async () => {
+    const { handlers, autoUpdate } = setup()
+    const listeners = new Map<string, (e: IpcMainInvokeEvent, ...a: unknown[]) => unknown>()
+    const ipc: IpcRegistrar = { handle: (channel, listener) => listeners.set(channel, listener) }
+    registerIpcHandlers(ipc, handlers as unknown as IpcHandlerMap, () => true)
+    for (const bad of [1, 'false', null, undefined, {}]) {
+      await expect(listeners.get('options:set-auto-update')?.(event, bad)).rejects.toThrow(
+        InvalidIpcArgumentsError,
+      )
+    }
+    expect(autoUpdate.set).not.toHaveBeenCalled()
   })
 })

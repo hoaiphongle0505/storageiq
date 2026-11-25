@@ -46,6 +46,7 @@ import { autoUpdater } from 'electron-updater'
 import { findScanArgument, parseSecondInstanceData } from './launch/launch-args'
 import { createLaunchCoordinator } from './launch/launch-coordinator'
 import { watchRendererLifecycle } from './launch/renderer-lifecycle'
+import { createAppSettingsStore } from './options/app-settings-store'
 import { createOptionsService } from './options/options-service'
 import { createWinRegistry } from './registry/win-registry'
 import { createRecentScans, listPlaces, RECENT_SCANS_FILE } from './places/places'
@@ -468,8 +469,20 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
 
   app
     .whenReady()
-    .then(() => {
+    .then(async () => {
       app.setAppUserModelId(APP_USER_MODEL_ID)
+      // StorageIQ's own settings (userData/settings.json). Read now, answered from memory after.
+      const appSettings = createAppSettingsStore({
+        filePath: path.join(app.getPath('userData'), 'settings.json'),
+        readFile: (file) => readFile(file, 'utf8'),
+        writeFile: (file, text) => writeFile(file, text, 'utf8'),
+        rename,
+        log: (message, error) => console.warn(message, error),
+      })
+      let autoUpdate = true
+      const autoUpdateLoaded = appSettings.readAutoUpdate().then((value) => {
+        autoUpdate = value
+      })
       if (app.isPackaged) {
         Menu.setApplicationMenu(null)
       }
@@ -531,7 +544,14 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
           openExternal: (url) => shell.openExternal(url),
           log: (message, error) => console.warn(message, error),
         }),
-        ...createOptionsHandlers(options),
+        ...createOptionsHandlers(options, {
+          get: () => autoUpdate,
+          set: async (enabled) => {
+            autoUpdate = enabled
+            await appSettings.writeAutoUpdate(enabled)
+            return autoUpdate
+          },
+        }),
         ...createLaunchHandlers(launch),
         ...createScanHandlers({
           scanService,
@@ -619,8 +639,10 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
       // The install folder may have changed (update, moved app): point the menu at this exe.
       if (app.isPackaged) options.repairExplorerMenu()
 
+      await autoUpdateLoaded
       updater = createUpdater({
         autoUpdater,
+        autoCheck: () => autoUpdate,
         isPackaged: app.isPackaged,
         selfTest: process.argv.includes(SELF_TEST_FLAG),
         version: app.getVersion(),

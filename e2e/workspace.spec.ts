@@ -451,7 +451,10 @@ test('the Options tab renders its Application group', async () => {
   await page.getByRole('tab', { name: 'Options' }).click()
   const group = page.getByRole('group', { name: 'Application' })
   await expect(group).toBeVisible()
-  await expect(group.getByRole('checkbox')).toHaveCount(2)
+  await expect(group.getByRole('checkbox')).toHaveCount(3)
+  await expect(
+    group.getByRole('checkbox', { name: 'Check for updates automatically' }),
+  ).toBeChecked()
   await expect(
     group.getByRole('checkbox', { name: 'Show StorageIQ in Explorer’s context menu' }),
   ).toBeVisible()
@@ -460,13 +463,36 @@ test('the Options tab renders its Application group', async () => {
   ).toBeVisible()
 })
 
-test('both Options checkboxes are disabled in an unpackaged run with the explanation', async () => {
+test('the two Windows checkboxes are disabled in an unpackaged run with the explanation', async () => {
   await page.getByRole('tab', { name: 'Options' }).click()
   const group = page.getByRole('group', { name: 'Application' })
   await expect(group.getByText('Available in the installed app')).toBeVisible()
-  for (const box of await group.getByRole('checkbox').all()) {
-    await expect(box).toBeDisabled()
+  for (const name of [
+    'Show StorageIQ in Explorer’s context menu',
+    'Always start StorageIQ as administrator',
+  ]) {
+    await expect(group.getByRole('checkbox', { name })).toBeDisabled()
   }
+  // The update setting only stores a value, so it stays usable.
+  await expect(
+    group.getByRole('checkbox', { name: 'Check for updates automatically' }),
+  ).toBeEnabled()
+})
+
+test('the automatic update check setting persists across a relaunch with the same profile', async () => {
+  const name = 'Check for updates automatically'
+  const group = () => page.getByRole('group', { name: 'Application' })
+  await page.getByRole('tab', { name: 'Options' }).click()
+  await group().getByRole('checkbox', { name }).uncheck()
+  await expect(group().getByRole('checkbox', { name })).not.toBeChecked()
+  const profile = await app!.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
+  await app?.close()
+  const launched = await launchApp([], profile)
+  app = launched.app
+  page = launched.page
+  await page.getByRole('tab', { name: 'Options' }).click()
+  await expect(group().getByRole('checkbox', { name })).not.toBeChecked()
+  await group().getByRole('checkbox', { name }).check()
 })
 
 /** Restarts the app the way Explorer's menu would: with `--scan <path>` after the app folder. */

@@ -196,6 +196,8 @@ export interface IpcContract {
   'options:get-state': { args: []; result: OptionsState }
   'options:set-explorer-menu': { args: [enabled: boolean]; result: OptionsChangeResult }
   'options:set-run-as-admin': { args: [enabled: boolean]; result: OptionsChangeResult }
+  'options:get-auto-update': { args: []; result: boolean }
+  'options:set-auto-update': { args: [enabled: boolean]; result: boolean }
   'launch:take-request': { args: []; result: LaunchRequest | null }
 }
 
@@ -323,6 +325,10 @@ export interface StorageIQApi {
   markWhatsNewSeen(): Promise<void>
   /** What Windows has for the two Options switches (read from the registry on every call). */
   getOptionsState(): Promise<OptionsState>
+  /** Whether StorageIQ checks for updates by itself (on by default). */
+  getAutoUpdate(): Promise<boolean>
+  /** Turns the automatic check on or off; resolves with the value now in effect. */
+  setAutoUpdate(enabled: boolean): Promise<boolean>
   /** Adds or removes “Scan with StorageIQ” in Explorer’s context menu (HKCU, no admin needed). */
   setExplorerMenu(enabled: boolean): Promise<OptionsChangeResult>
   /** Sets or clears Windows’ “run as administrator” flag for StorageIQ; effective next start. */
