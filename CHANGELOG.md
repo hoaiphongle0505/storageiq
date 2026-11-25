@@ -8,6 +8,8 @@ All notable changes to StorageIQ are listed here, newest first. The format follo
 
 - Press Delete on the selected rows to send them to the Recycle Bin, or Shift+Delete to delete them permanently, as in File Explorer. Windows shows its own confirmation and progress.
 - A Delete button in the ribbon's Folder group, next to New folder, with a "Delete permanently" choice in its menu.
+- A "Check for updates automatically" checkbox on the Options tab, on by default. When it is off, StorageIQ checks for a new version only when you choose Check for updates.
+- A privacy policy (PRIVACY.md) and a code signing policy section in the README.
 
 ### Fixed
 
