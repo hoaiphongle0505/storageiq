@@ -69,6 +69,8 @@ interface Pending {
 interface Slot {
   worker: WorkerLike
   pending: Pending | null
+  /** The worker has loaded koffi; before that it must never be terminated (native abort). */
+  ready: boolean
   cancelIdle: (() => void) | null
   cancelLongBusy: (() => void) | null
   /** Owner window of the open popup (set by `tracking`, cleared when the menu closes). */
@@ -96,7 +98,16 @@ export function createShellWorkerPool(deps: ShellWorkerPoolDeps): ShellWorkerPoo
     slot.cancelLongBusy = null
     const index = slots.indexOf(slot)
     if (index !== -1) slots.splice(index, 1)
-    slot.worker.terminate().catch(() => undefined)
+    if (slot.ready) slot.worker.terminate().catch(() => undefined)
+    else {
+      // Still inside koffi's native module load: terminating there aborts the process. Ask it to
+      // close once loaded instead.
+      try {
+        slot.worker.postMessage({ type: 'exit' })
+      } catch {
+        // the thread is already gone
+      }
+    }
   }
 
   const fail = (slot: Slot, error: Error): void => {
@@ -118,6 +129,10 @@ export function createShellWorkerPool(deps: ShellWorkerPoolDeps): ShellWorkerPoo
   }
 
   const onReply = (slot: Slot, reply: WorkerReply): void => {
+    if (reply.type === 'ready') {
+      slot.ready = true
+      return
+    }
     const pending = slot.pending
     if (pending === null || pending.id !== reply.id) return
     switch (reply.type) {
@@ -161,6 +176,7 @@ export function createShellWorkerPool(deps: ShellWorkerPoolDeps): ShellWorkerPoo
     const slot: Slot = {
       worker,
       pending: null,
+      ready: false,
       cancelIdle: null,
       cancelLongBusy: null,
       menuHwnd: null,
@@ -302,9 +318,14 @@ export function createShellWorkerPool(deps: ShellWorkerPoolDeps): ShellWorkerPoo
 }
 
 /**
- * At quit: disposes the pool and, when a shell call was still running (its thread cannot be
- * interrupted, so the process may linger), releases the single-instance lock so a relaunch works.
+ * At quit: disposes the pool and always releases the single-instance lock. A thread inside a
+ * native shell or icon call cannot be interrupted, so the process may linger; the window is
+ * already closing, so a relaunch must never be blocked meanwhile.
  */
 export function disposePoolAtQuit(pool: ShellWorkerPool | null, releaseLock: () => void): void {
-  if ((pool?.dispose() ?? 0) > 0) releaseLock()
+  try {
+    pool?.dispose()
+  } finally {
+    releaseLock()
+  }
 }

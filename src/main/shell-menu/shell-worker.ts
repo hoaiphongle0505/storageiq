@@ -162,19 +162,27 @@ if (
   createWinShellNative().then(
     (native) => {
       port.on('message', (request: WorkerRequest) => {
+        if (request.type === 'exit') {
+          port.close()
+          return
+        }
         if (request.type === 'show') runShellRequest(native, request, post)
         else if (request.type === 'probe') runProbeRequest(native, request, post)
         else if (testVerbs) runInvokeVerbRequest(native, request, post)
         else
           post({ type: 'finished', id: request.id, ok: false, hresult: E_FAIL, step: 'disabled' })
       })
+      // Only now may the main thread terminate this worker: koffi is loaded.
+      post({ type: 'ready' })
     },
     (error: unknown) => {
       // Answer every request with a failure instead of leaving it pending.
       const { hresult, step } = failureOf(error, 'load')
-      port.on('message', (request: WorkerRequest) =>
-        post({ type: 'failed', id: request.id, hresult, step }),
-      )
+      post({ type: 'ready' })
+      port.on('message', (request: WorkerRequest) => {
+        if (request.type === 'exit') port.close()
+        else post({ type: 'failed', id: request.id, hresult, step })
+      })
     },
   )
 }

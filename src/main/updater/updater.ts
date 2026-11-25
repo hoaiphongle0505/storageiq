@@ -196,7 +196,7 @@ export function createUpdater(deps: UpdaterDeps): Updater {
 
     install() {
       if (state.kind !== 'ready') return
-      autoUpdater.quitAndInstall(false, true)
+      autoUpdater.quitAndInstall(true, true)
     },
 
     dispose() {

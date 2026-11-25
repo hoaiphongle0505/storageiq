@@ -410,8 +410,8 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
   app.on('before-quit', () => {
     quitting = true
     itemWatcher.cancelAll()
-    // A thread inside a shell call cannot be interrupted, so the process may linger until it
-    // returns: release the single-instance lock so a relaunch is not blocked meanwhile.
+    // A thread inside a shell or icon call cannot be interrupted, so the process may linger until
+    // it returns: always release the single-instance lock so a relaunch is not blocked meanwhile.
     disposePoolAtQuit(shellPool, () => app.releaseSingleInstanceLock())
     iconService?.dispose()
     updater?.dispose()

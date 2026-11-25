@@ -233,7 +233,7 @@ describe('createUpdater', () => {
     updater.download()
     fake.emit('update-downloaded', { version: '0.3.0' })
     updater.install()
-    expect(fake.quitAndInstall).toHaveBeenCalledWith(false, true)
+    expect(fake.quitAndInstall).toHaveBeenCalledWith(true, true)
   })
 
   it('a manual check error shows the fixed message and logs the raw error', async () => {

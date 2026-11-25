@@ -12,6 +12,8 @@ import {
 import type { WorkerReply, WorkerRequest } from './shell-worker-protocol'
 
 class FakeWorker implements WorkerLike {
+  /** When autoReady is false the worker never reports `ready` (koffi still loading). */
+  constructor(private readonly autoReady = true) {}
   readonly posted: WorkerRequest[] = []
   terminated = false
   private readonly listeners: {
@@ -28,6 +30,9 @@ class FakeWorker implements WorkerLike {
   on(event: 'exit', listener: (code: number) => void): void
   on(event: 'message' | 'error' | 'exit', listener: never): void {
     ;(this.listeners[event] as unknown[]).push(listener)
+    if (event === 'message' && this.autoReady) {
+      ;(listener as (message: WorkerReply) => void)({ type: 'ready' })
+    }
   }
   terminate(): Promise<number> {
     this.terminated = true
@@ -40,7 +45,8 @@ class FakeWorker implements WorkerLike {
     for (const listener of this.listeners.exit) listener(3221225477)
   }
   get lastId(): number {
-    return this.posted.at(-1)?.id ?? -1
+    const last = this.posted.at(-1)
+    return last !== undefined && 'id' in last ? last.id : -1
   }
 }
 
@@ -52,11 +58,11 @@ const request: ShellMenuRequest = {
   hideDestructive: false,
 }
 
-function setup(extra: Partial<ShellWorkerPoolDeps> = {}) {
+function setup(extra: Partial<ShellWorkerPoolDeps> = {}, autoReady = true) {
   const workers: FakeWorker[] = []
   const pool = createShellWorkerPool({
     spawn: () => {
-      const worker = new FakeWorker()
+      const worker = new FakeWorker(autoReady)
       workers.push(worker)
       return worker
     },
@@ -279,16 +285,46 @@ describe('shell worker pool', () => {
     expect(pool.size).toBe(1)
   })
 
-  it('the single-instance lock is released at quit only while a request runs', () => {
+  it('the single-instance lock is always released at quit', () => {
     const release = vi.fn()
     const idle = setup()
     disposePoolAtQuit(idle.pool, release)
-    expect(release).not.toHaveBeenCalled()
+    expect(release).toHaveBeenCalledTimes(1)
     const busy = setup()
     busy.pool.show(request)
     disposePoolAtQuit(busy.pool, release)
-    expect(release).toHaveBeenCalledTimes(1)
+    expect(release).toHaveBeenCalledTimes(2)
     disposePoolAtQuit(null, release)
+    expect(release).toHaveBeenCalledTimes(3)
+  })
+
+  it('the lock is released even when disposing throws', () => {
+    const release = vi.fn()
+    const { pool } = setup()
+    vi.spyOn(pool, 'dispose').mockImplementation(() => {
+      throw new Error('boom')
+    })
+    expect(() => disposePoolAtQuit(pool, release)).toThrow('boom')
     expect(release).toHaveBeenCalledTimes(1)
+  })
+
+  it('a worker that has not reported ready is asked to exit, never terminated', () => {
+    const { pool, workers } = setup({}, false)
+    const shown = pool.show(request)
+    shown.chosen.catch(() => undefined)
+    const worker = first(workers)
+    pool.dispose()
+    expect(worker.terminated).toBe(false)
+    expect(worker.posted.at(-1)).toEqual({ type: 'exit' })
+  })
+
+  it('a worker that crashes before ready is not terminated either', () => {
+    const { pool, workers } = setup({}, false)
+    pool.show(request).chosen.catch(() => undefined)
+    const worker = first(workers)
+    worker.crash()
+    expect(worker.terminated).toBe(false)
+    expect(worker.posted.at(-1)).toEqual({ type: 'exit' })
+    expect(pool.size).toBe(0)
   })
 })
