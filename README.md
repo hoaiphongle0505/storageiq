@@ -37,7 +37,7 @@ Installers are currently unsigned, so Windows SmartScreen will warn on first run
 
 ## Deleting
 
-Select rows in the tree and press **Delete** to send them to the Recycle Bin, or **Shift+Delete** to delete them permanently, as in File Explorer (the ribbon's **Delete** button on the Home tab does the same, and its arrow offers **Delete permanently**). Windows shows its own confirmation and progress. Selecting a drive's `$RECYCLE.BIN` folder and pressing Delete empties that Recycle Bin instead of deleting its items one by one.
+Select rows in the tree and press **Delete** to send them to the Recycle Bin, or **Shift+Delete** to delete them permanently, as in File Explorer (the ribbon's **Delete** button on the Home tab does the same, and its arrow offers **Delete permanently**). Windows shows its own confirmation and progress. Selecting a drive's `$RECYCLE.BIN` folder (or your own folder in it) and pressing Delete empties that Recycle Bin instead of deleting its items one by one.
 
 ## Windows integration (Options tab)
 

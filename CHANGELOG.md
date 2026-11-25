@@ -11,7 +11,7 @@ All notable changes to StorageIQ are listed here, newest first. The format follo
 
 ### Fixed
 
-- Deleting a drive's Recycle Bin folder from the tree now empties the Recycle Bin with Windows' own command, instead of going through every item in it.
+- Pressing Delete (or using the ribbon's Delete button) on a drive's Recycle Bin folder, or on your own folder inside it, now empties that Recycle Bin with Windows' own command instead of going through every item in it. Delete in the right-click Explorer menu is unchanged.
 - The developer tests no longer leave their temporary files in the Recycle Bin.
 
 ## [0.2.0-beta.1] - 2026-11-25
