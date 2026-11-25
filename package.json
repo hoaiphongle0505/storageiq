@@ -1,7 +1,7 @@
 {
   "name": "storageiq",
   "productName": "StorageIQ",
-  "version": "0.1.0",
+  "version": "0.2.0-beta.1",
   "description": "Free, open-source disk space analyzer for Windows.",
   "author": "StorageIQ contributors",
   "license": "MIT",
