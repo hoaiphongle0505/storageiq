@@ -45,11 +45,13 @@ test('Check for updates in an unpackaged app shows “Updates are available in t
 test('What’s new lists the CHANGELOG entry 0.2.0-beta.1 with its sections', async () => {
   await ribbonButton(page, /^What.s new/).click()
   const dialog = page.getByRole('dialog', { name: /^What.s new/ })
-  await expect(
-    dialog.getByRole('heading', { level: 3, name: /^Version 0\.2\.0-beta\.1/ }),
-  ).toBeVisible()
+  // Only the beta.1 entry's own section: newer entries have their own Added and Fixed headings.
+  const entry = dialog.locator('section').filter({
+    has: page.getByRole('heading', { level: 3, name: /^Version 0\.2\.0-beta\.1/ }),
+  })
+  await expect(entry).toHaveCount(1)
   for (const section of ['Added', 'Changed', 'Fixed']) {
-    await expect(dialog.getByRole('heading', { level: 4, name: section }).first()).toBeVisible()
+    await expect(entry.getByRole('heading', { level: 4, name: section })).toBeVisible()
   }
 })
 

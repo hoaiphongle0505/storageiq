@@ -902,6 +902,20 @@ describe('multi-select', () => {
       expect([...store.getState().selectedIds]).toEqual(['d2'])
     })
 
+    it('drops a new delete while the previous one is still being sent', async () => {
+      const pending = deferred<ContextMenuOutcome>()
+      const api = createFakeApi({ deleteNodes: vi.fn(() => pending.promise) })
+      const { store } = await finished(api)
+      store.getState().select('d2')
+      const first = store.getState().deleteSelection(false)
+      await store.getState().deleteSelection(true)
+      expect(api.deleteNodes).toHaveBeenCalledTimes(1)
+      pending.resolve({ kind: 'dismissed' })
+      await first
+      await store.getState().deleteSelection(false)
+      expect(api.deleteNodes).toHaveBeenCalledTimes(2)
+    })
+
     it('more than 1000 rows announce the limit and send nothing', async () => {
       const { api, store } = await finished()
       const ids = Array.from({ length: 1001 }, (_, i) => `f${i + 10}`)

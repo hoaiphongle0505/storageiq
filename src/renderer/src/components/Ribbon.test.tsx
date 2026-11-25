@@ -350,7 +350,25 @@ describe('<Ribbon /> Delete', () => {
     expect(api.deleteNodes).toHaveBeenLastCalledWith('scan-1', ['d1'], true)
   })
 
-  it('is disabled without a selection and while scanning, and keyboard reachable', async () => {
+  it('the arrow button has its own accessible name, and Delete is reachable and works from the keyboard', async () => {
+    const user = userEvent.setup()
+    const { api, workspace } = await ready()
+    act(() => workspace.getState().select('d1'))
+    expect(command('More delete options')).toHaveAttribute('aria-label', 'More delete options')
+    const target = command('Delete')
+    // Tab enters the toolbar (the active tab, then the first command); arrows move along it.
+    for (let i = 0; i < 3 && !toolbar().contains(document.activeElement); i += 1) await user.tab()
+    for (let i = 0; i < 40 && document.activeElement !== target; i += 1) {
+      await user.keyboard('{ArrowRight}')
+    }
+    expect(document.activeElement).toBe(target)
+    await user.keyboard('{Enter}')
+    expect(api.deleteNodes).toHaveBeenCalledWith('scan-1', ['d1'], false)
+    await user.keyboard(' ')
+    expect(api.deleteNodes).toHaveBeenCalledTimes(2)
+  })
+
+  it('is disabled without a selection and while scanning', async () => {
     const { workspace } = renderRibbon()
     expect(command('Delete')).toHaveAttribute('aria-disabled', 'true')
     expect(command('More delete options')).toHaveAttribute('aria-disabled', 'true')

@@ -230,6 +230,7 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
         />
         <MenuButton
           menuLabel="Delete options"
+          triggerLabel="More delete options"
           disabled={cannotDelete}
           className="flex min-w-5 items-start justify-center rounded-[9px] px-1 pt-2 text-ink-muted transition-colors duration-[120ms] hover:bg-row-hover hover:text-ink aria-expanded:bg-row-hover aria-disabled:cursor-default aria-disabled:text-ink-subtle aria-disabled:opacity-40 aria-disabled:hover:bg-transparent"
           title="More delete options"

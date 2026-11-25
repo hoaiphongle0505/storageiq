@@ -497,3 +497,17 @@ describe('<TreeGrid /> Delete key', () => {
     expect(workspace.getState().announcement).toBe('Skipped 1 row that cannot be acted on.')
   })
 })
+
+describe('<TreeGrid /> Delete key repeat', () => {
+  it('ignores auto-repeat of Delete and Shift+Delete', async () => {
+    const utils = await renderTree()
+    act(() => utils.api.emitScanDone(makeDone()))
+    await userEvent.setup().click(screen.getByRole('row', { name: /Videos/ }))
+    grid().focus()
+    fireEvent.keyDown(grid(), { key: 'Delete', repeat: true })
+    fireEvent.keyDown(grid(), { key: 'Delete', shiftKey: true, repeat: true })
+    expect(utils.api.deleteNodes).not.toHaveBeenCalled()
+    fireEvent.keyDown(grid(), { key: 'Delete' })
+    await waitFor(() => expect(utils.api.deleteNodes).toHaveBeenCalledTimes(1))
+  })
+})

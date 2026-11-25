@@ -415,6 +415,9 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
       }
     }
 
+    /** True while a delete request is with main; a second one is dropped. */
+    let deleteInFlight = false
+
     /** The rows an action sends: rows inside another selected row are not part of it. */
     const actionIds = (ids: readonly NodeId[]): { ids: NodeId[]; removed: number } => {
       const rows = rowIndexOf(get().lists)
@@ -726,7 +729,8 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
 
       async deleteSelection(permanent) {
         const { scanId, phase, selectedId, selectedIds } = get()
-        if (scanId === null || phase === 'scanning') return
+        // A request is still on its way (a held or repeated key): drop this one.
+        if (scanId === null || phase === 'scanning' || deleteInFlight) return
         const selection =
           selectedIds.size > 0 ? [...selectedIds] : selectedId === null ? [] : [selectedId]
         if (selection.length === 0) return
@@ -745,10 +749,13 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
           set({ announcement: TOO_MANY_MESSAGE })
           return
         }
+        deleteInFlight = true
         try {
           handleOutcome(await api.deleteNodes(scanId, sent, permanent), sent.length + removed)
         } catch (error) {
           fail(error)
+        } finally {
+          deleteInFlight = false
         }
       },
 

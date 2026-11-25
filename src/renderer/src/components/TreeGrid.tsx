@@ -393,6 +393,8 @@ export function TreeGrid() {
     } else if (key === 'Delete') {
       // Delete: Recycle Bin; Shift+Delete: permanent. Any other modifier leaves the key alone.
       if (event.ctrlKey || event.altKey || event.metaKey) handled = false
+      else if (event.repeat)
+        handled = true // a held key must not start more dialogs
       else void deleteSelection(event.shiftKey)
     } else handled = false
     if (handled) event.preventDefault()
