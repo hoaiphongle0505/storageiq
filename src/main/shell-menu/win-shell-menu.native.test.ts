@@ -23,8 +23,9 @@ import { FALLBACK_RECYCLE_VERB, SHELL_WORKER_TEST_DATA } from './shell-worker-pr
  * `os.tmpdir()/storageiq-t11-<random>` and only that folder is ever deleted by the tests'
  * cleanup. The Explorer menu is never shown: the tests drive the worker through its test entries
  * (`invoke-verb` runs a verb on a menu built with the same routing as a real request, `probe`
- * lists a menu's labels). The tests recycle files, so the user's Recycle Bin receives them; the
- * tests never remove anything from the bin.
+ * lists a menu's labels). The tests recycle files, so the user's Recycle Bin receives them, and
+ * afterAll removes exactly those entries again (`purgeOwnBinEntries`: only records whose original
+ * path is inside this run's folder). The bin is never emptied.
  */
 const onWindows = process.platform === 'win32'
 
@@ -67,9 +68,17 @@ function makeFile(...segments: string[]): string {
   return file
 }
 
-/** Original paths of the items in the user's Recycle Bin (`$I` records) under `prefix`. */
-function recycledUnder(prefix: string): string[] | null {
-  const drive = path.parse(prefix).root
+interface BinRecord {
+  /** The user's folder in the drive's `$RECYCLE.BIN`. */
+  folder: string
+  /** The `$I` file name. */
+  name: string
+  /** The original path recorded in it. */
+  original: string
+}
+
+/** The `$I` records of the user's Recycle Bin on `drive`; null when it cannot be read or is absent. */
+function binRecords(drive: string): BinRecord[] | null {
   const bin = path.join(drive, '$RECYCLE.BIN')
   if (!existsSync(bin)) return null // this drive has no Recycle Bin: skip the bin assertions
   let sid: string
@@ -82,28 +91,63 @@ function recycledUnder(prefix: string): string[] | null {
   } catch {
     return null
   }
+  const folder = path.join(bin, sid)
   let names: string[]
   try {
-    names = readdirSync(path.join(bin, sid))
+    names = readdirSync(folder)
   } catch {
     return null
   }
-  const found: string[] = []
+  const found: BinRecord[] = []
   for (const name of names) {
     if (!name.startsWith('$I')) continue
     try {
-      const record = readFileSync(path.join(bin, sid, name))
+      const record = readFileSync(path.join(folder, name))
       const length = Number(record.readUInt32LE(24))
       const original = record
         .subarray(28, 28 + length * 2)
         .toString('utf16le')
         .replace(/\0.*$/, '')
-      if (original.toLowerCase().startsWith(prefix.toLowerCase())) found.push(original)
+      found.push({ folder, name, original })
     } catch {
       // a record that cannot be read is not ours to judge
     }
   }
   return found
+}
+
+/** Original paths of the items in the user's Recycle Bin (`$I` records) under `prefix`. */
+function recycledUnder(prefix: string): string[] | null {
+  const records = binRecords(path.parse(prefix).root)
+  if (records === null) return null
+  return records
+    .filter((record) => record.original.toLowerCase().startsWith(prefix.toLowerCase()))
+    .map((record) => record.original)
+}
+
+/**
+ * Removes from the user's Recycle Bin exactly the entries this run recycled: those whose `$I`
+ * original path is inside `workRoot` (the `$I` file and its `$R` twin, nothing else). Refuses to
+ * run for any folder that is not a `storageiq-t11-` folder directly under the temp directory.
+ */
+function purgeOwnBinEntries(root: string): void {
+  const inTemp = path.dirname(root).toLowerCase() === realpathSync.native(os.tmpdir()).toLowerCase()
+  if (!inTemp || !path.basename(root).startsWith('storageiq-t11-')) return
+  const records = binRecords(path.parse(root).root)
+  if (records === null) return
+  const own = root.toLowerCase() + path.sep
+  for (const record of records) {
+    if (!(record.original.toLowerCase() + path.sep).startsWith(own)) continue
+    try {
+      rmSync(path.join(record.folder, record.name), { force: true })
+      rmSync(path.join(record.folder, `$R${record.name.slice(2)}`), {
+        recursive: true,
+        force: true,
+      })
+    } catch {
+      // best effort: a leftover entry is only clutter
+    }
+  }
 }
 
 describe.skipIf(!onWindows)('the shell worker thread (native)', () => {
@@ -127,7 +171,8 @@ describe.skipIf(!onWindows)('the shell worker thread (native)', () => {
 
   afterAll(() => {
     pool?.dispose()
-    // Only the folder this file created.
+    // Only what this file created: its Recycle Bin entries, then its folder.
+    if (workRoot !== '') purgeOwnBinEntries(workRoot)
     if (workRoot.includes('storageiq-t11-')) rmSync(workRoot, { recursive: true, force: true })
     rmSync(bundleDir, { recursive: true, force: true })
   })
@@ -138,6 +183,22 @@ describe.skipIf(!onWindows)('the shell worker thread (native)', () => {
     expect(existsSync(file)).toBe(false)
     const bin = recycledUnder(path.join(workRoot, 'one'))
     if (bin !== null) expect(bin).toContain(file)
+  }, 60_000)
+
+  it('keyboard Delete on one temp file recycles it', async () => {
+    const file = makeFile('kbd-recycle', 'only.txt')
+    await expect(pool.deleteItems([file], false)).resolves.toEqual({ ok: true })
+    expect(existsSync(file)).toBe(false)
+    const bin = recycledUnder(path.join(workRoot, 'kbd-recycle'))
+    if (bin !== null) expect(bin).toContain(file)
+  }, 60_000)
+
+  it('keyboard Shift+Delete removes a temp file and leaves it out of the Recycle Bin', async () => {
+    const file = makeFile('kbd-permanent', 'only.txt')
+    await expect(pool.deleteItems([file], true)).resolves.toEqual({ ok: true })
+    expect(existsSync(file)).toBe(false)
+    const bin = recycledUnder(path.join(workRoot, 'kbd-permanent'))
+    if (bin !== null) expect(bin).toEqual([])
   }, 60_000)
 
   it('delete on three temp files in one folder recycles all three', async () => {
