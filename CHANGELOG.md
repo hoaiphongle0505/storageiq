@@ -17,10 +17,12 @@ All notable changes to StorageIQ are listed here, newest first. The format follo
 - A Help tab with Help, Report a problem, About, Check for updates and What's new.
 - An About window with the version, the licence, third-party notices and a Check for updates button.
 - What's new: the changes of a version open once after an update, and from the Help tab at any time.
+- An Options tab with two switches. "Show StorageIQ in Explorer's context menu" adds "Scan with StorageIQ" when you right-click a folder, a drive or the empty space in a folder (on Windows 11 it sits under "Show more options"). "Always start StorageIQ as administrator" lets StorageIQ read protected folders; Windows asks for approval each time it starts, and while it runs as administrator, Explorer menu commands such as Delete and Open also run as administrator.
+- Uninstalling StorageIQ removes the Explorer menu entry and the administrator setting.
 
 ### Changed
 
-- Scanning is much faster because several folders are read at the same time. About 1.5 minutes for 1.9 million files on the developer's machine.
+- Scanning is much faster because several folders are read at the same time. About 1.5 to 2.5 minutes for 1.9 million files on the developer's machine.
 - Deleting many items no longer freezes the window. Windows shows its own progress while StorageIQ stays usable.
 
 ### Fixed

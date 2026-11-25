@@ -13,7 +13,8 @@ const MENU_NOTE = 'Adds “Scan with StorageIQ” to right-click menus'
 const MENU_TITLE =
   'Adds “Scan with StorageIQ” when you right-click a folder, a drive or the empty space in a folder'
 const ADMIN_LABEL = 'Always start StorageIQ as administrator'
-const ADMIN_NOTE = 'Windows asks for approval each time StorageIQ starts'
+const ADMIN_NOTE =
+  'Windows asks for approval each time StorageIQ starts. While it runs as administrator, Explorer menu commands run as administrator too: Delete asks for no permission, and Open runs a program as administrator.'
 const ADMIN_TITLE =
   'Windows asks for approval each time StorageIQ starts, so it can read protected folders'
 const ADMIN_LOCKED_NOTE = 'Set for all users by your administrator'

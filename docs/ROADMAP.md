@@ -225,7 +225,7 @@ Automated gates, 2026-11-23, on the development machine (Windows 11):
 - Unit tests: 56 files, 597 passed, 1 skipped. Perf test (`npm run test:perf`): 2 passed. End-to-end: 23 passed, 3 skipped (metrics and the two screenshot runs, which are opt-in). Packaged self-test: koffi from app.asar.unpacked, Explorer menu built (24 items), scanner ran on 7 walkers.
 - `npm run typecheck` (node and web), `npm run lint`, `npm run format:check` and `node scripts/build-tokens.mjs --check` are green.
 - Report-only metrics: renderer bundle 708.5 kB, installer 116.4 MB, idle RAM 384 MB (all processes), 20,000 generated files scanned in 2.9 s, cancel on the system drive 248 ms. 1M-file tree store: 73.4 MB (77 B/file), first page 6.4 ms, treemap layout 35.0 ms (limits 300 MB, 100 ms, 100 ms).
-- Scan speed: about 100–130 s for 1.9 million files on the development machine (measured during the walker-pool work); no other speed figure is claimed.
+- Scan speed: about 1.5 to 2.5 minutes for 1.9 million files on the developer's machine (measured 82 to 147 s, warm to cold cache); no other speed figure is claimed.
 
 Deviations from the plan: the Phase 3 addendum added stale-row handling (T8a), the parallel walker pool (T8b/8d), the Strata look with a file-type treemap and legend (T8c), and the all-users installer with auto-update (T10). Code signing with SignPath is not set up yet. Checks that need a person at the desktop (native Explorer menu, keyboard, High Contrast, installer and update runs, full C: scan timing) are still open.
 

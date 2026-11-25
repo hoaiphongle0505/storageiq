@@ -54,7 +54,11 @@ describe('<OptionsGroup />', () => {
     renderOptions()
     await waitFor(() => expect(menuBox()).toBeEnabled())
     const menuNote = screen.getByText('Adds “Scan with StorageIQ” to right-click menus')
-    const adminNote = screen.getByText('Windows asks for approval each time StorageIQ starts')
+    const adminNote = screen.getByText(
+      /^Windows asks for approval each time StorageIQ starts\. While it runs as administrator, Explorer menu commands run as administrator too/,
+    )
+    expect(adminNote.textContent).toContain('Delete asks for no permission')
+    expect(adminNote.textContent).toContain('Open runs a program as administrator')
     expect(menuBox().getAttribute('aria-describedby')).toContain(menuNote.id)
     expect(adminBox().getAttribute('aria-describedby')).toContain(adminNote.id)
   })
