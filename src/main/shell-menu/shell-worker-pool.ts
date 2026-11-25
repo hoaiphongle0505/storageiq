@@ -1,4 +1,5 @@
 import type { ShellFinish, ShellMenuChoice, ShellMenuHost, ShellMenuRequest } from './context-menu'
+import { assertDriveRoot } from './recycle-bin'
 import { E_FAIL, ShellMenuError } from './shell-menu-error'
 import type { WorkerReply, WorkerRequest } from './shell-worker-protocol'
 
@@ -304,6 +305,8 @@ export function createShellWorkerPool(deps: ShellWorkerPoolDeps): ShellWorkerPoo
     },
 
     emptyRecycleBin(root: string) {
+      // An empty root would make Windows empty every drive's bin: refuse before any worker is used.
+      assertDriveRoot(root)
       let finished!: Promise<ShellFinish>
       start(
         (id) => ({ type: 'empty-bin', id, root }),

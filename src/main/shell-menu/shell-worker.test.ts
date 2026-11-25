@@ -339,3 +339,19 @@ describe('runEmptyBinRequest', () => {
     ])
   })
 })
+
+describe('runEmptyBinRequest: the root', () => {
+  it.each(['', 'D:', 'D:\\Data', '\\\\server\\share\\'])(
+    'refuses %j and never calls Windows (an empty root empties every bin)',
+    (root) => {
+      const { menu } = fakeMenu(0)
+      const { native } = fakeNative(menu)
+      const { replies, post } = collect()
+      runEmptyBinRequest(native, { type: 'empty-bin', id: 5, root }, post)
+      expect(native.emptyRecycleBin).not.toHaveBeenCalled()
+      expect(replies).toEqual([
+        { type: 'finished', id: 5, ok: false, hresult: 0x80070057, step: 'SHEmptyRecycleBinW' },
+      ])
+    },
+  )
+})

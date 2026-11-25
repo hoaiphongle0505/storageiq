@@ -9,8 +9,8 @@ import type {
   ShellMenuRequest,
 } from '../shell-menu/context-menu'
 import { nextNewFolderName } from '../shell-menu/menu-commands'
-import { recycleBinRootOf } from '../shell-menu/recycle-bin'
-import { isShellPathGone } from '../shell-menu/shell-menu-error'
+import { isDriveRoot, recycleBinRootOf } from '../shell-menu/recycle-bin'
+import { E_FAIL, isShellPathGone } from '../shell-menu/shell-menu-error'
 import { ShellBusyError } from '../shell-menu/shell-worker-pool'
 import type { ItemWatcher } from './item-watcher'
 import { mapLimit } from './map-limit'
@@ -83,6 +83,10 @@ export interface ShellHandlerDeps {
   deleteShellItems(paths: string[], permanent: boolean): ReturnType<ShellMenuHost['deleteItems']>
   /** Empties a drive's Recycle Bin (`SHEmptyRecycleBinW`); throws `ShellBusyError` when busy. */
   emptyRecycleBin(root: string): ReturnType<ShellMenuHost['emptyRecycleBin']>
+  /** The current user's SID (the name of their folder in `$RECYCLE.BIN`), or null when unknown. */
+  userSid(): Promise<string | null>
+  /** `fs.realpath.native`: the real path (SUBST drives and junctions resolved); rejects if unreadable. */
+  realPath(target: string): Promise<string>
   /** Whether the path still exists on disk (`fs.promises.lstat`). */
   pathExists(target: string): Promise<boolean>
   /** Polls for items that a shell command is removing, and owns the delayed refresh timers. */
@@ -230,6 +234,8 @@ export function createShellHandlers(deps: ShellHandlerDeps): ShellHandlers {
     items: readonly TreeNodeDetails[],
     verb: string | null,
     finished: Promise<ShellFinish>,
+    /** The items are Recycle Bin folders that were emptied: refresh those folders themselves. */
+    refreshOwn = false,
   ): void => {
     const seq = (actionSeq += 1)
     const key = `${scanId}:${seq}`
@@ -241,6 +247,25 @@ export function createShellHandlers(deps: ShellHandlerDeps): ShellHandlers {
         deps.warn('Refresh after shell command failed', error)
         return false
       })
+
+    if (verb === 'delete' && refreshOwn) {
+      void finished
+        .catch((): ShellFinish => ({ ok: false, hresult: 0, step: 'finished' }))
+        .then((result) => {
+          if (!result.ok) {
+            deps.warn(
+              'Emptying the Recycle Bin did not finish cleanly',
+              new Error(`${result.step} (0x${result.hresult.toString(16)})`),
+            )
+          }
+          const targets = refreshTargets(items, true)
+          for (const target of targets) refreshQuietly(scanId, target)
+          later(() => {
+            for (const target of targets) refreshQuietly(scanId, target)
+          })
+        })
+      return
+    }
 
     if (verb === 'delete') {
       // The shell runs the copy engine inside InvokeCommand (on the worker): wait for it, then
@@ -470,23 +495,50 @@ export function createShellHandlers(deps: ShellHandlerDeps): ShellHandlers {
     if (items.length === 0) return { kind: 'dismissed' }
     items = await existingOnly(scanId, items)
     if (items.length === 0) return { kind: 'gone' }
-    // A drive's `$RECYCLE.BIN` (or a user's folder in it) is emptied with Windows' own call:
-    // the delete verb would walk every item in it. Decided from the scanner's path only.
-    const bins = items.filter((item) => recycleBinRootOf(item.path) !== null)
+    // A drive's `$RECYCLE.BIN` or the current user's folder in it is emptied with Windows' own
+    // call: the delete verb would walk every item in it. Only those two shapes, and only when the
+    // real path (SUBST and junctions resolved) is the same bin on the same drive.
+    const userSid = await deps.userSid().catch(() => null)
+    const binRoots = await Promise.all(
+      items.map(async (item): Promise<string | null> => {
+        if (item.row.kind !== 'folder') return null
+        const root = recycleBinRootOf(item.path, userSid)
+        if (root === null) return null
+        const real = await deps.realPath(item.path).then(
+          (resolved) => resolved,
+          () => null,
+        )
+        return real !== null && recycleBinRootOf(real, userSid) === root ? root : null
+      }),
+    )
+    const bins = items.filter((_, index) => binRoots[index] !== null)
     if (bins.length > 0 && bins.length < items.length) return { kind: 'bin-mixed' }
     let finished: Promise<ShellFinish>
     try {
       if (bins.length > 0) {
-        const roots = [...new Set(bins.map((item) => recycleBinRootOf(item.path) ?? ''))]
-        // One call per drive, one after the other; the busy check is at the first call.
-        const first = deps.emptyRecycleBin(roots[0] ?? '')
-        finished = roots
-          .slice(1)
-          .reduce(
-            (previous, root) =>
-              previous.then((result) => (result.ok ? deps.emptyRecycleBin(root) : result)),
-            first,
+        const roots = [
+          ...new Set(binRoots.filter((root): root is string => root !== null && isDriveRoot(root))),
+        ]
+        const first = roots.length === 0 ? null : deps.emptyRecycleBin(roots[0] as string)
+        if (first === null) return { kind: 'dismissed' }
+        // One call per drive, one after the other, and on to the next drive after a failure.
+        finished = (async (): Promise<ShellFinish> => {
+          let failure: ShellFinish | null = null
+          const note = (result: ShellFinish) => {
+            if (!result.ok && failure === null) failure = result
+          }
+          note(
+            await first.catch((): ShellFinish => ({ ok: false, hresult: E_FAIL, step: 'empty' })),
           )
+          for (const root of roots.slice(1)) {
+            try {
+              note(await deps.emptyRecycleBin(root))
+            } catch {
+              note({ ok: false, hresult: E_FAIL, step: 'empty' })
+            }
+          }
+          return failure ?? { ok: true }
+        })()
       } else {
         finished = deps.deleteShellItems(
           items.map((item) => item.path),
@@ -497,7 +549,7 @@ export function createShellHandlers(deps: ShellHandlerDeps): ShellHandlers {
       if (error instanceof ShellBusyError) return { kind: 'busy' }
       throw error
     }
-    continueAfterShell(scanId, items, 'delete', finished)
+    continueAfterShell(scanId, items, 'delete', finished, bins.length > 0)
     return { kind: 'shell', verb: 'delete', changed: true, count: items.length, running: true }
   }
 

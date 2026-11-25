@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { existsSync, realpath } from 'node:fs'
 import { mkdir, open, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Worker } from 'node:worker_threads'
@@ -256,6 +257,22 @@ function deleteShellItems(paths: string[], permanent: boolean): Promise<ShellFin
 function emptyRecycleBin(root: string): Promise<ShellFinish> {
   if (testDeleteRequests !== null) return Promise.resolve({ ok: true })
   return getShellPool().emptyRecycleBin(root)
+}
+
+/**
+ * The current user's SID, read once with Windows' own `whoami.exe` by its full System32 path (never
+ * through PATH). Null when it cannot be read: then only the bin folder itself is emptied as a bin.
+ */
+let userSidPromise: Promise<string | null> | null = null
+function currentUserSid(): Promise<string | null> {
+  userSidPromise ??= new Promise((resolve) => {
+    const whoami = path.join(process.env['SystemRoot'] ?? 'C:\\Windows', 'System32', 'whoami.exe')
+    execFile(whoami, ['/user', '/fo', 'csv', '/nh'], { windowsHide: true }, (error, stdout) => {
+      const sid = error ? '' : (stdout.split(',')[1] ?? '').replace(/[\r\n"\s]/g, '')
+      resolve(/^S-1-[0-9-]+$/.test(sid) ? sid : null)
+    })
+  })
+  return userSidPromise
 }
 
 function forkScanner(): ScannerChild {
@@ -565,6 +582,13 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
           showShellMenu: showContextMenuAt,
           deleteShellItems,
           emptyRecycleBin,
+          userSid: currentUserSid,
+          realPath: (target) =>
+            new Promise((resolve, reject) =>
+              realpath.native(target, (error, resolved) =>
+                error ? reject(error) : resolve(resolved),
+              ),
+            ),
           pathExists: itemExists,
           watcher: itemWatcher,
           warn: (message, error) => console.warn(message, error),

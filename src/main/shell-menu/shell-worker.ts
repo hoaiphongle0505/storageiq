@@ -1,6 +1,7 @@
 import { isMainThread, parentPort, workerData } from 'node:worker_threads'
 import { chooseRoute, type ShellMenuChoice } from './context-menu'
 import { classifyCommand, verbChangesFileSystem } from './menu-commands'
+import { assertDriveRoot } from './recycle-bin'
 import { E_FAIL, ShellMenuError } from './shell-menu-error'
 import type { BuiltShellMenu, ShellNative } from './shell-native'
 import {
@@ -159,6 +160,7 @@ export function runEmptyBinRequest(
   post: Post,
 ): void {
   try {
+    assertDriveRoot(request.root)
     native.emptyRecycleBin(request.root)
     post({ type: 'finished', id: request.id, ok: true })
   } catch (error) {

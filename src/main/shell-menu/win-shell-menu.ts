@@ -6,6 +6,7 @@ import {
   STORAGEIQ_MENU_LABELS,
   storageiqMenuLabels,
 } from './menu-commands'
+import { assertDriveRoot, isBenignEmptyBinResult } from './recycle-bin'
 import { E_FAIL, HRESULT_CANCELLED, ShellMenuError } from './shell-menu-error'
 import type { BuildOptions, BuiltShellMenu, ShellNative } from './shell-native'
 
@@ -499,8 +500,8 @@ export async function createWinShellNative(): Promise<ShellNative> {
     return verb === '' ? null : verb
   }
 
-  /** Recycles `paths` with IFileOperation (Recycle Bin only); blocks until it returns. */
-  const recyclePaths = (owner: unknown, paths: readonly string[]): void => {
+  /** Deletes `paths` with IFileOperation, to the Recycle Bin unless `permanent`; blocks until it returns. */
+  const recyclePaths = (owner: unknown, paths: readonly string[], permanent = false): void => {
     const pidls: unknown[] = []
     let items: unknown = null
     let operation: unknown = null
@@ -527,7 +528,8 @@ export async function createWinShellNative(): Promise<ShellNative> {
           method(operation, VT_FILEOP_SET_OPERATION_FLAGS),
           FileOpSetFlags,
           operation,
-          FOF_ALLOWUNDO | FOFX_ADDUNDORECORD | FOFX_RECYCLEONDELETE,
+          // Permanent: no undo and no recycling; Windows asks before deleting.
+          permanent ? 0 : FOF_ALLOWUNDO | FOFX_ADDUNDORECORD | FOFX_RECYCLEONDELETE,
         ),
       )
       if (failed(hr)) throw new ShellMenuError('SetOperationFlags', hr >>> 0)
@@ -677,9 +679,8 @@ export async function createWinShellNative(): Promise<ShellNative> {
 
       invokeDelete(permanent, noUi = false) {
         if (!contextMenu) {
-          // The fallback menu has no shell items: it can only recycle, with IFileOperation.
-          if (permanent) throw new Error('this menu cannot delete permanently')
-          recyclePaths(owner, paths)
+          // The fallback menu has no shell items: IFileOperation deletes, with or without the bin.
+          recyclePaths(owner, paths, permanent)
           return
         }
         const info = deleteInvokeInfo(owner, permanent, koffi.sizeof(CMINVOKECOMMANDINFOEX), noUi)
@@ -752,11 +753,13 @@ export async function createWinShellNative(): Promise<ShellNative> {
     },
 
     emptyRecycleBin(root: string): void {
+      assertDriveRoot(root) // an empty root would empty every drive's bin
       const owner = createOwner()
       try {
         // Flags 0: Windows asks "empty the Recycle Bin?" and shows its progress.
         const hr = Number(SHEmptyRecycleBinW(owner, root, 0))
-        if (failed(hr)) throw new ShellMenuError('SHEmptyRecycleBinW', hr >>> 0)
+        // An already empty bin and a cancel are not failures.
+        if (!isBenignEmptyBinResult(hr)) throw new ShellMenuError('SHEmptyRecycleBinW', hr >>> 0)
       } finally {
         DestroyWindow(owner)
       }
