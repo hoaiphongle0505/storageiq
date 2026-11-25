@@ -1,4 +1,4 @@
-# StorageIQ
+# <img src="docs/assets/logo.svg" alt="" width="64" height="64" align="absmiddle"> StorageIQ
 
 A free, open-source disk space analyzer for Windows. StorageIQ shows where your disk space went, and explains it in plain words. It scans a drive or folder and shows which folders and files use the most space, so you can decide what to clean up.
 

@@ -38,4 +38,11 @@ describe('createMainWindowOptions', () => {
       dark: tokens.color.dark['surface-app'],
     })
   })
+
+  it('passes the window icon only when one is given (unpackaged runs)', () => {
+    expect(createMainWindowOptions({ preloadPath: 'p', dark: false })).not.toHaveProperty('icon')
+    expect(
+      createMainWindowOptions({ preloadPath: 'p', dark: false, iconPath: 'C:/app/icon.ico' }).icon,
+    ).toBe('C:/app/icon.ico')
+  })
 })

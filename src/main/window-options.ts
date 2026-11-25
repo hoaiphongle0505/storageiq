@@ -6,6 +6,8 @@ export const WINDOW_BACKGROUND = { light: '#f5f3ef', dark: '#151a21' } as const
 export function createMainWindowOptions(input: {
   preloadPath: string
   dark: boolean
+  /** The window icon for unpackaged runs; a packaged build uses the icon embedded in the exe. */
+  iconPath?: string
 }): BrowserWindowConstructorOptions {
   return {
     width: 1280,
@@ -14,6 +16,7 @@ export function createMainWindowOptions(input: {
     minHeight: 600,
     show: false,
     title: 'StorageIQ',
+    ...(input.iconPath === undefined ? {} : { icon: input.iconPath }),
     backgroundColor: input.dark ? WINDOW_BACKGROUND.dark : WINDOW_BACKGROUND.light,
     autoHideMenuBar: true,
     webPreferences: {

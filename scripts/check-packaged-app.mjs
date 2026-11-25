@@ -31,6 +31,28 @@ if (unpackedFiles.join() !== 'icon-worker.js,shell-worker.js,walker.js') {
   process.exit(1)
 }
 
+// The exe carries StorageIQ's icon, not Electron's default: electron-builder embeds build/icon.ico
+// into the exe's resources unchanged, so the 256 px PNG entry of the ICO must appear in the exe
+// (Electron's own icon is a different image).
+{
+  const ico = readFileSync(path.resolve('build', 'icon.ico'))
+  const entryCount = ico.readUInt16LE(4)
+  let png256
+  for (let index = 0; index < entryCount; index += 1) {
+    const at = 6 + 16 * index
+    if (ico.readUInt8(at) === 0) {
+      png256 = ico.subarray(
+        ico.readUInt32LE(at + 12),
+        ico.readUInt32LE(at + 12) + ico.readUInt32LE(at + 8),
+      )
+    }
+  }
+  if (!png256 || !readFileSync(exe).includes(png256)) {
+    console.error(`${productName}.exe does not carry the StorageIQ icon (build/icon.ico).`)
+    process.exit(1)
+  }
+}
+
 const env = { ...process.env }
 delete env.ELECTRON_RUN_AS_NODE
 
@@ -46,5 +68,5 @@ if (result.status !== 0) {
   process.exit(1)
 }
 console.log(
-  'Packaged self-test passed: koffi loaded from app.asar.unpacked; the Explorer menu built; the icon worker returned a PNG; the scanner ran.',
+  'Packaged self-test passed: koffi loaded from app.asar.unpacked; the Explorer menu built; the icon worker returned a PNG; the scanner ran; the exe carries the StorageIQ icon.',
 )

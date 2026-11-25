@@ -58,6 +58,8 @@ import { createMainWindow } from './window'
 const APP_USER_MODEL_ID = 'io.github.storageiq.app'
 const rendererRoot = path.join(__dirname, '../renderer')
 const preloadPath = path.join(__dirname, '../preload/index.js')
+/** Dev windows show the logo; build/ is outside out/, so a packaged build uses the exe's icon. */
+const devIconPath = app.isPackaged ? undefined : path.join(__dirname, '../../build/icon.ico')
 const scannerPath = path.join(__dirname, 'scanner.js')
 /** The shell worker thread (a self-contained bundle, unpacked from the asar when packaged). */
 const shellWorkerPath = path.join(__dirname, 'shell-worker.js')
@@ -455,6 +457,7 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
         preloadPath,
         rendererRoot,
         devServerUrl,
+        iconPath: devIconPath,
         isQuitting: () => quitting,
         onRendererReload: () => scanService.cancelActive(),
       })

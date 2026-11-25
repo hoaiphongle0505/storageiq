@@ -30,6 +30,7 @@ electronFuses:
   enableCookieEncryption: true
 
 win:
+  icon: build/icon.ico
   target:
     - target: nsis
       arch:
@@ -52,6 +53,9 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: StorageIQ
   uninstallDisplayName: StorageIQ
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
 
 # koffi (drive listing) is a native Node-API module; koffi 3 loads it from the optional package
 # @koromix/koffi-win32-x64. Both stay outside app.asar so Windows can load koffi.node. Electron

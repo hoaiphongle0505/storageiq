@@ -29,7 +29,8 @@
     "test:packaged": "node scripts/check-packaged-app.mjs",
     "metrics": "node scripts/report-metrics.mjs",
     "tokens": "node scripts/build-tokens.mjs",
-    "notices": "node scripts/build-notices.cjs"
+    "notices": "node scripts/build-notices.cjs",
+    "icon": "electron scripts/build-icon.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
