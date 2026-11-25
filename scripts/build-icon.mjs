@@ -10,7 +10,14 @@ import { app, BrowserWindow } from 'electron'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const buildDir = path.join(root, 'build')
 const SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256]
-const sourceFor = (size) => (size <= 20 ? 'icon-16.svg' : size === 24 ? 'icon-24.svg' : 'icon.svg')
+const sourceFor = (size) =>
+  size <= 16
+    ? 'icon-16.svg'
+    : size === 20
+      ? 'icon-20.svg'
+      : size === 24
+        ? 'icon-24.svg'
+        : 'icon.svg'
 
 // One device pixel per CSS pixel whatever the display scaling, so a capture is exactly size x size.
 app.commandLine.appendSwitch('force-device-scale-factor', '1')
