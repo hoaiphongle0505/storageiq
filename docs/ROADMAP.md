@@ -2,7 +2,7 @@
 
 Living document owned by the technical lead. Update it whenever a phase completes: tick tasks, record decisions, and name the next phase.
 
-**Current phase:** Phase 4 — Side Views
+**Current phase:** Phase 5 — Charts and Export
 **Last updated:** 2026-11-28
 
 ---
@@ -110,15 +110,15 @@ StorageIQ/
 
 Roadmap v3, approved 2026-11-19 ([spec](superpowers/specs/2026-11-19-phase-3-workspace-design.md) §2). It supersedes the phase order of roadmap v2; the Phase 2a scanner, IPC and drive code stay.
 
-| #   | Phase              | Status                                                                       | Exit criterion                                                                                                                                                  |
-| --- | ------------------ | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Foundation         | **Done**                                                                     | Secure app shell, typed IPC, tests, installer, CI                                                                                                               |
-| 2a  | Core scanner       | **Done** (merged in PR #1)                                                   | Scans a drive in a utilityProcess with live progress, cancel and unreadable folders listed                                                                      |
-| 3   | Analyzer workspace | **In progress** — [plan](superpowers/plans/2026-11-19-phase-3-workspace.md)  | Ribbon, Select menu, virtualized column tree, file-type treemap with legend (Level 0–5, hideable), Explorer context menu, status bar; 1M-file perf limits in CI |
-| 4   | Side views         | **In progress** — [plan](superpowers/plans/2026-11-28-phase-4-side-views.md) | Top files, file types, file age                                                                                                                                 |
-| 5   | Charts and export  | Not started                                                                  | Pie and bar charts; CSV and Excel export                                                                                                                        |
-| 6   | Actions            | Not started                                                                  | Delete to Recycle Bin with confirmation, search — **MVP complete; first GitHub release**                                                                        |
-| 7+  | Post-MVP           | Not started                                                                  | Honest totals (cloud-only files, hardlinks, real size of locked system files, reconciliation), duplicates, scan history, plain-language explanations, AI        |
+| #   | Phase              | Status                                                                          | Exit criterion                                                                                                                                                  |
+| --- | ------------------ | ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Foundation         | **Done**                                                                        | Secure app shell, typed IPC, tests, installer, CI                                                                                                               |
+| 2a  | Core scanner       | **Done** (merged in PR #1)                                                      | Scans a drive in a utilityProcess with live progress, cancel and unreadable folders listed                                                                      |
+| 3   | Analyzer workspace | **In progress** — [plan](superpowers/plans/2026-11-19-phase-3-workspace.md)     | Ribbon, Select menu, virtualized column tree, file-type treemap with legend (Level 0–5, hideable), Explorer context menu, status bar; 1M-file perf limits in CI |
+| 4   | Side views         | **Done** — [plan](superpowers/plans/2026-11-28-phase-4-side-views.md)           | Top files, file types, file age                                                                                                                                 |
+| 5   | Charts and export  | **In progress** — [plan](superpowers/plans/2026-11-28-phase-5-charts-export.md) | Pie and bar charts; CSV and Excel export                                                                                                                        |
+| 6   | Actions            | Not started                                                                     | Delete to Recycle Bin with confirmation, search — **MVP complete; first GitHub release**                                                                        |
+| 7+  | Post-MVP           | Not started                                                                     | Honest totals (cloud-only files, hardlinks, real size of locked system files, reconciliation), duplicates, scan history, plain-language explanations, AI        |
 
 ### Phase 1 — Project Foundation (task checklist)
 
@@ -250,6 +250,22 @@ Spec: [Phase 4 — Side Views design](superpowers/specs/2026-11-28-phase-4-side-
 - [x] T9 E2E (tabs, top row, types and age, Copy as CSV read from main's clipboard), docs
 
 Decisions: see the plan's "Decisions made while planning". Not in this phase: charts (Phase 5), filtering Top files by clicking a Types or Age row, explanations of known space hogs, the future date in the Last Modified roll-up.
+
+### Phase 5 — Charts and Export (task checklist)
+
+Spec: [Phase 5 — Charts and Export design](superpowers/specs/2026-11-28-phase-5-charts-export-design.md). Plan: [Phase 5 plan](superpowers/plans/2026-11-28-phase-5-charts-export.md).
+
+- [x] T1 Shared CSV writer: one place for the list columns, formula-safe text (`'` prefix for `=`, `+`, `-`, `@`, tab, CR)
+- [x] T2 Phase 4 minors: "Couldn't load this view" with Try again (only `null` means gone), Top files selection cleared on folder or scan change
+- [x] T3 Chart geometry (pie slices with a 1° minimum, donut path, bar lengths), category totals, chart summaries
+- [x] T4 Streaming XLSX writer (inline strings, deflated ZIP with data descriptors, no ZIP64)
+- [x] T5 Scanner `export` query: tree rows, CSV, Excel (Tree, Top files, Types, Age); 1M-file perf cases (CSV limit 10 s, Excel 20 s)
+- [x] T6 Main channels `export:run` (save dialog) and `shell:show-export`, preload bridge
+- [x] T7 File tab Export group, "Exporting…" in the status bar, success and error banners with Show in folder
+- [x] T8 Types donut and Age bars with a Chart toggle
+- [x] T9 E2E (save dialog stubbed), docs
+
+Decisions: see the plan's "Decisions made while planning". Not in this phase: choosing export columns or depth, exporting a selection, other chart types, printing, charts inside the workbook.
 
 ### Release checklist (before first public release, not tied to a phase)
 
