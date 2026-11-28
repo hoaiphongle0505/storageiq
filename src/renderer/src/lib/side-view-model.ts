@@ -1,25 +1,21 @@
-import { CATEGORY_LABELS } from '@shared/file-category'
-import type { TypeRow } from '@shared/tree-types'
+import {
+  type CategoryShare,
+  FILE_CATEGORIES,
+  type FileCategory,
+  type TypeRow,
+} from '@shared/tree-types'
 
-export const NO_EXTENSION_LABEL = '(no extension)'
-export const OTHER_EXTENSIONS_LABEL = 'Other extensions'
+export {
+  NO_EXTENSION_LABEL,
+  OTHER_EXTENSIONS_LABEL,
+  typeCategoryLabel,
+  typeLabel,
+} from '@shared/side-view-columns'
 
 /** Most icon keys one `icons:for-types` call takes (the same limit as main). */
 export const MAX_TYPE_ICON_KEYS = 64
 /** The extension part of an icon key that main accepts (main's `ICON_TYPE_KEY_PATTERN`). */
 const ICON_EXTENSION = /^[a-z0-9_$~-]{1,16}$/
-
-/** The text of a Types row: `.jpg`, `(no extension)` or `Other extensions`. */
-export function typeLabel(row: Pick<TypeRow, 'kind' | 'ext'>): string {
-  if (row.kind === 'none') return NO_EXTENSION_LABEL
-  if (row.kind === 'other') return OTHER_EXTENSIONS_LABEL
-  return `.${row.ext}`
-}
-
-/** The file type name of a Types row; `''` for the "Other extensions" row. */
-export function typeCategoryLabel(row: Pick<TypeRow, 'category'>): string {
-  return row.category === null ? '' : CATEGORY_LABELS[row.category]
-}
 
 /** The icon key of a Types row (`ext:jpg`, `file`), or null when it has no icon to ask for. */
 export function typeIconKey(row: Pick<TypeRow, 'kind' | 'ext'>): string | null {
@@ -42,4 +38,32 @@ export function typeIconKeys(rows: ReadonlyArray<Pick<TypeRow, 'kind' | 'ext'>>)
 /** The sum of the `size` of every row (the "% of folder" bars are shares of it). */
 export function totalSize(rows: ReadonlyArray<{ size: number }>): number {
   return rows.reduce((sum, row) => sum + row.size, 0)
+}
+
+/**
+ * The Types rows summed per file type (the treemap's categories), biggest first, without empty
+ * ones. The "Other extensions" row has no category of its own (the scanner folds the rest of the
+ * extensions into it), so it counts as "Other".
+ */
+export function categoryTotals(rows: readonly TypeRow[]): CategoryShare[] {
+  const bytes = new Map<FileCategory, number>()
+  for (const row of rows) {
+    const category = row.category ?? 'other'
+    bytes.set(category, (bytes.get(category) ?? 0) + row.size)
+  }
+  return FILE_CATEGORIES.filter((category) => (bytes.get(category) ?? 0) > 0)
+    .map((category) => ({ category, bytes: bytes.get(category) ?? 0 }))
+    .sort((a, b) => b.bytes - a.bytes)
+}
+
+/** A chart's accessible name: its three biggest entries and their shares, like `Video 41 %, …`. */
+export function chartSummary(entries: ReadonlyArray<{ label: string; value: number }>): string {
+  const total = entries.reduce((sum, entry) => sum + Math.max(0, entry.value), 0)
+  if (total === 0) return 'No data'
+  return entries
+    .filter((entry) => entry.value > 0)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 3)
+    .map((entry) => `${entry.label} ${Math.round((entry.value / total) * 100)} %`)
+    .join(', ')
 }

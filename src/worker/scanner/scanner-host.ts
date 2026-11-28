@@ -1,3 +1,4 @@
+import path from 'node:path'
 import type { ScanDone, ScanProgress } from '@shared/scan-types'
 import type {
   ScannerMessage,
@@ -6,7 +7,7 @@ import type {
   ScannerRequest,
   ScanVolume,
 } from '@shared/scanner-protocol'
-import { MAX_PATH_QUERY_IDS } from '@shared/scanner-protocol'
+import { EXPORT_FORMATS, MAX_PATH_QUERY_IDS, type ExportFormat } from '@shared/scanner-protocol'
 import { SIZE_MODES, SORT_KEYS, type SizeMode, type SortKey } from '@shared/tree-types'
 import {
   ChildSorter,
@@ -17,6 +18,7 @@ import {
   nodeDetails,
   resolveNode,
 } from './tree-queries'
+import { exportTree } from './export-tree'
 import { TreeStore } from './tree-store'
 import { SideViews } from './side-views'
 import { treemapLayout } from './treemap'
@@ -127,6 +129,12 @@ function parseQuery(value: unknown): ScannerQuery | null {
       return str(nodeId) ? { kind: 'types', scanId, nodeId } : null
     case 'age':
       return str(nodeId) ? { kind: 'age', scanId, nodeId } : null
+    case 'export': {
+      const { format, filePath } = value
+      if (!str(nodeId) || !EXPORT_FORMATS.includes(format as ExportFormat)) return null
+      if (!str(filePath) || !path.isAbsolute(filePath)) return null
+      return { kind: 'export', scanId, nodeId, format: format as ExportFormat, filePath }
+    }
     case 'paths': {
       const ids = value['nodeIds']
       if (!Array.isArray(ids) || ids.length > MAX_PATH_QUERY_IDS || !ids.every(str)) return null
@@ -244,12 +252,17 @@ export function createScannerHost(deps: ScannerHostDeps): ScannerHost {
     return nodeDetails(tree, treeSorter, `d${folder}`, 'size', 'desc')
   }
 
-  const answer = async (query: ScannerQuery): Promise<unknown> => {
-    if (query.kind === 'refresh') {
-      const next = refreshes.then(() => refresh(query.scanId, query.nodeId))
-      refreshes = next.catch(() => undefined)
-      return next
-    }
+  // Refreshes and exports share one queue, so an export never streams a folder a refresh rewrites.
+  const answer = (query: ScannerQuery): Promise<unknown> => {
+    if (query.kind !== 'refresh' && query.kind !== 'export') return answerNow(query)
+    const next = refreshes.then(() =>
+      query.kind === 'refresh' ? refresh(query.scanId, query.nodeId) : answerNow(query),
+    )
+    refreshes = next.catch(() => undefined)
+    return next
+  }
+
+  const answerNow = async (query: ScannerQuery): Promise<unknown> => {
     if (store === null || sorter === null || sideViews === null || storeScanId !== query.scanId) {
       return query.kind === 'expand'
         ? []
@@ -289,6 +302,8 @@ export function createScannerHost(deps: ScannerHostDeps): ScannerHost {
         return sideViews.types(query.nodeId)
       case 'age':
         return sideViews.age(query.nodeId)
+      case 'export':
+        return exportTree(store, sideViews, query.nodeId, query.format, query.filePath)
       case 'totals':
         return store.totals()
     }

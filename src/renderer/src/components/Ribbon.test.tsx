@@ -2,6 +2,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import type { ExportResult } from '@shared/ipc-contract'
 import { createFakeApi } from '../test/fake-api'
 import { renderWithStores } from '../test/render'
 import { makeDone } from '../test/scan-fixtures'
@@ -156,6 +157,50 @@ describe('<Ribbon />', () => {
     await user.click(screen.getByRole('tab', { name: 'View' }))
     await user.click(command('Treemap'))
     expect(workspace.getState().treemapVisible).toBe(false)
+  })
+
+  it('the File tab has an Export group that waits for a finished scan', async () => {
+    const user = userEvent.setup()
+    const { api, workspace } = renderRibbon()
+    await user.click(screen.getByRole('tab', { name: 'File' }))
+    const group = within(toolbar()).getByRole('group', { name: 'Export' })
+    const buttons = within(group).getAllByRole('button')
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      'Export to CSV…',
+      'Export to Excel…',
+    ])
+    for (const button of buttons) expect(button).toHaveAttribute('aria-disabled', 'true')
+
+    await act(() => workspace.getState().startScan('D:\\'))
+    for (const button of buttons) expect(button).toHaveAttribute('aria-disabled', 'true')
+    act(() => api.emitScanDone(makeDone()))
+    for (const button of buttons) expect(button).not.toHaveAttribute('aria-disabled')
+
+    await user.click(buttons[1] as HTMLElement)
+    expect(api.exportTree).toHaveBeenCalledWith('scan-1', 'd0', 'xlsx')
+    await waitFor(() => expect(workspace.getState().exporting).toBeNull())
+  })
+
+  it('both Export commands wait while an export runs', async () => {
+    const user = userEvent.setup()
+    let release: () => void = () => undefined
+    const api = createFakeApi({
+      exportTree: vi.fn(
+        () =>
+          new Promise<ExportResult>((resolve) => {
+            release = () => resolve({ status: 'cancelled' })
+          }),
+      ),
+    })
+    const { workspace } = renderRibbon(api)
+    await user.click(screen.getByRole('tab', { name: 'File' }))
+    await act(() => workspace.getState().startScan('D:\\'))
+    act(() => api.emitScanDone(makeDone()))
+    await user.click(command('Export to CSV…'))
+    expect(command('Export to CSV…')).toHaveAttribute('aria-disabled', 'true')
+    expect(command('Export to Excel…')).toHaveAttribute('aria-disabled', 'true')
+    await act(async () => release())
+    await waitFor(() => expect(command('Export to CSV…')).not.toHaveAttribute('aria-disabled'))
   })
 
   it('the View tab has a Pane group with one toggle per bottom-pane view', async () => {

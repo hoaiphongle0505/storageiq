@@ -1,4 +1,5 @@
 import { type AboutLink, MAX_CLIPBOARD_TEXT } from '@shared/ipc-contract'
+import { EXPORT_FORMATS, type ExportFormat } from '@shared/scanner-protocol'
 import {
   MAX_PAGE_ROWS,
   MAX_TREEMAP_DEPTH,
@@ -166,6 +167,16 @@ export function treemapArgs(
 export function topFilesArgs(args: readonly unknown[]): [string, NodeId, SizeMode] {
   expectCount(args, 3)
   return [scanIdArg(args[0]), nodeIdArg(args[1]), sizeModeArg(args[2])]
+}
+
+/** `export:run`: `[scanId, nodeId, format]` */
+export function exportArgs(args: readonly unknown[]): [string, NodeId, ExportFormat] {
+  expectCount(args, 3)
+  const format = args[2]
+  if (!EXPORT_FORMATS.includes(format as ExportFormat)) {
+    throw new InvalidIpcArgumentsError(`expected one of ${EXPORT_FORMATS.join(', ')}`)
+  }
+  return [scanIdArg(args[0]), nodeIdArg(args[1]), format as ExportFormat]
 }
 
 /** `clipboard:copy-text`: one string of 1 to `MAX_CLIPBOARD_TEXT` characters. */

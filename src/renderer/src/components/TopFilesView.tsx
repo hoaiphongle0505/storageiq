@@ -18,7 +18,8 @@ import { useWorkspace } from '../stores/workspace-store-context'
 import { CopyCsvButton } from './CopyCsvButton'
 import { FileIcon } from './FileIcon'
 import { PaneShell } from './PaneShell'
-import { ScanningNote } from './SideViewParts'
+import { Button } from './Button'
+import { LOAD_ERROR_TEXT, ScanningNote } from './SideViewParts'
 import { SINGLE_ITEM_MESSAGE, TREE_ROW_HEIGHT } from './TreeGrid'
 
 const OVERSCAN = 10
@@ -49,6 +50,7 @@ export function topRowDomId(id: NodeId): string {
  */
 export function TopFilesView({ height }: { height: number }) {
   const scanId = useWorkspace((s) => s.scanId)
+  const treemapRootId = useWorkspace((s) => s.treemapRootId)
   const mode = useWorkspace((s) => s.mode)
   const unit = useWorkspace((s) => s.unit)
   const fetchTopFiles = useWorkspace((s) => s.fetchTopFiles)
@@ -89,6 +91,11 @@ export function TopFilesView({ height }: { height: number }) {
     if (scanId === null || iconCache === null) return
     iconCache.request(scanId, ids.slice(first, last + 1))
   }, [scanId, iconCache, ids, first, last])
+
+  // The rows belong to one folder of one scan: a selection never outlives them.
+  useEffect(() => {
+    setSelection(NO_SELECTION)
+  }, [scanId, treemapRootId])
 
   const activeIndex = selection.activeId === null ? -1 : ids.indexOf(selection.activeId)
 
@@ -245,12 +252,19 @@ export function TopFilesView({ height }: { height: number }) {
 
   const ranked = mode === 'allocated' ? 'Allocated' : 'Size'
   const activeRendered = activeIndex >= first && activeIndex <= last
-  const message =
-    state.status === 'gone'
-      ? GONE_MESSAGE
-      : state.status === 'ready' && rows.length === 0
-        ? NO_FILES_TEXT
-        : null
+  const message: ReactNode =
+    state.status === 'gone' ? (
+      GONE_MESSAGE
+    ) : state.status === 'error' ? (
+      <>
+        <span>{LOAD_ERROR_TEXT}</span>
+        <Button variant="secondary" onClick={state.retry}>
+          Try again
+        </Button>
+      </>
+    ) : state.status === 'ready' && rows.length === 0 ? (
+      NO_FILES_TEXT
+    ) : null
 
   return (
     <PaneShell
@@ -307,9 +321,9 @@ export function TopFilesView({ height }: { height: number }) {
         >
           {message !== null ? (
             <div role="row">
-              <p role="gridcell" className="px-4 py-3 text-ink-muted">
+              <div role="gridcell" className="flex items-center gap-3 px-4 py-3 text-ink-muted">
                 {message}
-              </p>
+              </div>
             </div>
           ) : (
             <div className="relative" style={{ height: rows.length * TREE_ROW_HEIGHT }}>

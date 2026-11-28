@@ -35,6 +35,17 @@ describe('the bottom pane tabs', () => {
   })
 })
 
+describe('the chart toggle', () => {
+  it('starts shown and toggles for the Types and Age views together', () => {
+    const store = createWorkspaceStore(createFakeApi())
+    expect(store.getState().chartVisible).toBe(true)
+    store.getState().toggleChart()
+    expect(store.getState().chartVisible).toBe(false)
+    store.getState().toggleChart()
+    expect(store.getState().chartVisible).toBe(true)
+  })
+})
+
 describe('fetching the side views', () => {
   it('asks for the treemap folder of the current scan, with the Mode for Top files', async () => {
     const { api, store } = await scanning()
@@ -50,7 +61,7 @@ describe('fetching the side views', () => {
     expect(api.getAgeBreakdown).toHaveBeenLastCalledWith('scan-1', 'd1')
   })
 
-  it('answers null before a scan, when the node is gone and when the call fails', async () => {
+  it('answers null before a scan and when the node is gone', async () => {
     const idle = createWorkspaceStore(createFakeApi())
     expect(await idle.getState().fetchTopFiles()).toBeNull()
     expect(await idle.getState().fetchTypes()).toBeNull()
@@ -58,7 +69,9 @@ describe('fetching the side views', () => {
 
     const gone = await scanning(createFakeApi({ getTypeBreakdown: vi.fn(async () => null) }))
     expect(await gone.store.getState().fetchTypes()).toBeNull()
+  })
 
+  it('lets a failed call reject, so a view can tell "failed" from "gone"', async () => {
     const broken = await scanning(
       createFakeApi({
         getTopFiles: vi.fn(async () => {
@@ -66,7 +79,7 @@ describe('fetching the side views', () => {
         }),
       }),
     )
-    expect(await broken.store.getState().fetchTopFiles()).toBeNull()
+    await expect(broken.store.getState().fetchTopFiles()).rejects.toThrow('scanner busy')
   })
 
   it('loadTypeIcons asks for the keys, and answers empty for no keys or a failed call', async () => {

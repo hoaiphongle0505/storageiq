@@ -26,6 +26,8 @@ const api: StorageIQApi = {
   getTopFiles: (scanId, nodeId, mode) => invoke('side:top-files', scanId, nodeId, mode),
   getTypeBreakdown: (scanId, nodeId) => invoke('side:types', scanId, nodeId),
   getAgeBreakdown: (scanId, nodeId) => invoke('side:age', scanId, nodeId),
+  exportTree: (scanId, nodeId, format) => invoke('export:run', scanId, nodeId, format),
+  showExport: () => invoke('shell:show-export'),
   openInExplorer: (scanId, nodeId) => invoke('shell:open-in-explorer', scanId, nodeId),
   showContextMenu: (scanId, nodeIds, x, y, extended) =>
     invoke('shell:context-menu', scanId, nodeIds, x, y, extended),

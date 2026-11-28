@@ -9,6 +9,8 @@ import {
   IconChevronDown,
   IconDelete,
   IconExit,
+  IconExportCsv,
+  IconExportExcel,
   IconExpand,
   IconHelp,
   IconModeAllocated,
@@ -113,6 +115,8 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
   const unit = useWorkspace((s) => s.unit)
   const treemapVisible = useWorkspace((s) => s.treemapVisible)
   const paneTab = useWorkspace((s) => s.paneTab)
+  const exporting = useWorkspace((s) => s.exporting)
+  const exportTree = useWorkspace((s) => s.exportTree)
   const stopScan = useWorkspace((s) => s.stopScan)
   const rescan = useWorkspace((s) => s.rescan)
   const setMode = useWorkspace((s) => s.setMode)
@@ -136,6 +140,7 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
   const scanning = phase === 'scanning'
   const hasTree = phase !== 'empty' && phase !== 'failed'
   const cannotDelete = !hasTree || scanning || selectedId === null
+  const cannotExport = phase !== 'done' || exporting !== null
 
   const scanGroup = (
     <Group label="Scan">
@@ -319,14 +324,32 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
 
   const panels: Record<RibbonTab, ReactNode> = {
     file: (
-      <Group label="App">
-        <RibbonButton
-          label="Exit"
-          icon={IconExit}
-          title="Close StorageIQ"
-          onClick={() => void quit()}
-        />
-      </Group>
+      <>
+        <Group label="Export">
+          <RibbonButton
+            label="Export to CSV…"
+            icon={IconExportCsv}
+            disabled={cannotExport}
+            title="Save every folder and file below the folder shown in the pane as a CSV file"
+            onClick={() => void exportTree('csv')}
+          />
+          <RibbonButton
+            label="Export to Excel…"
+            icon={IconExportExcel}
+            disabled={cannotExport}
+            title="Save the same list, with the top files, types and ages, as an Excel workbook"
+            onClick={() => void exportTree('xlsx')}
+          />
+        </Group>
+        <Group label="App">
+          <RibbonButton
+            label="Exit"
+            icon={IconExit}
+            title="Close StorageIQ"
+            onClick={() => void quit()}
+          />
+        </Group>
+      </>
     ),
     home: (
       <>

@@ -41,6 +41,7 @@ import { createScanHandlers } from './ipc/scan-handlers'
 import { createEventSender } from './ipc/send-event'
 import { createItemWatcher } from './ipc/item-watcher'
 import { createShellHandlers, itemExists } from './ipc/shell-handlers'
+import { createExportHandlers } from './ipc/export-handlers'
 import { createFolderRefresher, createTreeHandlers } from './ipc/tree-handlers'
 import { autoUpdater } from 'electron-updater'
 import { findScanArgument, parseSecondInstanceData } from './launch/launch-args'
@@ -581,6 +582,19 @@ if (process.argv.includes(SELF_TEST_FLAG)) {
             }),
         }),
         ...createTreeHandlers({ scanService, refreshFolder }),
+        ...createExportHandlers({
+          scanService,
+          dialog,
+          getMainWindow: () => mainWindow,
+          defaultFolder: () => {
+            try {
+              return app.getPath('documents')
+            } catch {
+              return app.getPath('home')
+            }
+          },
+          showItemInFolder: (target) => shell.showItemInFolder(target),
+        }),
         ...createIconHandlers({
           scanService,
           icons: {

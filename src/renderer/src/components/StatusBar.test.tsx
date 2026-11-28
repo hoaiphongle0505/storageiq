@@ -35,6 +35,15 @@ describe('<StatusBar />', () => {
     expect(footer).toHaveTextContent('4,096 bytes per cluster (NTFS)')
   })
 
+  it('says "Exporting…" while an export runs', async () => {
+    const { workspace } = await renderBar()
+    expect(screen.getByRole('contentinfo')).not.toHaveTextContent('Exporting…')
+    act(() => workspace.setState({ exporting: 'csv' }))
+    expect(screen.getByRole('contentinfo')).toHaveTextContent('Exporting…')
+    act(() => workspace.setState({ exporting: null }))
+    expect(screen.getByRole('contentinfo')).not.toHaveTextContent('Exporting…')
+  })
+
   it('opens the list of unreadable items from the excluded count', async () => {
     const user = userEvent.setup()
     const { api } = await renderBar()

@@ -2,6 +2,20 @@
 
 All notable changes to StorageIQ are listed here, newest first. The format follows Keep a Changelog and the versions follow Semantic Versioning.
 
+## [0.4.0-beta.1] - 2026-11-28
+
+### Added
+
+- Types now shows a donut chart of the space used by each kind of file, in the same colours as the treemap, with a legend beside it. Age shows bars for the space in each age group. A Chart button in the header hides or shows the chart; the table next to it still has every number.
+- Export to CSV… and Export to Excel… on the File tab save every folder and file below the folder shown in the pane, biggest first, with sizes in bytes, dates, and each item's share of its folder. The Excel file also has Top files, Types and Age sheets. A message tells you how many rows were saved, with a Show in folder button.
+- A CSV file has no row limit. An Excel sheet holds about a million rows; if the tree is bigger, the file says so and the rest is left out, so use CSV for those.
+
+### Fixed
+
+- Top files, Types and Age no longer say "That item no longer exists" when the list simply could not be loaded; they say so and offer Try again.
+- Top files no longer keeps a row selected after you choose another folder or scan again.
+- File names that begin with =, +, - or @ are saved with a leading ' in CSV files (Copy as CSV too), so a spreadsheet does not read them as formulas.
+
 ## [0.3.0-beta.1] - 2026-11-28
 
 ### Added

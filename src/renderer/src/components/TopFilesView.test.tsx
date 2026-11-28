@@ -7,6 +7,7 @@ import { formatDate, formatSize } from '../lib/format'
 import { GONE_MESSAGE } from '../stores/workspace-store'
 import { createFakeApi, TEST_TOP_FILES } from '../test/fake-api'
 import { renderWithStores } from '../test/render'
+import { LOAD_ERROR_TEXT } from './SideViewParts'
 import { SINGLE_ITEM_MESSAGE } from './TreeGrid'
 import { NO_FILES_TEXT, TopFilesView } from './TopFilesView'
 
@@ -73,6 +74,28 @@ describe('<TopFilesView />', () => {
     )
     await act(() => utils.workspace.getState().startScan('D:\\'))
     expect(await screen.findByText(GONE_MESSAGE)).toBeInTheDocument()
+  })
+
+  it('clears the selection when the folder changes', async () => {
+    const { workspace } = await renderView()
+    fireEvent.click(row(/movie\.mp4/))
+    expect(row(/movie\.mp4/)).toHaveAttribute('aria-selected', 'true')
+    act(() => workspace.getState().select('d2'))
+    await waitFor(() => expect(row(/movie\.mp4/)).toHaveAttribute('aria-selected', 'false'))
+  })
+
+  it('says the view could not load when the call fails', async () => {
+    const utils = renderWithStores(
+      <TopFilesView height={260} />,
+      createFakeApi({
+        getTopFiles: vi.fn(async () => {
+          throw new Error('scanner busy')
+        }),
+      }),
+    )
+    await act(() => utils.workspace.getState().startScan('D:\\'))
+    expect(await screen.findByText(LOAD_ERROR_TEXT)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
   })
 
   it('says so when the folder has no files', async () => {

@@ -13,11 +13,20 @@ import {
 import { useSideView } from '../lib/use-side-view'
 import { GONE_MESSAGE } from '../stores/workspace-store'
 import { useWorkspace } from '../stores/workspace-store-context'
+import { ChartLayout, ChartToggle } from './ChartParts'
 import { CopyCsvButton } from './CopyCsvButton'
 import { LARGE_ICON_MIN_DPR } from './FileIcon'
 import { PaneShell } from './PaneShell'
-import { PaneMessage, ScanningNote, ShareBar, SIDE_ROW_CLASS, SideViewTable } from './SideViewParts'
+import {
+  PaneMessage,
+  ScanningNote,
+  ShareBar,
+  SIDE_ROW_CLASS,
+  SideViewError,
+  SideViewTable,
+} from './SideViewParts'
 import { CategorySwatch } from './TreemapLegend'
+import { TypesChart } from './TypesChart'
 
 export const NO_TYPES_TEXT = 'There are no files in this folder.'
 
@@ -86,44 +95,53 @@ export function TypesView({ height }: { height: number }) {
       height={height}
       label="Types"
       actions={
-        <CopyCsvButton build={() => typesCsv(rows ?? [])} rows={rows === null ? 0 : rows.length} />
+        <>
+          <ChartToggle />
+          <CopyCsvButton
+            build={() => typesCsv(rows ?? [])}
+            rows={rows === null ? 0 : rows.length}
+          />
+        </>
       }
     >
       <ScanningNote />
       {state.status === 'gone' && <PaneMessage>{GONE_MESSAGE}</PaneMessage>}
+      {state.status === 'error' && <SideViewError onRetry={state.retry} />}
       {rows !== null && rows.length === 0 && <PaneMessage>{NO_TYPES_TEXT}</PaneMessage>}
       {rows !== null && rows.length > 0 && (
-        <SideViewTable label="File types in this folder" columns={COLUMNS}>
-          {rows.map((row) => {
-            const key = typeIconKey(row)
-            return (
-              <tr key={`${row.kind}:${row.ext}`} className="hover:bg-row-hover">
-                <td className={`${SIDE_ROW_CLASS} px-3`}>
-                  <span className="flex min-w-0 items-center gap-2">
-                    <TypeIcon image={key === null ? undefined : icons[key]} />
-                    <span className="truncate">{typeLabel(row)}</span>
-                  </span>
-                </td>
-                <td className="px-3">
-                  <span className="flex items-center gap-1.5">
-                    {row.category !== null && <CategorySwatch category={row.category} />}
-                    {typeCategoryLabel(row)}
-                  </span>
-                </td>
-                <td className="px-3 text-right" title={`${formatCount(row.size)} bytes`}>
-                  {formatSize(row.size, unit)}
-                </td>
-                <td className="px-3 text-right" title={`${formatCount(row.allocated)} bytes`}>
-                  {formatSize(row.allocated, unit)}
-                </td>
-                <td className="px-3 text-right">{formatCount(row.files)}</td>
-                <td className="px-3">
-                  <ShareBar share={percentOf(row.size, total)} />
-                </td>
-              </tr>
-            )
-          })}
-        </SideViewTable>
+        <ChartLayout chart={<TypesChart rows={rows} />}>
+          <SideViewTable label="File types in this folder" columns={COLUMNS}>
+            {rows.map((row) => {
+              const key = typeIconKey(row)
+              return (
+                <tr key={`${row.kind}:${row.ext}`} className="hover:bg-row-hover">
+                  <td className={`${SIDE_ROW_CLASS} px-3`}>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <TypeIcon image={key === null ? undefined : icons[key]} />
+                      <span className="truncate">{typeLabel(row)}</span>
+                    </span>
+                  </td>
+                  <td className="px-3">
+                    <span className="flex items-center gap-1.5">
+                      {row.category !== null && <CategorySwatch category={row.category} />}
+                      {typeCategoryLabel(row)}
+                    </span>
+                  </td>
+                  <td className="px-3 text-right" title={`${formatCount(row.size)} bytes`}>
+                    {formatSize(row.size, unit)}
+                  </td>
+                  <td className="px-3 text-right" title={`${formatCount(row.allocated)} bytes`}>
+                    {formatSize(row.allocated, unit)}
+                  </td>
+                  <td className="px-3 text-right">{formatCount(row.files)}</td>
+                  <td className="px-3">
+                    <ShareBar share={percentOf(row.size, total)} />
+                  </td>
+                </tr>
+              )
+            })}
+          </SideViewTable>
+        </ChartLayout>
       )}
     </PaneShell>
   )

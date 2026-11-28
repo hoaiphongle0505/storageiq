@@ -2,6 +2,7 @@ import { vi } from 'vitest'
 import type {
   AppInfo,
   ChangelogEntry,
+  ExportResult,
   IconBatch,
   LaunchRequest,
   OptionsChangeResult,
@@ -44,6 +45,9 @@ export const TEST_APP_INFO: AppInfo = {
   chromeVersion: '150.0.7000.0',
   channel: 'Stable',
 }
+
+/** The file the fake bridge says an export wrote. */
+export const TEST_EXPORT_PATH = 'C:\\Users\\Ana\\Documents\\D - StorageIQ.csv'
 
 export const TEST_OPTIONS_STATE: OptionsState = {
   available: true,
@@ -382,6 +386,13 @@ export function createFakeApi(overrides: Partial<StorageIQApi> = {}): FakeApi {
     getTopFiles: vi.fn(async (): Promise<TopFileRow[] | null> => TEST_TOP_FILES),
     getTypeBreakdown: vi.fn(async (): Promise<TypeRow[] | null> => TEST_TYPES),
     getAgeBreakdown: vi.fn(async (): Promise<AgeRow[] | null> => TEST_AGE),
+    exportTree: vi.fn(async (): Promise<ExportResult> => ({
+      status: 'done',
+      rows: 3,
+      truncated: false,
+      filePath: TEST_EXPORT_PATH,
+    })),
+    showExport: vi.fn(async () => undefined),
     openInExplorer: vi.fn(async () => undefined),
     showContextMenu: vi.fn(async () => ({ kind: 'dismissed' as const })),
     deleteNodes: vi.fn(async () => ({ kind: 'dismissed' as const })),

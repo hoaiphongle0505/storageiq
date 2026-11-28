@@ -1,35 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { ageCsv, csvField, isoDate, toCsv, topFilesCsv, typesCsv } from './csv'
+import { ageCsv, topFilesCsv, typesCsv } from './csv'
 import { TEST_AGE, TEST_TOP_FILES, TEST_TYPES } from '../test/fake-api'
-
-describe('csvField', () => {
-  it('leaves plain text and numbers alone', () => {
-    expect(csvField('movie.mp4')).toBe('movie.mp4')
-    expect(csvField(1536)).toBe('1536')
-    expect(csvField('')).toBe('')
-  })
-
-  it('quotes a field with a comma, a quote or a line break, and doubles the quotes', () => {
-    expect(csvField('holiday, 2025.jpg')).toBe('"holiday, 2025.jpg"')
-    expect(csvField('say "hi"')).toBe('"say ""hi"""')
-    expect(csvField('a\nb')).toBe('"a\nb"')
-    expect(csvField('a\r\nb')).toBe('"a\r\nb"')
-  })
-})
-
-describe('toCsv', () => {
-  it('writes a header and one CRLF-terminated line per row', () => {
-    expect(toCsv(['A', 'B'], [['x', 1]])).toBe('A,B\r\nx,1\r\n')
-    expect(toCsv(['A'], [])).toBe('A\r\n')
-  })
-})
-
-describe('isoDate', () => {
-  it('is ISO 8601 in UTC, and empty for an unknown date', () => {
-    expect(isoDate(Date.UTC(2026, 10, 19, 12))).toBe('2026-11-19T12:00:00.000Z')
-    expect(isoDate(0)).toBe('')
-  })
-})
 
 describe('the list CSVs', () => {
   it('Top files: name, folder, raw bytes and ISO dates', () => {

@@ -44,6 +44,7 @@ test('launches a locked-down renderer with the StorageIQ bridge', async () => {
     'createFolder',
     'deleteNodes',
     'downloadUpdate',
+    'exportTree',
     'getAgeBreakdown',
     'getAppInfo',
     'getAutoUpdate',
@@ -82,6 +83,7 @@ test('launches a locked-down renderer with the StorageIQ bridge', async () => {
     'setExplorerMenu',
     'setRunAsAdmin',
     'showContextMenu',
+    'showExport',
     'startScan',
     'takeLaunchRequest',
   ])
