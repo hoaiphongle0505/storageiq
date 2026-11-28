@@ -67,7 +67,7 @@ export class ZipWriter {
     }
     await this.raw(Buffer.concat([header, nameBytes]))
 
-    const deflate = createDeflateRaw()
+    const deflate = createDeflateRaw({ level: 1 })
     const drained = (async () => {
       for await (const chunk of deflate as AsyncIterable<Buffer>) {
         entry.compressed += chunk.length
@@ -151,10 +151,16 @@ const MAX_CELL_CHARS = 32_767
 /** Days from 1899-12-30 (Excel's day 0) to 1970-01-01. */
 const EXCEL_EPOCH_DAYS = 25_569
 
+const columnNames: string[] = []
+/** `A`, `B`, … `Z`, `AA`, … (remembered: a million rows ask for the same few). */
 function columnName(index: number): string {
-  let name = ''
-  for (let n = index + 1; n > 0; n = Math.floor((n - 1) / 26)) {
-    name = String.fromCharCode(65 + ((n - 1) % 26)) + name
+  let name = columnNames[index]
+  if (name === undefined) {
+    name = ''
+    for (let n = index + 1; n > 0; n = Math.floor((n - 1) / 26)) {
+      name = String.fromCharCode(65 + ((n - 1) % 26)) + name
+    }
+    columnNames[index] = name
   }
   return name
 }
@@ -230,9 +236,9 @@ async function writeSheet(
     }
     rows += 1
     batch += `<row r="${rows + 1}">`
-    row.forEach((cell, i) => {
-      batch += cellXml(`${columnName(i)}${rows + 1}`, cell)
-    })
+    for (let i = 0; i < row.length; i += 1) {
+      batch += cellXml(columnName(i) + (rows + 1), row[i] ?? null)
+    }
     batch += '</row>'
     if (batch.length >= BATCH_CHARS) await flush()
   }

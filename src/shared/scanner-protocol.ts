@@ -23,6 +23,18 @@ export const MAX_PATH_QUERY_IDS = 64
 /** Used when main could not read the drive's cluster size (the NTFS default). */
 export const DEFAULT_CLUSTER_BYTES = 4096
 
+/** The two file formats of the export. */
+export type ExportFormat = 'csv' | 'xlsx'
+export const EXPORT_FORMATS: readonly ExportFormat[] = ['csv', 'xlsx']
+
+/** What an export wrote. */
+export interface ExportSummary {
+  /** Tree rows written (the file also has a header row, and the Excel file three more sheets). */
+  rows: number
+  /** The Excel sheet ran out of rows: the rest of the tree is not in the file. */
+  truncated: boolean
+}
+
 /** Questions main asks the scanner about its tree, plus the folder refresh. */
 export type ScannerQuery =
   | {
@@ -51,6 +63,8 @@ export type ScannerQuery =
   | { kind: 'top-files'; scanId: string; nodeId: NodeId; mode: SizeMode }
   | { kind: 'types'; scanId: string; nodeId: NodeId }
   | { kind: 'age'; scanId: string; nodeId: NodeId }
+  /** Writes the whole tree below a folder to `filePath` (main's save dialog chose it). */
+  | { kind: 'export'; scanId: string; nodeId: NodeId; format: ExportFormat; filePath: string }
   | { kind: 'refresh'; scanId: string; nodeId: NodeId }
   | { kind: 'totals'; scanId: string }
 
@@ -64,6 +78,7 @@ export interface ScannerQueryResults {
   'top-files': TopFileRow[] | null
   types: TypeRow[] | null
   age: AgeRow[] | null
+  export: ExportSummary | null
   refresh: TreeNodeDetails | null
   totals: TreeTotals | null
 }

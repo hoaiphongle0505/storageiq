@@ -1,3 +1,5 @@
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { ScanDone, ScanProgress } from '@shared/scan-types'
@@ -350,6 +352,23 @@ describe('createScannerHost', () => {
     ).toBeNull()
   })
 
+  it('exports the tree to the file main chose, and answers null for a node that is gone', async () => {
+    const t = setup()
+    t.host.handle({ type: 'start', scanId: 's1', root: ROOT, volume: VOLUME })
+    await t.host.idle()
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'storageiq-host-export-'))
+    try {
+      const filePath = path.join(dir, 'out.csv')
+      const query = { kind: 'export', scanId: 's1', nodeId: 'd0', format: 'csv', filePath } as const
+      expect(await t.query(query)).toEqual({ rows: 6, truncated: false })
+      expect(readFileSync(filePath, 'utf8').split('\r\n')).toHaveLength(1 + 6 + 1)
+      expect(await t.query({ ...query, nodeId: 'd99' })).toBeNull()
+      expect(await t.query({ ...query, scanId: 'old' })).toBeNull()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('answers queries for another scan id with nothing', async () => {
     const t = setup()
     t.host.handle({ type: 'start', scanId: 's1', root: ROOT, volume: VOLUME })
@@ -512,6 +531,21 @@ describe('parseScannerRequest', () => {
     },
     { type: 'query', requestId: 1, query: { kind: 'types', scanId: 's1', nodeId: 7 } },
     { type: 'query', requestId: 1, query: { kind: 'age', scanId: 's1' } },
+    {
+      type: 'query',
+      requestId: 1,
+      query: { kind: 'export', scanId: 's1', nodeId: 'd0', format: 'pdf', filePath: 'C:\\x.pdf' },
+    },
+    {
+      type: 'query',
+      requestId: 1,
+      query: { kind: 'export', scanId: 's1', nodeId: 'd0', format: 'csv', filePath: 'rel.csv' },
+    },
+    {
+      type: 'query',
+      requestId: 1,
+      query: { kind: 'export', scanId: 's1', nodeId: 'd0', format: 'csv' },
+    },
     { type: 'query', requestId: 'x', query: { kind: 'totals', scanId: 's1' } },
     {
       type: 'query',

@@ -1,7 +1,10 @@
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { TOP_FILES_LIMIT, TYPE_ROWS_LIMIT } from '@shared/tree-types'
-import { ageBreakdown, topFiles, typeBreakdown } from './side-views'
+import { exportTree } from './export-tree'
+import { ageBreakdown, SideViews, topFiles, typeBreakdown } from './side-views'
 import { ChildSorter, childrenPage } from './tree-queries'
 import { TreeStore } from './tree-store'
 import { treemapLayout } from './treemap'
@@ -17,6 +20,9 @@ export const PERF_LIMITS = {
   maxTreemapMs: 100,
   /** Phase 4 spec §3.1: each side view of the root, one walk over every file. */
   maxSideViewMs: 300,
+  /** Phase 5 spec §5: exporting the whole 1M-file tree to a file. */
+  maxCsvExportMs: 10_000,
+  maxXlsxExportMs: 20_000,
 } as const
 
 function usedBytes(): number {
@@ -184,4 +190,39 @@ describe('side views (1M files)', () => {
     expect(files).toBe(PERF_LIMITS.files)
     expect(ms).toBeLessThanOrEqual(PERF_LIMITS.maxSideViewMs)
   }, 60_000)
+})
+
+describe('export (1M files)', () => {
+  const exportMs = async (format: 'csv' | 'xlsx') => {
+    const store = sharedStore()
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'storageiq-perf-export-'))
+    try {
+      const file = path.join(dir, `tree.${format}`)
+      const started = performance.now()
+      const summary = await exportTree(store, new SideViews(store), 'd0', format, file)
+      const ms = performance.now() - started
+      const mb = statSync(file).size / 1024 / 1024
+      console.log(
+        `[perf] ${JSON.stringify({ [`${format}ExportMs`]: ms, [`${format}ExportMb`]: mb })}`,
+      )
+      return { summary, ms }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+
+  // The tree has 1M files and 10,100 folders; Excel's sheet holds 1,048,575 data rows, so it fits.
+  const ROWS = PERF_LIMITS.files + 100 + 10_000
+
+  it('writes every row to a CSV inside the limit', async () => {
+    const { summary, ms } = await exportMs('csv')
+    expect(summary).toEqual({ rows: ROWS, truncated: false })
+    expect(ms).toBeLessThanOrEqual(PERF_LIMITS.maxCsvExportMs)
+  }, 120_000)
+
+  it('writes every row to an Excel workbook inside the limit', async () => {
+    const { summary, ms } = await exportMs('xlsx')
+    expect(summary).toEqual({ rows: ROWS, truncated: false })
+    expect(ms).toBeLessThanOrEqual(PERF_LIMITS.maxXlsxExportMs)
+  }, 120_000)
 })
