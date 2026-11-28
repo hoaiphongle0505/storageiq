@@ -3,6 +3,7 @@ import {
   type AboutLink,
   type ChangelogEntry,
   type ContextMenuOutcome,
+  type ExportResult,
   type IconImage,
   type LaunchRequest,
   MAX_CLIPBOARD_TEXT,
@@ -12,6 +13,7 @@ import {
   type StorageIQApi,
   type UpdateState,
 } from '@shared/ipc-contract'
+import type { ExportFormat } from '@shared/scanner-protocol'
 import type {
   DriveDetails,
   DriveInfo,
@@ -38,7 +40,7 @@ import {
   type TreemapLayout,
   type TypeRow,
 } from '@shared/tree-types'
-import type { SizeUnit } from '../lib/format'
+import { formatCount, type SizeUnit } from '../lib/format'
 import { dropDescendants, type Selection, single } from '../lib/selection'
 import {
   CHUNK_SIZE,
@@ -68,8 +70,11 @@ export interface ScanTotals {
 }
 
 export interface Banner {
-  tone: 'error' | 'crash'
+  /** `success` is a calm confirmation (an export is done); `crash` offers Retry. */
+  tone: 'error' | 'crash' | 'success'
   message: string
+  /** Offers "Show in folder" for the file of the last export. */
+  showExport?: boolean
 }
 
 export const FOLDER_PICKER_ERROR = 'StorageIQ couldn’t open the folder picker. Please try again.'
@@ -84,6 +89,17 @@ export const BUSY_MESSAGE = 'Windows is still working on earlier actions. Try ag
 export const BIN_MIXED_MESSAGE = 'Select the Recycle Bin on its own to empty it.'
 export const TOO_MANY_MESSAGE = 'Too many items selected (the limit is 1,000).'
 export const CSV_TOO_LARGE_MESSAGE = 'Too many rows to copy.'
+export const EXPORTING_MESSAGE = 'Exporting…'
+/** The Excel sheet holds about a million rows; a bigger tree is cut. */
+export const EXPORT_CUT_MESSAGE =
+  'Excel’s row limit was reached, so the rest of the tree is not in the file. Export to CSV to get every row.'
+
+/** "Exported 12,345 rows to Data - StorageIQ.xlsx." (and a note when the sheet was cut). */
+export function exportedMessage(result: Extract<ExportResult, { status: 'done' }>): string {
+  const name = result.filePath.split(/[\\/]/).pop() ?? result.filePath
+  const rows = `${formatCount(result.rows)} ${result.rows === 1 ? 'row' : 'rows'}`
+  return `Exported ${rows} to ${name}.${result.truncated ? ` ${EXPORT_CUT_MESSAGE}` : ''}`
+}
 /** Rows one Explorer action takes (the same limit as main). */
 export const MAX_ACTION_ITEMS = 1000
 /** A selection larger than this is not re-checked against the scanner; it shrinks to the active row. */
@@ -170,6 +186,8 @@ export interface WorkspaceState {
   dismissedDownloadError: boolean
   /** Short polite message for screen readers (copied, created, …). */
   announcement: string
+  /** The format being exported right now (null when none); the Export commands wait for it. */
+  exporting: ExportFormat | null
   folderPickerOpen: boolean
   /** A launched `--scan` path waiting for the owner to confirm stopping the running scan. */
   pendingLaunchScan: string | null
@@ -218,6 +236,13 @@ export interface WorkspaceState {
   loadTypeIcons(typeKeys: string[]): Promise<Record<string, IconImage>>
   /** Puts a list view's CSV on the clipboard and announces "Copied N rows." */
   copyCsv(csv: string, rows: number): Promise<void>
+  /**
+   * Exports the whole tree below the treemap folder to a file of the owner's choice (main shows
+   * the save dialog). Only after a finished scan, and one export at a time. Ends with a banner.
+   */
+  exportTree(format: ExportFormat): Promise<void>
+  /** Shows the file of the last export in File Explorer. */
+  showExport(): Promise<void>
   setTreemapDepth(depth: number): void
   setTreemapVisible(visible: boolean): void
   /** Shows another view in the bottom pane (and the pane itself when it was hidden). */
@@ -493,6 +518,7 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
       whatsNew: null,
       dismissedDownloadError: false,
       announcement: '',
+      exporting: null,
       folderPickerOpen: false,
       pendingLaunchScan: null,
 
@@ -853,6 +879,39 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
         try {
           await api.copyText(csv)
           set({ announcement: `Copied ${rows} ${rows === 1 ? 'row' : 'rows'}.` })
+        } catch (error) {
+          fail(error)
+        }
+      },
+
+      async exportTree(format) {
+        const { scanId, treemapRootId, phase, exporting } = get()
+        if (scanId === null || treemapRootId === null || phase !== 'done' || exporting !== null) {
+          return
+        }
+        set({ exporting: format, announcement: EXPORTING_MESSAGE })
+        try {
+          const result = await api.exportTree(scanId, treemapRootId, format)
+          if (result.status === 'done') {
+            const message = exportedMessage(result)
+            set({ banner: { tone: 'success', message, showExport: true }, announcement: message })
+          } else if (result.status === 'failed') {
+            set({
+              banner: { tone: 'error', message: `Couldn’t export the tree. ${result.message}` },
+              announcement: '',
+            })
+          } else set({ announcement: '' })
+        } catch (error) {
+          fail(error)
+          set({ announcement: '' })
+        } finally {
+          set({ exporting: null })
+        }
+      },
+
+      async showExport() {
+        try {
+          await api.showExport()
         } catch (error) {
           fail(error)
         }

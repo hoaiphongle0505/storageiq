@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { renderWithStores } from '../test/render'
 import { Banner } from './Banner'
@@ -20,6 +21,28 @@ describe('<Banner />', () => {
     expect(svgs[0]).toHaveAttribute('aria-hidden', 'true')
     expect(svgs[0]).toHaveAttribute('focusable', 'false')
     expect(screen.getByRole('button', { name: 'Dismiss' })).toHaveAccessibleName('Dismiss')
+  })
+
+  it('a finished export is a calm status, with a Show in folder button', async () => {
+    const user = userEvent.setup()
+    const { api, workspace } = renderWithStores(<Banner />)
+    act(() =>
+      workspace.setState({
+        banner: { tone: 'success', message: 'Exported 3 rows to a.csv.', showExport: true },
+      }),
+    )
+    const status = screen.getByRole('status')
+    expect(status).toHaveTextContent('Exported 3 rows to a.csv.')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Show in folder' }))
+    expect(api.showExport).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+  })
+
+  it('an error has no Show in folder button', () => {
+    const { workspace } = renderWithStores(<Banner />)
+    act(() => workspace.setState({ banner: { tone: 'error', message: 'No.' } }))
+    expect(screen.queryByRole('button', { name: 'Show in folder' })).not.toBeInTheDocument()
   })
 
   it('a scanner crash shows the colour error icon and a Retry button', () => {

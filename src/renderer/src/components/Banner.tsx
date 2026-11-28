@@ -23,14 +23,16 @@ export const BANNER_ICONS: Record<BannerVariant, FluentIcon> = {
 export function Banner() {
   const banner = useWorkspace((s) => s.banner)
   const rescan = useWorkspace((s) => s.rescan)
+  const showExport = useWorkspace((s) => s.showExport)
   const dismissBanner = useWorkspace((s) => s.dismissBanner)
   if (banner === null) return null
   // A recoverable failure is calm (info); only a scanner crash is danger.
-  const variant: BannerVariant = banner.tone === 'crash' ? 'danger' : 'info'
+  const variant: BannerVariant =
+    banner.tone === 'crash' ? 'danger' : banner.tone === 'success' ? 'success' : 'info'
   const Icon = BANNER_ICONS[variant]
   return (
     <div
-      role="alert"
+      role={banner.tone === 'success' ? 'status' : 'alert'}
       className={`flex items-center justify-between gap-4 border-b border-line px-4 py-2 ${BANNER_VARIANT_CLASSES[variant]}`}
     >
       <div className="flex min-w-0 items-center gap-3">
@@ -39,6 +41,11 @@ export function Banner() {
       </div>
       <div className="flex shrink-0 gap-2">
         {banner.tone === 'crash' && <Button onClick={() => void rescan()}>Retry</Button>}
+        {banner.showExport === true && (
+          <Button variant="secondary" onClick={() => void showExport()}>
+            Show in folder
+          </Button>
+        )}
         <Button variant="quiet" onClick={dismissBanner}>
           Dismiss
         </Button>

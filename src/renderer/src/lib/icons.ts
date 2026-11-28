@@ -14,9 +14,11 @@ import {
   Delete24Regular,
   Dismiss16Regular,
   Document16Regular,
+  DocumentArrowRight24Regular,
   DocumentBulletList24Regular,
   DocumentMultiple16Regular,
   DocumentMultiple24Regular,
+  DocumentTableArrowRight24Regular,
   DocumentText20Color,
   ErrorCircle16Color,
   type FluentIcon,
@@ -96,6 +98,8 @@ export const IconDelete = Delete24Regular
 export const IconNewFolder = folderTint(FolderAdd24Filled)
 export const IconAbout = Info24Regular
 export const IconExit = SignOut24Regular
+export const IconExportCsv = DocumentArrowRight24Regular
+export const IconExportExcel = DocumentTableArrowRight24Regular
 export const IconHelp = QuestionCircle24Regular
 export const IconReportProblem = Bug24Regular
 export const IconCheckUpdates = ArrowCircleDown24Regular

@@ -5,6 +5,7 @@ import { selectionTotal } from '../lib/selection'
 import { rowIndexOf } from '../lib/tree-view-model'
 import { ANNOUNCE_INTERVAL_MS, useThrottledAnnouncement } from '../lib/use-throttled-announcement'
 import { useAppStore } from '../stores/app-store-context'
+import { EXPORTING_MESSAGE } from '../stores/workspace-store'
 import { useWorkspace } from '../stores/workspace-store-context'
 import { Dialog } from './Dialog'
 import { UnreadableList, unreadableSummary } from './UnreadableList'
@@ -26,6 +27,7 @@ export function StatusBar() {
   const errors = useWorkspace((s) => s.errors)
   const drive = useWorkspace((s) => s.drive)
   const announcement = useWorkspace((s) => s.announcement)
+  const exporting = useWorkspace((s) => s.exporting)
   const selectedIds = useWorkspace((s) => s.selectedIds)
   const lists = useWorkspace((s) => s.lists)
   const unit = useWorkspace((s) => s.unit)
@@ -98,6 +100,8 @@ export function StatusBar() {
         ) : (
           <span>{formatCount(excluded)} excluded</span>
         ))}
+      {exporting !== null && <Divider />}
+      {exporting !== null && <span>{EXPORTING_MESSAGE}</span>}
       {selectionText !== '' && <Divider />}
       {selectionText !== '' && <span>{selectionText}</span>}
       {drive !== null && <Divider />}
