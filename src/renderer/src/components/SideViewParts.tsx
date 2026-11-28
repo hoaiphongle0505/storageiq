@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { formatShare } from '../lib/format'
 import { useWorkspace } from '../stores/workspace-store-context'
+import { Button } from './Button'
 
 /** Row height of the side-view tables (the same as the folder tree's rows). */
 export const SIDE_ROW_CLASS = 'h-[30px]'
@@ -37,6 +38,20 @@ export function ScanningNote() {
 /** A calm one-line message in the body of a view. */
 export function PaneMessage({ children }: { children: ReactNode }) {
   return <p className="px-4 py-3 text-ink-muted">{children}</p>
+}
+
+export const LOAD_ERROR_TEXT = 'Couldn’t load this view.'
+
+/** The view could not be loaded (the scanner did not answer): say so and offer to ask again. */
+export function SideViewError({ onRetry }: { onRetry(): void }) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 text-ink-muted">
+      <p>{LOAD_ERROR_TEXT}</p>
+      <Button variant="secondary" onClick={onRetry}>
+        Try again
+      </Button>
+    </div>
+  )
 }
 
 export interface TableColumn {

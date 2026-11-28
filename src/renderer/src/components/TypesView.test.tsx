@@ -7,6 +7,7 @@ import { formatCount, formatShare, formatSize } from '../lib/format'
 import { GONE_MESSAGE } from '../stores/workspace-store'
 import { createFakeApi, TEST_TYPES } from '../test/fake-api'
 import { renderWithStores } from '../test/render'
+import { LOAD_ERROR_TEXT } from './SideViewParts'
 import { NO_TYPES_TEXT, TypesView } from './TypesView'
 
 async function renderView(api = createFakeApi()) {
@@ -55,6 +56,20 @@ describe('<TypesView />', () => {
     ])
     expect(jpg!.files).toBe(1000)
     expect(within(table()).getAllByRole('row')).toHaveLength(1 + TEST_TYPES.length)
+  })
+
+  it('says the view could not load when the call fails, and Try again loads it', async () => {
+    const user = userEvent.setup()
+    const getTypeBreakdown = vi
+      .fn<() => Promise<typeof TEST_TYPES | null>>()
+      .mockRejectedValueOnce(new Error('scanner busy'))
+      .mockResolvedValue(TEST_TYPES)
+    const utils = renderWithStores(<TypesView height={260} />, createFakeApi({ getTypeBreakdown }))
+    await act(() => utils.workspace.getState().startScan('D:\\'))
+    expect(await screen.findByText(LOAD_ERROR_TEXT)).toBeInTheDocument()
+    expect(screen.queryByText(GONE_MESSAGE)).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByRole('row', { name: /\.mp4/ })).toBeInTheDocument()
   })
 
   it('shows the colour of each file type and no colour for "Other extensions"', async () => {

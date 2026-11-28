@@ -50,7 +50,7 @@ describe('fetching the side views', () => {
     expect(api.getAgeBreakdown).toHaveBeenLastCalledWith('scan-1', 'd1')
   })
 
-  it('answers null before a scan, when the node is gone and when the call fails', async () => {
+  it('answers null before a scan and when the node is gone', async () => {
     const idle = createWorkspaceStore(createFakeApi())
     expect(await idle.getState().fetchTopFiles()).toBeNull()
     expect(await idle.getState().fetchTypes()).toBeNull()
@@ -58,7 +58,9 @@ describe('fetching the side views', () => {
 
     const gone = await scanning(createFakeApi({ getTypeBreakdown: vi.fn(async () => null) }))
     expect(await gone.store.getState().fetchTypes()).toBeNull()
+  })
 
+  it('lets a failed call reject, so a view can tell "failed" from "gone"', async () => {
     const broken = await scanning(
       createFakeApi({
         getTopFiles: vi.fn(async () => {
@@ -66,7 +68,7 @@ describe('fetching the side views', () => {
         }),
       }),
     )
-    expect(await broken.store.getState().fetchTopFiles()).toBeNull()
+    await expect(broken.store.getState().fetchTopFiles()).rejects.toThrow('scanner busy')
   })
 
   it('loadTypeIcons asks for the keys, and answers empty for no keys or a failed call', async () => {

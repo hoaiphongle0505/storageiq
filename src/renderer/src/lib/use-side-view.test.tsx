@@ -12,7 +12,14 @@ function Probe({
   extraKey?: string
 }) {
   const state = useSideView(fetch, extraKey)
-  return <p data-testid="state">{state.status === 'ready' ? state.rows.join(',') : state.status}</p>
+  return (
+    <>
+      <p data-testid="state">{state.status === 'ready' ? state.rows.join(',') : state.status}</p>
+      <button type="button" onClick={state.retry}>
+        retry
+      </button>
+    </>
+  )
 }
 
 const shown = () => screen.getByTestId('state').textContent
@@ -31,6 +38,18 @@ describe('useSideView', () => {
     const { workspace } = renderWithStores(<Probe fetch={async () => null} />)
     await act(() => workspace.getState().startScan('D:\\'))
     await waitFor(() => expect(shown()).toBe('gone'))
+  })
+
+  it('shows "error" when the call fails, and retry asks again', async () => {
+    const fetch = vi
+      .fn<() => Promise<string[] | null>>()
+      .mockRejectedValueOnce(new Error('scanner busy'))
+      .mockResolvedValue(['ok'])
+    const { workspace } = renderWithStores(<Probe fetch={fetch} />)
+    await act(() => workspace.getState().startScan('D:\\'))
+    await waitFor(() => expect(shown()).toBe('error'))
+    act(() => screen.getByRole('button', { name: 'retry' }).click())
+    await waitFor(() => expect(shown()).toBe('ok'))
   })
 
   it('asks again when the folder or the tree revision changes', async () => {

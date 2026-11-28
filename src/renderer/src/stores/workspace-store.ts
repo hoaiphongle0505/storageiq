@@ -821,31 +821,19 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
       async fetchTopFiles() {
         const { scanId, treemapRootId, mode } = get()
         if (scanId === null || treemapRootId === null) return null
-        try {
-          return await api.getTopFiles(scanId, treemapRootId, mode)
-        } catch {
-          return null
-        }
+        return await api.getTopFiles(scanId, treemapRootId, mode)
       },
 
       async fetchTypes() {
         const { scanId, treemapRootId } = get()
         if (scanId === null || treemapRootId === null) return null
-        try {
-          return await api.getTypeBreakdown(scanId, treemapRootId)
-        } catch {
-          return null
-        }
+        return await api.getTypeBreakdown(scanId, treemapRootId)
       },
 
       async fetchAges() {
         const { scanId, treemapRootId } = get()
         if (scanId === null || treemapRootId === null) return null
-        try {
-          return await api.getAgeBreakdown(scanId, treemapRootId)
-        } catch {
-          return null
-        }
+        return await api.getAgeBreakdown(scanId, treemapRootId)
       },
 
       async loadTypeIcons(typeKeys) {

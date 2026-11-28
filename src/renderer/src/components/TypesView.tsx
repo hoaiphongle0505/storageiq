@@ -16,7 +16,14 @@ import { useWorkspace } from '../stores/workspace-store-context'
 import { CopyCsvButton } from './CopyCsvButton'
 import { LARGE_ICON_MIN_DPR } from './FileIcon'
 import { PaneShell } from './PaneShell'
-import { PaneMessage, ScanningNote, ShareBar, SIDE_ROW_CLASS, SideViewTable } from './SideViewParts'
+import {
+  PaneMessage,
+  ScanningNote,
+  ShareBar,
+  SIDE_ROW_CLASS,
+  SideViewError,
+  SideViewTable,
+} from './SideViewParts'
 import { CategorySwatch } from './TreemapLegend'
 
 export const NO_TYPES_TEXT = 'There are no files in this folder.'
@@ -91,6 +98,7 @@ export function TypesView({ height }: { height: number }) {
     >
       <ScanningNote />
       {state.status === 'gone' && <PaneMessage>{GONE_MESSAGE}</PaneMessage>}
+      {state.status === 'error' && <SideViewError onRetry={state.retry} />}
       {rows !== null && rows.length === 0 && <PaneMessage>{NO_TYPES_TEXT}</PaneMessage>}
       {rows !== null && rows.length > 0 && (
         <SideViewTable label="File types in this folder" columns={COLUMNS}>

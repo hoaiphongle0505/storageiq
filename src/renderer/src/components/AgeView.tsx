@@ -6,7 +6,14 @@ import { GONE_MESSAGE } from '../stores/workspace-store'
 import { useWorkspace } from '../stores/workspace-store-context'
 import { CopyCsvButton } from './CopyCsvButton'
 import { PaneShell } from './PaneShell'
-import { PaneMessage, ScanningNote, ShareBar, SIDE_ROW_CLASS, SideViewTable } from './SideViewParts'
+import {
+  PaneMessage,
+  ScanningNote,
+  ShareBar,
+  SIDE_ROW_CLASS,
+  SideViewError,
+  SideViewTable,
+} from './SideViewParts'
 
 const COLUMNS = [
   { label: 'Age' },
@@ -38,6 +45,7 @@ export function AgeView({ height }: { height: number }) {
     >
       <ScanningNote />
       {state.status === 'gone' && <PaneMessage>{GONE_MESSAGE}</PaneMessage>}
+      {state.status === 'error' && <SideViewError onRetry={state.retry} />}
       {rows !== null && (
         <SideViewTable label="File age in this folder" columns={COLUMNS}>
           {rows.map((row) => (
