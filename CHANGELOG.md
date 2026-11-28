@@ -2,7 +2,7 @@
 
 All notable changes to StorageIQ are listed here, newest first. The format follows Keep a Changelog and the versions follow Semantic Versioning.
 
-## [Unreleased]
+## [0.3.0-beta.1] - 2026-11-28
 
 ### Added
 
