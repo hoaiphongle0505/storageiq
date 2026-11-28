@@ -4,6 +4,7 @@ import { SIZE_UNITS, type SizeUnit } from '../lib/format'
 import {
   type FluentIcon,
   IconAbout,
+  IconAge,
   IconCheckUpdates,
   IconChevronDown,
   IconDelete,
@@ -19,11 +20,13 @@ import {
   IconRefresh,
   IconReportProblem,
   IconStop,
+  IconTopFiles,
   IconTreemap,
+  IconTypes,
   IconWhatsNew,
 } from '../lib/icons'
 import { useFocusgroupFallback } from '../lib/use-focusgroup'
-import { EXPAND_ALL_LEVELS } from '../stores/workspace-store'
+import { EXPAND_ALL_LEVELS, type PaneTab } from '../stores/workspace-store'
 import { useWorkspace } from '../stores/workspace-store-context'
 import { MenuButton } from './MenuButton'
 import { OptionsGroup } from './OptionsGroup'
@@ -69,6 +72,28 @@ const MODES: Array<{ mode: SizeMode; label: string; icon: FluentIcon; title: str
   },
 ]
 
+const PANE_BUTTONS: Array<{ tab: PaneTab; label: string; icon: FluentIcon; title: string }> = [
+  { tab: 'treemap', label: 'Treemap', icon: IconTreemap, title: 'Show or hide the treemap' },
+  {
+    tab: 'top',
+    label: 'Top files',
+    icon: IconTopFiles,
+    title: 'Show or hide the largest files in the selected folder',
+  },
+  {
+    tab: 'types',
+    label: 'Types',
+    icon: IconTypes,
+    title: 'Show or hide the space each file type uses in the selected folder',
+  },
+  {
+    tab: 'age',
+    label: 'Age',
+    icon: IconAge,
+    title: 'Show or hide the space used by files of each age in the selected folder',
+  },
+]
+
 const UNIT_LABELS: Record<SizeUnit, string> = { auto: 'Auto', gb: 'GB', mb: 'MB', kb: 'KB' }
 
 /** The window's command ribbon: tabs File, Home, Scan, View, Options and Help over a toolbar of groups. */
@@ -87,6 +112,7 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
   const mode = useWorkspace((s) => s.mode)
   const unit = useWorkspace((s) => s.unit)
   const treemapVisible = useWorkspace((s) => s.treemapVisible)
+  const paneTab = useWorkspace((s) => s.paneTab)
   const stopScan = useWorkspace((s) => s.stopScan)
   const rescan = useWorkspace((s) => s.rescan)
   const setMode = useWorkspace((s) => s.setMode)
@@ -95,7 +121,7 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
   const openInExplorer = useWorkspace((s) => s.openInExplorer)
   const createFolder = useWorkspace((s) => s.createFolder)
   const deleteSelection = useWorkspace((s) => s.deleteSelection)
-  const setTreemapVisible = useWorkspace((s) => s.setTreemapVisible)
+  const togglePane = useWorkspace((s) => s.togglePane)
   const quit = useWorkspace((s) => s.quit)
   const checkForUpdates = useWorkspace((s) => s.checkForUpdates)
   const openLink = useWorkspace((s) => s.openLink)
@@ -320,14 +346,17 @@ export function Ribbon({ onAbout }: { onAbout(): void }) {
       <>
         {modeGroup}
         {unitGroup}
-        <Group label="Treemap">
-          <RibbonButton
-            label="Treemap"
-            icon={IconTreemap}
-            pressed={treemapVisible}
-            title="Show or hide the treemap"
-            onClick={() => setTreemapVisible(!treemapVisible)}
-          />
+        <Group label="Pane">
+          {PANE_BUTTONS.map((entry) => (
+            <RibbonButton
+              key={entry.tab}
+              label={entry.label}
+              icon={entry.icon}
+              pressed={treemapVisible && paneTab === entry.tab}
+              title={entry.title}
+              onClick={() => togglePane(entry.tab)}
+            />
+          ))}
         </Group>
       </>
     ),

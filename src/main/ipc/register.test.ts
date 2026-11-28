@@ -4,6 +4,7 @@ import type { AppInfo } from '@shared/ipc-contract'
 import {
   childrenArgs,
   contextMenuArgs,
+  copyTextArgs,
   deleteArgs,
   expandArgs,
   iconNodesArgs,
@@ -16,6 +17,7 @@ import {
   oneString,
   scanNodeArgs,
   scanNodesArgs,
+  topFilesArgs,
   treemapArgs,
 } from './parse-args'
 import {
@@ -52,6 +54,9 @@ function createHandlers(overrides: Partial<IpcHandlerMap> = {}): IpcHandlerMap {
     'tree:expand-ids': { parseArgs: expandArgs, handle: () => [] },
     'tree:refresh': { parseArgs: scanNodeArgs, handle: () => null },
     'treemap:layout': { parseArgs: treemapArgs, handle: () => null },
+    'side:top-files': { parseArgs: topFilesArgs, handle: () => null },
+    'side:types': { parseArgs: scanNodeArgs, handle: () => null },
+    'side:age': { parseArgs: scanNodeArgs, handle: () => null },
     'icons:for-nodes': {
       parseArgs: iconNodesArgs,
       handle: () => ({ keys: {}, images: {}, pending: [] }),
@@ -98,6 +103,7 @@ function createHandlers(overrides: Partial<IpcHandlerMap> = {}): IpcHandlerMap {
     'shell:delete': { parseArgs: deleteArgs, handle: () => ({ kind: 'dismissed' }) },
     'folder:create': { parseArgs: scanNodeArgs, handle: () => ({ parentId: 'd0', name: 'x' }) },
     'clipboard:copy-path': { parseArgs: scanNodesArgs, handle: () => undefined },
+    'clipboard:copy-text': { parseArgs: copyTextArgs, handle: () => undefined },
     ...overrides,
   }
 }
@@ -143,6 +149,7 @@ describe('registerIpcHandlers', () => {
       'app:open-notices',
       'app:quit',
       'clipboard:copy-path',
+      'clipboard:copy-text',
       'dialog:select-folder',
       'drive:info',
       'drives:list',
@@ -161,6 +168,9 @@ describe('registerIpcHandlers', () => {
       'shell:context-menu',
       'shell:delete',
       'shell:open-in-explorer',
+      'side:age',
+      'side:top-files',
+      'side:types',
       'tree:children',
       'tree:expand-ids',
       'tree:node',

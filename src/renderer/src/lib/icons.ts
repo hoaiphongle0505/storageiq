@@ -2,6 +2,7 @@ import {
   ArrowCircleDown24Regular,
   ArrowSync24Color,
   Bug24Regular,
+  CalendarClock24Regular,
   CheckmarkCircle16Color,
   ChevronDown12Regular,
   ChevronRight16Regular,
@@ -13,6 +14,7 @@ import {
   Delete24Regular,
   Dismiss16Regular,
   Document16Regular,
+  DocumentBulletList24Regular,
   DocumentMultiple16Regular,
   DocumentMultiple24Regular,
   DocumentText20Color,
@@ -33,6 +35,7 @@ import {
   SignOut24Regular,
   Sparkle24Regular,
   Stop24Regular,
+  TagMultiple24Regular,
   TextBulletListTree24Regular,
   Usb20Regular,
   Warning16Color,
@@ -98,6 +101,9 @@ export const IconReportProblem = Bug24Regular
 export const IconCheckUpdates = ArrowCircleDown24Regular
 export const IconWhatsNew = Sparkle24Regular
 export const IconTreemap = DataTreemap24Regular
+export const IconTopFiles = DocumentBulletList24Regular
+export const IconTypes = TagMultiple24Regular
+export const IconAge = CalendarClock24Regular
 
 // Menus (20)
 export const IconDrive = HardDrive20Regular

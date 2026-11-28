@@ -40,6 +40,25 @@ describe('tree query handlers', () => {
     expect(() => handlers['tree:expand-ids'].parseArgs([SCAN, 'd0'])).toThrow(
       InvalidIpcArgumentsError,
     )
+    expect(() => handlers['side:top-files'].parseArgs([SCAN, 'd0', 'huge'])).toThrow(
+      InvalidIpcArgumentsError,
+    )
+    expect(() => handlers['side:types'].parseArgs([SCAN, '../etc'])).toThrow(
+      InvalidIpcArgumentsError,
+    )
+    expect(() => handlers['side:age'].parseArgs([SCAN])).toThrow(InvalidIpcArgumentsError)
+  })
+
+  it('forward the side-view queries to the scanner unchanged', async () => {
+    const { handlers, queries } = setup()
+    await handlers['side:top-files'].handle(event, SCAN, 'd1', 'allocated')
+    await handlers['side:types'].handle(event, SCAN, 'd1')
+    await handlers['side:age'].handle(event, SCAN, 'f7')
+    expect(queries).toEqual([
+      { kind: 'top-files', scanId: SCAN, nodeId: 'd1', mode: 'allocated' },
+      { kind: 'types', scanId: SCAN, nodeId: 'd1' },
+      { kind: 'age', scanId: SCAN, nodeId: 'f7' },
+    ])
   })
 
   it('forward each query to the scanner unchanged', async () => {

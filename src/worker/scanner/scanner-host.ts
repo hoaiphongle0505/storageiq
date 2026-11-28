@@ -18,6 +18,7 @@ import {
   resolveNode,
 } from './tree-queries'
 import { TreeStore } from './tree-store'
+import { SideViews } from './side-views'
 import { treemapLayout } from './treemap'
 import { walk, type DirectoryLister, type WalkSink } from './walk'
 import { WalkerStartupError } from './walker-pool'
@@ -40,6 +41,8 @@ export interface ScannerHostDeps {
   ): Promise<{ walkers: number }>
   post(message: ScannerMessage): void
   now(): number
+  /** Milliseconds since the epoch, for the Age view (`now()` may be a monotonic clock). */
+  wallClock?(): number
   /** Calls `tick` every `intervalMs` until the returned function is called. */
   startTicker(tick: () => void, intervalMs: number): () => void
 }
@@ -114,6 +117,16 @@ function parseQuery(value: unknown): ScannerQuery | null {
       if (!int(depth) || !int(width) || !int(height)) return null
       return { kind: 'treemap', scanId, nodeId, mode: mode as SizeMode, depth, width, height }
     }
+    case 'top-files': {
+      const { mode } = value
+      return str(nodeId) && SIZE_MODES.includes(mode as SizeMode)
+        ? { kind: 'top-files', scanId, nodeId, mode: mode as SizeMode }
+        : null
+    }
+    case 'types':
+      return str(nodeId) ? { kind: 'types', scanId, nodeId } : null
+    case 'age':
+      return str(nodeId) ? { kind: 'age', scanId, nodeId } : null
     case 'paths': {
       const ids = value['nodeIds']
       if (!Array.isArray(ids) || ids.length > MAX_PATH_QUERY_IDS || !ids.every(str)) return null
@@ -150,6 +163,7 @@ export function createScannerHost(deps: ScannerHostDeps): ScannerHost {
   let current: RunningScan | null = null
   let store: TreeStore | null = null
   let sorter: ChildSorter | null = null
+  let sideViews: SideViews | null = null
   let storeScanId: string | null = null
   /** Refreshes run one after another, never during a scan of the same tree. */
   let refreshes: Promise<unknown> = Promise.resolve()
@@ -236,7 +250,7 @@ export function createScannerHost(deps: ScannerHostDeps): ScannerHost {
       refreshes = next.catch(() => undefined)
       return next
     }
-    if (store === null || sorter === null || storeScanId !== query.scanId) {
+    if (store === null || sorter === null || sideViews === null || storeScanId !== query.scanId) {
       return query.kind === 'expand'
         ? []
         : query.kind === 'paths'
@@ -269,6 +283,12 @@ export function createScannerHost(deps: ScannerHostDeps): ScannerHost {
           query.width,
           query.height,
         )
+      case 'top-files':
+        return sideViews.topFiles(query.nodeId, query.mode)
+      case 'types':
+        return sideViews.types(query.nodeId)
+      case 'age':
+        return sideViews.age(query.nodeId)
       case 'totals':
         return store.totals()
     }
@@ -298,6 +318,7 @@ export function createScannerHost(deps: ScannerHostDeps): ScannerHost {
       // The previous tree is dropped now, so two full trees are never held at once.
       store = new TreeStore(request.root, request.volume.clusterBytes, request.volume.freeBytes)
       sorter = new ChildSorter(store)
+      sideViews = new SideViews(store, deps.wallClock)
       storeScanId = request.scanId
       const controller = new AbortController()
       const scan: RunningScan = { scanId: request.scanId, controller, finished: Promise.resolve() }

@@ -1,4 +1,4 @@
-import type { AboutLink } from '@shared/ipc-contract'
+import { type AboutLink, MAX_CLIPBOARD_TEXT } from '@shared/ipc-contract'
 import {
   MAX_PAGE_ROWS,
   MAX_TREEMAP_DEPTH,
@@ -160,6 +160,21 @@ export function treemapArgs(
     intArg(args[4], 1, MAX_TREEMAP_SIDE, 'width'),
     intArg(args[5], 1, MAX_TREEMAP_SIDE, 'height'),
   ]
+}
+
+/** `side:top-files`: `[scanId, nodeId, mode]` */
+export function topFilesArgs(args: readonly unknown[]): [string, NodeId, SizeMode] {
+  expectCount(args, 3)
+  return [scanIdArg(args[0]), nodeIdArg(args[1]), sizeModeArg(args[2])]
+}
+
+/** `clipboard:copy-text`: one string of 1 to `MAX_CLIPBOARD_TEXT` characters. */
+export function copyTextArgs(args: readonly unknown[]): [string] {
+  const [text] = oneString(args)
+  if (text.length < 1 || text.length > MAX_CLIPBOARD_TEXT) {
+    throw new InvalidIpcArgumentsError(`expected 1 to ${MAX_CLIPBOARD_TEXT} characters of text`)
+  }
+  return [text]
 }
 
 /** Most rows one Explorer action (menu, copy paths) takes. */

@@ -6,7 +6,7 @@ import { Ribbon } from './components/Ribbon'
 import { Splitter } from './components/Splitter'
 import { StatusBar } from './components/StatusBar'
 import { TreeGrid } from './components/TreeGrid'
-import { TreemapPane } from './components/TreemapPane'
+import { PaneView } from './components/PaneView'
 import { UpdateBanner } from './components/UpdateBanner'
 import { WhatsNewDialog } from './components/WhatsNewDialog'
 import { useAppStore } from './stores/app-store-context'
@@ -79,7 +79,7 @@ export function App() {
               max={treemapMax}
               onChange={setTreemapHeight}
             />
-            <TreemapPane height={shownHeight} />
+            <PaneView height={shownHeight} />
           </>
         )}
       </main>

@@ -1,13 +1,27 @@
 import { type NodeId, ROOT_NODE_ID, type TreeNodeDetails } from '@shared/tree-types'
 import type { ScanVolume } from '@shared/scanner-protocol'
 import type { ScanService } from '../scan/scan-service'
-import { childrenArgs, expandArgs, nodeArgs, scanNodeArgs, treemapArgs } from './parse-args'
+import {
+  childrenArgs,
+  expandArgs,
+  nodeArgs,
+  scanNodeArgs,
+  topFilesArgs,
+  treemapArgs,
+} from './parse-args'
 import type { IpcHandlerMap } from './register'
 import type { SendEvent } from './send-event'
 
 export type TreeHandlers = Pick<
   IpcHandlerMap,
-  'tree:children' | 'tree:node' | 'tree:expand-ids' | 'tree:refresh' | 'treemap:layout'
+  | 'tree:children'
+  | 'tree:node'
+  | 'tree:expand-ids'
+  | 'tree:refresh'
+  | 'treemap:layout'
+  | 'side:top-files'
+  | 'side:types'
+  | 'side:age'
 >
 
 export const NOT_IN_SCAN_MESSAGE = 'That item is not part of the current scan.'
@@ -112,6 +126,19 @@ export function createTreeHandlers(deps: {
       parseArgs: treemapArgs,
       handle: (_event, scanId, nodeId, mode, depth, width, height) =>
         scanService.query({ kind: 'treemap', scanId, nodeId, mode, depth, width, height }),
+    },
+    'side:top-files': {
+      parseArgs: topFilesArgs,
+      handle: (_event, scanId, nodeId, mode) =>
+        scanService.query({ kind: 'top-files', scanId, nodeId, mode }),
+    },
+    'side:types': {
+      parseArgs: scanNodeArgs,
+      handle: (_event, scanId, nodeId) => scanService.query({ kind: 'types', scanId, nodeId }),
+    },
+    'side:age': {
+      parseArgs: scanNodeArgs,
+      handle: (_event, scanId, nodeId) => scanService.query({ kind: 'age', scanId, nodeId }),
     },
   }
 }

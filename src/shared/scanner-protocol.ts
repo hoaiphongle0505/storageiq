@@ -1,14 +1,17 @@
 import type { ScanDone, ScanFailed, ScanProgress } from './scan-types'
 import type {
+  AgeRow,
   NodeId,
   SizeMode,
   SortDir,
   SortKey,
+  TopFileRow,
   TreemapLayout,
   TreeNodeDetails,
   TreeNodePath,
   TreePage,
   TreeTotals,
+  TypeRow,
 } from './tree-types'
 
 /** Name of the scanner utilityProcess; it is the `name` in `app.getAppMetrics()`. */
@@ -44,6 +47,10 @@ export type ScannerQuery =
       width: number
       height: number
     }
+  /** The biggest files below a folder, ranked by the Mode (see `rankByOf`). */
+  | { kind: 'top-files'; scanId: string; nodeId: NodeId; mode: SizeMode }
+  | { kind: 'types'; scanId: string; nodeId: NodeId }
+  | { kind: 'age'; scanId: string; nodeId: NodeId }
   | { kind: 'refresh'; scanId: string; nodeId: NodeId }
   | { kind: 'totals'; scanId: string }
 
@@ -54,6 +61,9 @@ export interface ScannerQueryResults {
   expand: NodeId[]
   paths: Array<TreeNodePath | null>
   treemap: TreemapLayout | null
+  'top-files': TopFileRow[] | null
+  types: TypeRow[] | null
+  age: AgeRow[] | null
   refresh: TreeNodeDetails | null
   totals: TreeTotals | null
 }

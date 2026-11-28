@@ -1,14 +1,16 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
-import type {
-  AboutLink,
-  ChangelogEntry,
-  ContextMenuOutcome,
-  LaunchRequest,
-  OptionsChangeResult,
-  OptionsState,
-  ReleaseNotes,
-  StorageIQApi,
-  UpdateState,
+import {
+  type AboutLink,
+  type ChangelogEntry,
+  type ContextMenuOutcome,
+  type IconImage,
+  type LaunchRequest,
+  MAX_CLIPBOARD_TEXT,
+  type OptionsChangeResult,
+  type OptionsState,
+  type ReleaseNotes,
+  type StorageIQApi,
+  type UpdateState,
 } from '@shared/ipc-contract'
 import type {
   DriveDetails,
@@ -26,12 +28,15 @@ import {
   MAX_TREEMAP_DEPTH,
   modeSortKey,
   ROOT_NODE_ID,
+  type AgeRow,
   type NodeId,
   type SizeMode,
   type SortDir,
   type SortKey,
+  type TopFileRow,
   type TreeChanged,
   type TreemapLayout,
+  type TypeRow,
 } from '@shared/tree-types'
 import type { SizeUnit } from '../lib/format'
 import { dropDescendants, type Selection, single } from '../lib/selection'
@@ -50,6 +55,9 @@ export type ScanPhase = 'empty' | 'scanning' | 'done' | 'canceled' | 'failed'
 export type ColumnId = 'name' | 'size' | 'allocated' | 'files' | 'folders' | 'percent' | 'modified'
 
 export type LoadStatus = 'idle' | 'loading' | 'ready' | 'error'
+
+/** The views of the bottom pane: the treemap and the three side views. */
+export type PaneTab = 'treemap' | 'top' | 'types' | 'age'
 
 export interface ScanTotals {
   files: number
@@ -75,6 +83,7 @@ export const GONE_MESSAGE = 'That item no longer exists. The list was refreshed.
 export const BUSY_MESSAGE = 'Windows is still working on earlier actions. Try again in a moment.'
 export const BIN_MIXED_MESSAGE = 'Select the Recycle Bin on its own to empty it.'
 export const TOO_MANY_MESSAGE = 'Too many items selected (the limit is 1,000).'
+export const CSV_TOO_LARGE_MESSAGE = 'Too many rows to copy.'
 /** Rows one Explorer action takes (the same limit as main). */
 export const MAX_ACTION_ITEMS = 1000
 /** A selection larger than this is not re-checked against the scanner; it shrinks to the active row. */
@@ -143,7 +152,10 @@ export interface WorkspaceState {
   scrollTarget: { id: NodeId; seq: number } | null
   /** Bumps whenever the scanner's tree may have changed; loaded chunks older than it reload. */
   revision: number
+  /** Whether the bottom pane (the treemap or a side view) is shown. */
   treemapVisible: boolean
+  /** The view the bottom pane shows. */
+  paneTab: PaneTab
   treemapDepth: number
   /** The folder the treemap shows. */
   treemapRootId: NodeId | null
@@ -196,8 +208,22 @@ export interface WorkspaceState {
   deleteSelection(permanent: boolean): Promise<void>
   /** Lays out the treemap of `treemapRootId` for a canvas of `width` × `height` CSS px. */
   fetchTreemap(width: number, height: number): Promise<TreemapLayout | null>
+  /** The biggest files below `treemapRootId`, ranked by the Mode; null when it is gone. */
+  fetchTopFiles(): Promise<TopFileRow[] | null>
+  /** Bytes per file extension below `treemapRootId`; null when it is gone. */
+  fetchTypes(): Promise<TypeRow[] | null>
+  /** Bytes per modification-age bucket below `treemapRootId`; null when it is gone. */
+  fetchAges(): Promise<AgeRow[] | null>
+  /** Windows' icons for file type keys (`ext:jpg`, `file`); empty when the call fails. */
+  loadTypeIcons(typeKeys: string[]): Promise<Record<string, IconImage>>
+  /** Puts a list view's CSV on the clipboard and announces "Copied N rows." */
+  copyCsv(csv: string, rows: number): Promise<void>
   setTreemapDepth(depth: number): void
   setTreemapVisible(visible: boolean): void
+  /** Shows another view in the bottom pane (and the pane itself when it was hidden). */
+  setPaneTab(tab: PaneTab): void
+  /** The ribbon's Pane buttons: show that view, or hide the pane when it already shows it. */
+  togglePane(tab: PaneTab): void
   dismissBanner(): void
   /** A validated `--scan` request from main: scans now, or asks first while a scan runs. */
   receiveLaunchRequest(request: LaunchRequest): void
@@ -458,6 +484,7 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
       scrollTarget: null,
       revision: 0,
       treemapVisible: true,
+      paneTab: 'treemap',
       treemapDepth: DEFAULT_TREEMAP_DEPTH,
       treemapRootId: null,
       banner: null,
@@ -791,12 +818,74 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
         }
       },
 
+      async fetchTopFiles() {
+        const { scanId, treemapRootId, mode } = get()
+        if (scanId === null || treemapRootId === null) return null
+        try {
+          return await api.getTopFiles(scanId, treemapRootId, mode)
+        } catch {
+          return null
+        }
+      },
+
+      async fetchTypes() {
+        const { scanId, treemapRootId } = get()
+        if (scanId === null || treemapRootId === null) return null
+        try {
+          return await api.getTypeBreakdown(scanId, treemapRootId)
+        } catch {
+          return null
+        }
+      },
+
+      async fetchAges() {
+        const { scanId, treemapRootId } = get()
+        if (scanId === null || treemapRootId === null) return null
+        try {
+          return await api.getAgeBreakdown(scanId, treemapRootId)
+        } catch {
+          return null
+        }
+      },
+
+      async loadTypeIcons(typeKeys) {
+        if (typeKeys.length === 0) return {}
+        try {
+          return await api.getTypeIcons(typeKeys)
+        } catch {
+          return {}
+        }
+      },
+
+      async copyCsv(csv, rows) {
+        if (csv.length > MAX_CLIPBOARD_TEXT) {
+          set({ announcement: CSV_TOO_LARGE_MESSAGE })
+          return
+        }
+        try {
+          await api.copyText(csv)
+          set({ announcement: `Copied ${rows} ${rows === 1 ? 'row' : 'rows'}.` })
+        } catch (error) {
+          fail(error)
+        }
+      },
+
       setTreemapDepth(depth) {
         set({ treemapDepth: Math.max(0, Math.min(MAX_TREEMAP_DEPTH, Math.round(depth))) })
       },
 
       setTreemapVisible(visible) {
         set({ treemapVisible: visible })
+      },
+
+      setPaneTab(tab) {
+        set({ paneTab: tab, treemapVisible: true })
+      },
+
+      togglePane(tab) {
+        const { treemapVisible, paneTab } = get()
+        if (treemapVisible && paneTab === tab) set({ treemapVisible: false })
+        else set({ paneTab: tab, treemapVisible: true })
       },
 
       dismissBanner() {

@@ -1,11 +1,10 @@
 import { type MouseEvent, useEffect, useRef, useState } from 'react'
 import type { SizeMode, TreemapLayout } from '@shared/tree-types'
-import { rowName } from '../lib/format'
-import { IconDismiss } from '../lib/icons'
 import { drawTreemap, hitTest, readTreemapColors } from '../lib/treemap-draw'
+import { usePaneFolderName } from '../lib/use-pane-folder'
 import { useWorkspace } from '../stores/workspace-store-context'
-import { BUTTON_VARIANT_CLASSES } from './Button'
 import { LevelBar } from './LevelBar'
+import { PaneShell } from './PaneShell'
 import { TreemapLegend } from './TreemapLegend'
 
 interface Size {
@@ -34,11 +33,9 @@ export function TreemapPane({ height }: { height: number }) {
   const depth = useWorkspace((s) => s.treemapDepth)
   const revision = useWorkspace((s) => s.revision)
   const selectedId = useWorkspace((s) => s.selectedId)
-  const lists = useWorkspace((s) => s.lists)
   const fetchTreemap = useWorkspace((s) => s.fetchTreemap)
   const reveal = useWorkspace((s) => s.reveal)
   const drillInto = useWorkspace((s) => s.drillInto)
-  const setTreemapVisible = useWorkspace((s) => s.setTreemapVisible)
 
   const wrapperRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -139,44 +136,11 @@ export function TreemapPane({ height }: { height: number }) {
   const clickable =
     shown !== null && shown.scanId === scanId && shown.layout.nodeId === treemapRootId
 
-  const rootRow =
-    treemapRootId === null
-      ? null
-      : (lists[treemapRootId]?.parent ??
-        Object.values(lists)
-          .flatMap((list) => Object.values(list.chunks).flatMap((chunk) => chunk.rows))
-          .find((row) => row.id === treemapRootId) ??
-        null)
-  const folderName = rootRow === null ? null : rowName(rootRow)
+  const folderName = usePaneFolderName()
   const title = folderName === null ? 'Treemap' : `Treemap of ${folderName}`
 
   return (
-    <section
-      aria-label="Treemap"
-      className="flex shrink-0 flex-col border-t border-line bg-panel"
-      style={{ height }}
-    >
-      <div className="flex h-7 shrink-0 items-center justify-between gap-2 px-3 text-[13px] leading-[18px]">
-        <span className="min-w-0 truncate text-ink-muted">
-          {folderName === null ? (
-            'Treemap'
-          ) : (
-            <>
-              Treemap of{' '}
-              <strong className="text-[15px] leading-5 font-semibold text-ink">{folderName}</strong>
-            </>
-          )}
-        </span>
-        <button
-          type="button"
-          aria-label="Hide treemap"
-          title="Hide treemap"
-          onClick={() => setTreemapVisible(false)}
-          className={`flex size-6 items-center justify-center rounded-control ${BUTTON_VARIANT_CLASSES.quiet} transition-colors duration-[120ms]`}
-        >
-          <IconDismiss aria-hidden="true" focusable={false} />
-        </button>
-      </div>
+    <PaneShell height={height} label="Treemap" hideLabel="Hide treemap">
       <div ref={wrapperRef} className="relative min-h-0 flex-1 bg-(--treemap-edge)">
         {failed && (
           <p
@@ -210,6 +174,6 @@ export function TreemapPane({ height }: { height: number }) {
       </div>
       <TreemapLegend layout={clickable ? layout : null} />
       <LevelBar />
-    </section>
+    </PaneShell>
   )
 }

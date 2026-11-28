@@ -315,6 +315,41 @@ describe('createScannerHost', () => {
     expect(layout).toMatchObject({ nodeId: 'd0', width: 100, height: 100 })
   })
 
+  it('answers the three side-view queries and null for a node that does not exist', async () => {
+    const t = setup({}, tree(), { wallClock: () => 1_000_000 })
+    t.host.handle({ type: 'start', scanId: 's1', root: ROOT, volume: VOLUME })
+    await t.host.idle()
+
+    const top = (await t.query({
+      kind: 'top-files',
+      scanId: 's1',
+      nodeId: 'd0',
+      mode: 'size',
+    })) as Array<{ name: string }> | null
+    expect(top?.map((row) => row.name)).toEqual(['a.jpg', 'b.jpg', 'c.mp3', 'notes.txt'])
+    const types = (await t.query({ kind: 'types', scanId: 's1', nodeId: 'd0' })) as Array<{
+      ext: string
+      size: number
+    }> | null
+    expect(types?.map((row) => [row.ext, row.size])).toEqual([
+      ['jpg', 500],
+      ['mp3', 100],
+      ['txt', 5],
+    ])
+    const age = (await t.query({ kind: 'age', scanId: 's1', nodeId: 'd0' })) as Array<{
+      id: string
+      files: number
+    }> | null
+    expect(age).toHaveLength(8)
+    // The fake files were modified within the first second of 1970: that is not a usable date.
+    expect(age?.find((row) => row.id === 'unknown')?.files).toBe(4)
+    expect(await t.query({ kind: 'types', scanId: 's1', nodeId: 'd99' })).toBeNull()
+    expect(await t.query({ kind: 'age', scanId: 'old', nodeId: 'd0' })).toBeNull()
+    expect(
+      await t.query({ kind: 'top-files', scanId: 'old', nodeId: 'd0', mode: 'size' }),
+    ).toBeNull()
+  })
+
   it('answers queries for another scan id with nothing', async () => {
     const t = setup()
     t.host.handle({ type: 'start', scanId: 's1', root: ROOT, volume: VOLUME })
@@ -469,6 +504,14 @@ describe('parseScannerRequest', () => {
     { type: 'cancel' },
     { type: 'delete', scanId: 's1' },
     { type: 'query', requestId: 1, query: { kind: 'drop', scanId: 's1' } },
+    { type: 'query', requestId: 1, query: { kind: 'top-files', scanId: 's1', nodeId: 'd0' } },
+    {
+      type: 'query',
+      requestId: 1,
+      query: { kind: 'top-files', scanId: 's1', nodeId: 'd0', mode: 'huge' },
+    },
+    { type: 'query', requestId: 1, query: { kind: 'types', scanId: 's1', nodeId: 7 } },
+    { type: 'query', requestId: 1, query: { kind: 'age', scanId: 's1' } },
     { type: 'query', requestId: 'x', query: { kind: 'totals', scanId: 's1' } },
     {
       type: 'query',

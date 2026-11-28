@@ -2,8 +2,8 @@
 
 Living document owned by the technical lead. Update it whenever a phase completes: tick tasks, record decisions, and name the next phase.
 
-**Current phase:** Phase 3 — Analyzer Workspace
-**Last updated:** 2026-11-19
+**Current phase:** Phase 4 — Side Views
+**Last updated:** 2026-11-28
 
 ---
 
@@ -110,15 +110,15 @@ StorageIQ/
 
 Roadmap v3, approved 2026-11-19 ([spec](superpowers/specs/2026-11-19-phase-3-workspace-design.md) §2). It supersedes the phase order of roadmap v2; the Phase 2a scanner, IPC and drive code stay.
 
-| #   | Phase              | Status                                                                      | Exit criterion                                                                                                                                                  |
-| --- | ------------------ | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Foundation         | **Done**                                                                    | Secure app shell, typed IPC, tests, installer, CI                                                                                                               |
-| 2a  | Core scanner       | **Done** (merged in PR #1)                                                  | Scans a drive in a utilityProcess with live progress, cancel and unreadable folders listed                                                                      |
-| 3   | Analyzer workspace | **In progress** — [plan](superpowers/plans/2026-11-19-phase-3-workspace.md) | Ribbon, Select menu, virtualized column tree, file-type treemap with legend (Level 0–5, hideable), Explorer context menu, status bar; 1M-file perf limits in CI |
-| 4   | Side views         | Not started                                                                 | Top files, file types, file age                                                                                                                                 |
-| 5   | Charts and export  | Not started                                                                 | Pie and bar charts; CSV and Excel export                                                                                                                        |
-| 6   | Actions            | Not started                                                                 | Delete to Recycle Bin with confirmation, search — **MVP complete; first GitHub release**                                                                        |
-| 7+  | Post-MVP           | Not started                                                                 | Honest totals (cloud-only files, hardlinks, real size of locked system files, reconciliation), duplicates, scan history, plain-language explanations, AI        |
+| #   | Phase              | Status                                                                       | Exit criterion                                                                                                                                                  |
+| --- | ------------------ | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Foundation         | **Done**                                                                     | Secure app shell, typed IPC, tests, installer, CI                                                                                                               |
+| 2a  | Core scanner       | **Done** (merged in PR #1)                                                   | Scans a drive in a utilityProcess with live progress, cancel and unreadable folders listed                                                                      |
+| 3   | Analyzer workspace | **In progress** — [plan](superpowers/plans/2026-11-19-phase-3-workspace.md)  | Ribbon, Select menu, virtualized column tree, file-type treemap with legend (Level 0–5, hideable), Explorer context menu, status bar; 1M-file perf limits in CI |
+| 4   | Side views         | **In progress** — [plan](superpowers/plans/2026-11-28-phase-4-side-views.md) | Top files, file types, file age                                                                                                                                 |
+| 5   | Charts and export  | Not started                                                                  | Pie and bar charts; CSV and Excel export                                                                                                                        |
+| 6   | Actions            | Not started                                                                  | Delete to Recycle Bin with confirmation, search — **MVP complete; first GitHub release**                                                                        |
+| 7+  | Post-MVP           | Not started                                                                  | Honest totals (cloud-only files, hardlinks, real size of locked system files, reconciliation), duplicates, scan history, plain-language explanations, AI        |
 
 ### Phase 1 — Project Foundation (task checklist)
 
@@ -183,7 +183,7 @@ These came from the Phase 1 reviews. The Phase 2a plan must schedule each one; n
 6. Store test: `loadAppInfo` retries after an error. — **done (Task 6)**
 7. Report renderer bundle size (572 kB today), installer size and idle RAM in CI. Make the CI build step explicit rather than relying on the E2E build. — **done (Task 7)**
 8. Cosmetic: the busy (`aria-disabled`) button still shows its hover colour. — **done (Tasks 6, 7)**
-9. Phase 4: copy CSV through main's `clipboard` over IPC, because the renderer's clipboard permission is denied. — **still scheduled for Phase 4**
+9. Phase 4: copy CSV through main's `clipboard` over IPC, because the renderer's clipboard permission is denied. — **done (Phase 4, Tasks 3 and 6)**
 
 Phase 1 installer: 115.7 MB, unsigned, default icon.
 
@@ -234,6 +234,22 @@ Decisions recorded with the plan:
 - Icons: tree rows show Windows' own shell icons, drawn by a dedicated icon worker thread (`SHGetFileInfoW`, never on the UI thread) and cached; the ribbon, menus, banners and status bar use Fluent UI System Icons (`@fluentui/react-icons` 2.0.345, MIT, a dev dependency bundled by Vite). All Fluent icons are imported in one module, `src/renderer/src/lib/icons.ts`.
 - The right-click menu is the real Windows Explorer menu, built from main with koffi (`SHParseDisplayName`, `SHBindToParent`, `IShellFolder::GetUIObjectOf`, `IContextMenu`/`2`/`3`, `TrackPopupMenuEx`, `InvokeCommand`). Explorer's own commands, including Delete, therefore work from StorageIQ; StorageIQ's own code still never deletes (Phase 6).
 - Tree and treemap requests name rows by scanner ids (`d…`, `g…`, `f…`); main resolves every path that reaches the shell or the clipboard from the scanner's tree, never from the renderer.
+
+### Phase 4 — Side Views (task checklist)
+
+Spec: [Phase 4 — Side Views design](superpowers/specs/2026-11-28-phase-4-side-views-design.md). Plan: [Phase 4 plan](superpowers/plans/2026-11-28-phase-4-side-views.md).
+
+- [x] T1 Scanner `side-views.ts`: top files (heap), bytes per extension, bytes per age bucket, cached per tree version
+- [x] T2 Scanner queries `top-files`, `types`, `age`; 1M-file perf cases (limit 300 ms)
+- [x] T3 Main channels `side:top-files`, `side:types`, `side:age`, `clipboard:copy-text` (4 MiB), preload bridge
+- [x] T4 Workspace store: `paneTab`, side-view fetching, `copyCsv`
+- [x] T5 Pane frame: Treemap | Top files | Types | Age tabs, ribbon "Pane" group
+- [x] T6 CSV text (RFC 4180, raw bytes, ISO 8601 UTC) and the Copy as CSV button
+- [x] T7 Top files view (virtualized, selection, keyboard, Explorer menu, reveal in tree)
+- [x] T8 Types and Age views
+- [x] T9 E2E (tabs, top row, types and age, Copy as CSV read from main's clipboard), docs
+
+Decisions: see the plan's "Decisions made while planning". Not in this phase: charts (Phase 5), filtering Top files by clicking a Types or Age row, explanations of known space hogs, the future date in the Last Modified roll-up.
 
 ### Release checklist (before first public release, not tied to a phase)
 
