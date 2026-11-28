@@ -4,6 +4,8 @@ import { totalSize } from '../lib/side-view-model'
 import { useSideView } from '../lib/use-side-view'
 import { GONE_MESSAGE } from '../stores/workspace-store'
 import { useWorkspace } from '../stores/workspace-store-context'
+import { AgeChart } from './AgeChart'
+import { ChartLayout, ChartToggle } from './ChartParts'
 import { CopyCsvButton } from './CopyCsvButton'
 import { PaneShell } from './PaneShell'
 import {
@@ -40,32 +42,37 @@ export function AgeView({ height }: { height: number }) {
       height={height}
       label="Age"
       actions={
-        <CopyCsvButton build={() => ageCsv(rows ?? [])} rows={rows === null ? 0 : rows.length} />
+        <>
+          <ChartToggle />
+          <CopyCsvButton build={() => ageCsv(rows ?? [])} rows={rows === null ? 0 : rows.length} />
+        </>
       }
     >
       <ScanningNote />
       {state.status === 'gone' && <PaneMessage>{GONE_MESSAGE}</PaneMessage>}
       {state.status === 'error' && <SideViewError onRetry={state.retry} />}
       {rows !== null && (
-        <SideViewTable label="File age in this folder" columns={COLUMNS}>
-          {rows.map((row) => (
-            <tr key={row.id} className="hover:bg-row-hover">
-              <th scope="row" className={`${SIDE_ROW_CLASS} px-3 text-left font-normal`}>
-                {row.label}
-              </th>
-              <td className="px-3 text-right" title={`${formatCount(row.size)} bytes`}>
-                {formatSize(row.size, unit)}
-              </td>
-              <td className="px-3 text-right" title={`${formatCount(row.allocated)} bytes`}>
-                {formatSize(row.allocated, unit)}
-              </td>
-              <td className="px-3 text-right">{formatCount(row.files)}</td>
-              <td className="px-3">
-                <ShareBar share={percentOf(row.size, total)} />
-              </td>
-            </tr>
-          ))}
-        </SideViewTable>
+        <ChartLayout chart={<AgeChart rows={rows} />}>
+          <SideViewTable label="File age in this folder" columns={COLUMNS}>
+            {rows.map((row) => (
+              <tr key={row.id} className="hover:bg-row-hover">
+                <th scope="row" className={`${SIDE_ROW_CLASS} px-3 text-left font-normal`}>
+                  {row.label}
+                </th>
+                <td className="px-3 text-right" title={`${formatCount(row.size)} bytes`}>
+                  {formatSize(row.size, unit)}
+                </td>
+                <td className="px-3 text-right" title={`${formatCount(row.allocated)} bytes`}>
+                  {formatSize(row.allocated, unit)}
+                </td>
+                <td className="px-3 text-right">{formatCount(row.files)}</td>
+                <td className="px-3">
+                  <ShareBar share={percentOf(row.size, total)} />
+                </td>
+              </tr>
+            ))}
+          </SideViewTable>
+        </ChartLayout>
       )}
     </PaneShell>
   )

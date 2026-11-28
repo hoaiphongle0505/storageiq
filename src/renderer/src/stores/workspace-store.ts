@@ -172,6 +172,8 @@ export interface WorkspaceState {
   treemapVisible: boolean
   /** The view the bottom pane shows. */
   paneTab: PaneTab
+  /** Whether the Types and Age views show their chart (in memory, like `paneTab`). */
+  chartVisible: boolean
   treemapDepth: number
   /** The folder the treemap shows. */
   treemapRootId: NodeId | null
@@ -249,6 +251,8 @@ export interface WorkspaceState {
   setPaneTab(tab: PaneTab): void
   /** The ribbon's Pane buttons: show that view, or hide the pane when it already shows it. */
   togglePane(tab: PaneTab): void
+  /** The "Chart" button of the Types and Age views. */
+  toggleChart(): void
   dismissBanner(): void
   /** A validated `--scan` request from main: scans now, or asks first while a scan runs. */
   receiveLaunchRequest(request: LaunchRequest): void
@@ -510,6 +514,7 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
       revision: 0,
       treemapVisible: true,
       paneTab: 'treemap',
+      chartVisible: true,
       treemapDepth: DEFAULT_TREEMAP_DEPTH,
       treemapRootId: null,
       banner: null,
@@ -933,6 +938,10 @@ export function createWorkspaceStore(api: StorageIQApi): WorkspaceStore {
         const { treemapVisible, paneTab } = get()
         if (treemapVisible && paneTab === tab) set({ treemapVisible: false })
         else set({ paneTab: tab, treemapVisible: true })
+      },
+
+      toggleChart() {
+        set({ chartVisible: !get().chartVisible })
       },
 
       dismissBanner() {

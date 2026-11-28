@@ -35,6 +35,17 @@ describe('the bottom pane tabs', () => {
   })
 })
 
+describe('the chart toggle', () => {
+  it('starts shown and toggles for the Types and Age views together', () => {
+    const store = createWorkspaceStore(createFakeApi())
+    expect(store.getState().chartVisible).toBe(true)
+    store.getState().toggleChart()
+    expect(store.getState().chartVisible).toBe(false)
+    store.getState().toggleChart()
+    expect(store.getState().chartVisible).toBe(true)
+  })
+})
+
 describe('fetching the side views', () => {
   it('asks for the treemap folder of the current scan, with the Mode for Top files', async () => {
     const { api, store } = await scanning()
