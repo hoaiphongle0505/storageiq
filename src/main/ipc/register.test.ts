@@ -17,6 +17,7 @@ import {
   oneString,
   scanNodeArgs,
   scanNodesArgs,
+  exportArgs,
   topFilesArgs,
   treemapArgs,
 } from './parse-args'
@@ -57,6 +58,8 @@ function createHandlers(overrides: Partial<IpcHandlerMap> = {}): IpcHandlerMap {
     'side:top-files': { parseArgs: topFilesArgs, handle: () => null },
     'side:types': { parseArgs: scanNodeArgs, handle: () => null },
     'side:age': { parseArgs: scanNodeArgs, handle: () => null },
+    'export:run': { parseArgs: exportArgs, handle: () => ({ status: 'cancelled' }) },
+    'shell:show-export': { parseArgs: noArgs, handle: () => undefined },
     'icons:for-nodes': {
       parseArgs: iconNodesArgs,
       handle: () => ({ keys: {}, images: {}, pending: [] }),
@@ -153,6 +156,7 @@ describe('registerIpcHandlers', () => {
       'dialog:select-folder',
       'drive:info',
       'drives:list',
+      'export:run',
       'folder:create',
       'icons:for-nodes',
       'icons:for-types',
@@ -168,6 +172,7 @@ describe('registerIpcHandlers', () => {
       'shell:context-menu',
       'shell:delete',
       'shell:open-in-explorer',
+      'shell:show-export',
       'side:age',
       'side:top-files',
       'side:types',

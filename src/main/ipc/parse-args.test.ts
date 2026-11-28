@@ -17,6 +17,7 @@ import {
   oneBoolean,
   oneString,
   scanNodeArgs,
+  exportArgs,
   topFilesArgs,
   treemapArgs,
 } from './parse-args'
@@ -143,6 +144,24 @@ describe('topFilesArgs', () => {
     [[SCAN, 'd0', 'size', 'extra']],
   ])('rejects %j', (args) => {
     expect(() => topFilesArgs(args)).toThrow(InvalidIpcArgumentsError)
+  })
+})
+
+describe('exportArgs', () => {
+  it('accepts a scan id, a node id and a format', () => {
+    expect(exportArgs([SCAN, 'd0', 'csv'])).toEqual([SCAN, 'd0', 'csv'])
+    expect(exportArgs([SCAN, 'd12', 'xlsx'])).toEqual([SCAN, 'd12', 'xlsx'])
+  })
+
+  it.each([
+    [[SCAN, 'd0']],
+    [[SCAN, 'd0', 'pdf']],
+    [[SCAN, 'd0', 'csv', 'C:\\out.csv']],
+    [[SCAN, 'C:\\Windows', 'csv']],
+    [['not a scan id!', 'd0', 'csv']],
+    [[SCAN, 'd0', undefined]],
+  ])('rejects %j', (args) => {
+    expect(() => exportArgs(args)).toThrow(InvalidIpcArgumentsError)
   })
 })
 

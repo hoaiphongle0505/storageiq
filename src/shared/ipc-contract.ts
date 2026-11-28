@@ -8,6 +8,7 @@ import type {
   ScanRestarted,
   ScanStartResult,
 } from './scan-types'
+import type { ExportFormat, ExportSummary } from './scanner-protocol'
 import type {
   AgeRow,
   NodeId,
@@ -139,6 +140,12 @@ export interface OptionsChangeResult {
 /** A launch with `--scan <path>`: main already validated the path (or says why it is not usable). */
 export type LaunchRequest = { kind: 'scan'; path: string } | { kind: 'invalid'; message: string }
 
+/** How an export ended: no file (cancelled in the save dialog), the file written, or an error. */
+export type ExportResult =
+  | { status: 'cancelled' }
+  | ({ status: 'done'; filePath: string } & ExportSummary)
+  | { status: 'failed'; message: string }
+
 export interface IpcContract {
   'drives:list': { args: []; result: DriveInfo[] }
   'drive:info': { args: [root: string]; result: DriveDetails | null }
@@ -182,6 +189,11 @@ export interface IpcContract {
   }
   'side:types': { args: [scanId: string, nodeId: NodeId]; result: TypeRow[] | null }
   'side:age': { args: [scanId: string, nodeId: NodeId]; result: AgeRow[] | null }
+  'export:run': {
+    args: [scanId: string, nodeId: NodeId, format: ExportFormat]
+    result: ExportResult
+  }
+  'shell:show-export': { args: []; result: void }
   'shell:open-in-explorer': { args: [scanId: string, nodeId: NodeId]; result: void }
   'shell:context-menu': {
     args: [scanId: string, nodeIds: NodeId[], x: number, y: number, extended: boolean]
@@ -286,6 +298,13 @@ export interface StorageIQApi {
   getTypeBreakdown(scanId: string, nodeId: NodeId): Promise<TypeRow[] | null>
   /** Bytes per modification-age bucket below a folder (always 8 rows); null when gone. */
   getAgeBreakdown(scanId: string, nodeId: NodeId): Promise<AgeRow[] | null>
+  /**
+   * Exports the whole tree below a folder to a CSV or Excel file: main shows the save dialog and
+   * the scanner writes the file, so the renderer never sees a path until it is written.
+   */
+  exportTree(scanId: string, nodeId: NodeId, format: ExportFormat): Promise<ExportResult>
+  /** Shows the file of the last successful export in File Explorer; nothing before one. */
+  showExport(): Promise<void>
   openInExplorer(scanId: string, nodeId: NodeId): Promise<void>
   /**
    * Shows the Windows Explorer context menu for one or more rows (1 to 1,000) at window

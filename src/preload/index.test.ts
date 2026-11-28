@@ -140,6 +140,16 @@ describe('preload bridge', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith('side:age', 'scan-1', 'f2')
   })
 
+  it('the export calls send ids and a format, never a path', async () => {
+    const { ipcRenderer } = await import('electron')
+    const call = (name: string, ...args: unknown[]) =>
+      (exposed[name] as unknown as (...a: unknown[]) => Promise<unknown>)(...args)
+    await call('exportTree', 'scan-1', 'd1', 'xlsx')
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('export:run', 'scan-1', 'd1', 'xlsx')
+    await call('showExport')
+    expect(ipcRenderer.invoke).toHaveBeenLastCalledWith('shell:show-export')
+  })
+
   it('getIcons and getTypeIcons send only ids and type keys', async () => {
     const { ipcRenderer } = await import('electron')
     await (exposed['getIcons'] as unknown as (...args: unknown[]) => Promise<unknown>)('scan-1', [
