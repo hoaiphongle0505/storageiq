@@ -14,6 +14,19 @@ export async function stubFolderDialog(app: ElectronApplication, folder: string)
   }, folder)
 }
 
+/**
+ * Makes the native save dialog return `file`, or "cancelled" when `file` is null, so no dialog is
+ * ever shown to the person at the desk.
+ */
+export async function stubSaveDialog(app: ElectronApplication, file: string | null): Promise<void> {
+  await app.evaluate(({ dialog }, chosen) => {
+    dialog.showSaveDialog = (async () =>
+      chosen === null
+        ? { canceled: true, filePath: '' }
+        : { canceled: false, filePath: chosen }) as typeof dialog.showSaveDialog
+  }, file)
+}
+
 /** A command of the ribbon's active tab (the level bar is a toolbar too, so match by name). */
 export function ribbonButton(page: Page, name: string | RegExp): Locator {
   return page.getByRole('toolbar', { name: /commands$/ }).getByRole('button', { name })
