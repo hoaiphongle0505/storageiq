@@ -9,15 +9,21 @@ import type {
   ScanStartResult,
 } from './scan-types'
 import type {
+  AgeRow,
   NodeId,
   SizeMode,
   SortDir,
   SortKey,
+  TopFileRow,
   TreeChanged,
   TreemapLayout,
   TreeNodeDetails,
   TreePage,
+  TypeRow,
 } from './tree-types'
+
+/** Longest text `clipboard:copy-text` takes, in characters (4 MiB of ASCII). */
+export const MAX_CLIPBOARD_TEXT = 4 * 1024 * 1024
 
 /** Metadata about the running application, shown in the status bar and the About box. */
 export interface AppInfo {
@@ -170,6 +176,12 @@ export interface IpcContract {
     ]
     result: TreemapLayout | null
   }
+  'side:top-files': {
+    args: [scanId: string, nodeId: NodeId, mode: SizeMode]
+    result: TopFileRow[] | null
+  }
+  'side:types': { args: [scanId: string, nodeId: NodeId]; result: TypeRow[] | null }
+  'side:age': { args: [scanId: string, nodeId: NodeId]; result: AgeRow[] | null }
   'shell:open-in-explorer': { args: [scanId: string, nodeId: NodeId]; result: void }
   'shell:context-menu': {
     args: [scanId: string, nodeIds: NodeId[], x: number, y: number, extended: boolean]
@@ -181,6 +193,7 @@ export interface IpcContract {
   }
   'folder:create': { args: [scanId: string, nodeId: NodeId]; result: CreateFolderResult }
   'clipboard:copy-path': { args: [scanId: string, nodeIds: NodeId[]]; result: void }
+  'clipboard:copy-text': { args: [text: string]; result: void }
   'icons:for-nodes': { args: [scanId: string, nodeIds: NodeId[]]; result: IconBatch }
   'icons:for-types': { args: [typeKeys: string[]]; result: Record<string, IconImage> }
   'update:install': { args: []; result: void }
@@ -263,6 +276,16 @@ export interface StorageIQApi {
     width: number,
     height: number,
   ): Promise<TreemapLayout | null>
+  /**
+   * The biggest files below a folder (up to 1,000), ranked by the Mode: allocated size for
+   * Allocated, logical size otherwise. A file or "[N files]" row stands for its folder; null when
+   * the node no longer exists.
+   */
+  getTopFiles(scanId: string, nodeId: NodeId, mode: SizeMode): Promise<TopFileRow[] | null>
+  /** Bytes per file extension below a folder (up to 500, then one "other" row); null when gone. */
+  getTypeBreakdown(scanId: string, nodeId: NodeId): Promise<TypeRow[] | null>
+  /** Bytes per modification-age bucket below a folder (always 8 rows); null when gone. */
+  getAgeBreakdown(scanId: string, nodeId: NodeId): Promise<AgeRow[] | null>
   openInExplorer(scanId: string, nodeId: NodeId): Promise<void>
   /**
    * Shows the Windows Explorer context menu for one or more rows (1 to 1,000) at window
@@ -288,6 +311,8 @@ export interface StorageIQApi {
    * the paths).
    */
   copyNodePath(scanId: string, nodeIds: NodeId[]): Promise<void>
+  /** Copies text the renderer built (a CSV of a list view) to the clipboard; at most 4 MiB. */
+  copyText(text: string): Promise<void>
   /**
    * Windows’ own icons for rows of the current scan (1 to 64 ids). A key missing from `images`
    * means “keep the placeholder”; native failures answer empty, only invalid arguments reject.

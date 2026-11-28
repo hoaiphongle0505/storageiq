@@ -3,6 +3,7 @@ import {
   aboutLinkArg,
   childrenArgs,
   contextMenuArgs,
+  copyTextArgs,
   deleteArgs,
   expandArgs,
   iconNodesArgs,
@@ -16,8 +17,10 @@ import {
   oneBoolean,
   oneString,
   scanNodeArgs,
+  topFilesArgs,
   treemapArgs,
 } from './parse-args'
+import { MAX_CLIPBOARD_TEXT } from '@shared/ipc-contract'
 
 const SCAN = '0d6b2f6e-8a3c-4c1e-9f61-2b8f6a1d5e10'
 
@@ -124,6 +127,38 @@ describe('treemapArgs', () => {
   ])('rejects %j', (args) => {
     expect(() => treemapArgs(args)).toThrow(InvalidIpcArgumentsError)
   })
+})
+
+describe('topFilesArgs', () => {
+  it('accepts a scan id, a node id and a Mode', () => {
+    expect(topFilesArgs([SCAN, 'd0', 'allocated'])).toEqual([SCAN, 'd0', 'allocated'])
+    expect(topFilesArgs([SCAN, 'f12', 'files'])).toEqual([SCAN, 'f12', 'files'])
+  })
+
+  it.each([
+    [[SCAN, 'd0']],
+    [[SCAN, 'd0', 'colour']],
+    [[SCAN, 'C:\\Windows', 'size']],
+    [['not a scan id!', 'd0', 'size']],
+    [[SCAN, 'd0', 'size', 'extra']],
+  ])('rejects %j', (args) => {
+    expect(() => topFilesArgs(args)).toThrow(InvalidIpcArgumentsError)
+  })
+})
+
+describe('copyTextArgs', () => {
+  it('accepts text up to the limit', () => {
+    expect(copyTextArgs(['Name,Size\r\nA,1\r\n'])).toEqual(['Name,Size\r\nA,1\r\n'])
+    const longest = 'x'.repeat(MAX_CLIPBOARD_TEXT)
+    expect(copyTextArgs([longest])).toEqual([longest])
+  })
+
+  it.each([[[]], [['']], [[42]], [['a', 'b']], [['x'.repeat(MAX_CLIPBOARD_TEXT + 1)]]])(
+    'rejects %j',
+    (args) => {
+      expect(() => copyTextArgs(args)).toThrow(InvalidIpcArgumentsError)
+    },
+  )
 })
 
 describe('contextMenuArgs', () => {

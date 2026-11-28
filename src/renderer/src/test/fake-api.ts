@@ -20,15 +20,19 @@ import type {
   ScanRestarted,
   ScanStartResult,
 } from '@shared/scan-types'
-import type {
-  NodeId,
-  SortDir,
-  SortKey,
-  TreeChanged,
-  TreemapLayout,
-  TreeNodeDetails,
-  TreePage,
-  TreeRow,
+import {
+  AGE_BUCKETS,
+  type AgeRow,
+  type NodeId,
+  type SortDir,
+  type SortKey,
+  type TopFileRow,
+  type TreeChanged,
+  type TreemapLayout,
+  type TreeNodeDetails,
+  type TreePage,
+  type TreeRow,
+  type TypeRow,
 } from '@shared/tree-types'
 
 export const TEST_APP_INFO: AppInfo = {
@@ -171,6 +175,50 @@ export const TEST_ROWS: Record<NodeId, TreeRow> = {
     files: 1,
   }),
 }
+
+/** The files the Top files view shows for the sample tree, biggest first. */
+export const TEST_TOP_FILES: TopFileRow[] = [
+  {
+    id: 'f1',
+    name: 'movie.mp4',
+    folder: 'D:\\Videos',
+    size: 0.5 * GB,
+    allocated: 0.5 * GB,
+    modifiedMs: Date.UTC(2026, 10, 19, 12),
+  },
+  {
+    id: 'f2',
+    name: 'holiday, 2025.jpg',
+    folder: 'D:\\Photos',
+    size: 12 * MB,
+    allocated: 12 * MB + 4096,
+    modifiedMs: Date.UTC(2024, 5, 1, 12),
+  },
+]
+
+/** The file types of the sample tree (3 GB in all, like the root). */
+export const TEST_TYPES: TypeRow[] = [
+  { kind: 'extension', ext: 'mp4', category: 'video', size: 2 * GB, allocated: 2 * GB, files: 10 },
+  {
+    kind: 'extension',
+    ext: 'jpg',
+    category: 'image',
+    size: 768 * MB,
+    allocated: 776 * MB,
+    files: 1000,
+  },
+  { kind: 'none', ext: '', category: 'other', size: 256 * MB, allocated: 256 * MB, files: 3 },
+]
+
+/** The age buckets of the sample tree: all 8 rows, as the scanner returns them. */
+export const TEST_AGE: AgeRow[] = AGE_BUCKETS.map((bucket) => {
+  const filled: Record<string, Pick<AgeRow, 'size' | 'allocated' | 'files'>> = {
+    'last-30-days': { size: 2 * GB, allocated: 2 * GB, files: 10 },
+    'years-2-5': { size: 768 * MB, allocated: 776 * MB, files: 1000 },
+    unknown: { size: 256 * MB, allocated: 256 * MB, files: 3 },
+  }
+  return { ...bucket, ...(filled[bucket.id] ?? { size: 0, allocated: 0, files: 0 }) }
+})
 
 const CHILDREN: Record<NodeId, NodeId[]> = {
   d0: ['d1', 'd2', 'g0'],
@@ -331,11 +379,15 @@ export function createFakeApi(overrides: Partial<StorageIQApi> = {}): FakeApi {
     getTreemap: vi.fn(async (_scanId, nodeId, _mode, _depth, width, height) =>
       fakeTreemap(nodeId, width, height),
     ),
+    getTopFiles: vi.fn(async (): Promise<TopFileRow[] | null> => TEST_TOP_FILES),
+    getTypeBreakdown: vi.fn(async (): Promise<TypeRow[] | null> => TEST_TYPES),
+    getAgeBreakdown: vi.fn(async (): Promise<AgeRow[] | null> => TEST_AGE),
     openInExplorer: vi.fn(async () => undefined),
     showContextMenu: vi.fn(async () => ({ kind: 'dismissed' as const })),
     deleteNodes: vi.fn(async () => ({ kind: 'dismissed' as const })),
     createFolder: vi.fn(async () => ({ parentId: 'd1', name: 'New folder' })),
     copyNodePath: vi.fn(async () => undefined),
+    copyText: vi.fn(async () => undefined),
     getIcons: vi.fn(async (): Promise<IconBatch> => ({ keys: {}, images: {}, pending: [] })),
     getTypeIcons: vi.fn(async () => ({})),
     onScanProgress: vi.fn(progress.subscribe),

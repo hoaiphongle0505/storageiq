@@ -2,6 +2,19 @@
 
 All notable changes to StorageIQ are listed here, newest first. The format follows Keep a Changelog and the versions follow Semantic Versioning.
 
+## [Unreleased]
+
+### Added
+
+- The pane under the folder tree now has four tabs: Treemap, Top files, Types and Age. Each describes the folder selected in the tree (or the folder of the selected file).
+- Top files lists the largest files below that folder (up to 1,000), ranked by size, or by space on disk in Allocated mode. Right-click for Explorer's menu, or double-click a file to find it in the tree.
+- Types shows how much space each file extension uses, with Windows' icon and the treemap colour of its file type.
+- Age shows how much space is used by files changed in the last 30 days, 1–3 months, 3–6 months, 6–12 months, 1–2 years, 2–5 years, more than 5 years ago, or with an unknown date.
+- Copy as CSV in each list puts the whole list on the clipboard, ready for a spreadsheet.
+- A Pane group on the View tab shows or hides each of the four views.
+
+```
+
 ## [0.2.0-beta.2] - 2026-11-25
 
 ### Added
@@ -42,3 +55,4 @@ All notable changes to StorageIQ are listed here, newest first. The format follo
 ### Fixed
 
 - Rows no longer stay in the tree after the item was deleted in Explorer or from the menu, and folder totals update.
+```

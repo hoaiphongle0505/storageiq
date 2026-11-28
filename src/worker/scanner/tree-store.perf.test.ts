@@ -1,5 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { TOP_FILES_LIMIT, TYPE_ROWS_LIMIT } from '@shared/tree-types'
+import { ageBreakdown, topFiles, typeBreakdown } from './side-views'
 import { ChildSorter, childrenPage } from './tree-queries'
 import { TreeStore } from './tree-store'
 import { treemapLayout } from './treemap'
@@ -13,6 +15,8 @@ export const PERF_LIMITS = {
   maxBytesPerFile: 125,
   maxFirstPageMs: 100,
   maxTreemapMs: 100,
+  /** Phase 4 spec §3.1: each side view of the root, one walk over every file. */
+  maxSideViewMs: 300,
 } as const
 
 function usedBytes(): number {
@@ -125,5 +129,59 @@ describe('tree store performance (1M files)', () => {
     expect(page?.rows).toHaveLength(200)
     console.log(`[perf] ${JSON.stringify({ flatFolderFiles: 200_000, firstPageMs })}`)
     expect(firstPageMs).toBeLessThanOrEqual(PERF_LIMITS.maxFirstPageMs)
+  }, 60_000)
+})
+
+let shared: TreeStore | undefined
+/** The 1M-file tree, built once for the three side-view cases. */
+const sharedStore = () => (shared ??= generate())
+
+/** The median of three runs after one warm-up run (the first call also pays for JIT compiling). */
+function medianMs(run: () => void): number {
+  run()
+  const times: number[] = []
+  for (let i = 0; i < 3; i += 1) {
+    const started = performance.now()
+    run()
+    times.push(performance.now() - started)
+  }
+  return times.sort((a, b) => a - b)[1] ?? Infinity
+}
+
+describe('side views (1M files)', () => {
+  it('lists the top 1,000 files of the root inside the limit', () => {
+    const store = sharedStore()
+    let rows = 0
+    const ms = medianMs(() => {
+      rows = topFiles(store, 0, 'size', TOP_FILES_LIMIT).length
+    })
+    console.log(`[perf] ${JSON.stringify({ topFilesMs: ms })}`)
+    expect(rows).toBe(TOP_FILES_LIMIT)
+    expect(ms).toBeLessThanOrEqual(PERF_LIMITS.maxSideViewMs)
+  }, 60_000)
+
+  it('breaks the root down by file type inside the limit', () => {
+    const store = sharedStore()
+    let rows = 0
+    const ms = medianMs(() => {
+      rows = typeBreakdown(store, 0, TYPE_ROWS_LIMIT).length
+    })
+    console.log(`[perf] ${JSON.stringify({ typesMs: ms })}`)
+    expect(rows).toBe(1) // every generated file is "document-N.dat"
+    expect(ms).toBeLessThanOrEqual(PERF_LIMITS.maxSideViewMs)
+  }, 60_000)
+
+  it('breaks the root down by file age inside the limit', () => {
+    const store = sharedStore()
+    let files = 0
+    const ms = medianMs(() => {
+      files = ageBreakdown(store, 0, 1_700_000_000_000 + 86_400_000).reduce(
+        (sum, row) => sum + row.files,
+        0,
+      )
+    })
+    console.log(`[perf] ${JSON.stringify({ ageMs: ms })}`)
+    expect(files).toBe(PERF_LIMITS.files)
+    expect(ms).toBeLessThanOrEqual(PERF_LIMITS.maxSideViewMs)
   }, 60_000)
 })

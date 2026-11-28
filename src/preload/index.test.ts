@@ -120,9 +120,24 @@ describe('preload bridge', () => {
     expect(ipcRenderer.invoke).toHaveBeenCalledWith('clipboard:copy-path', 'scan-1', ['d1', 'f2'])
   })
 
-  it('exposes copyNodePath and no free-text clipboard writer', () => {
+  it('exposes copyNodePath, and copyText that sends one string and nothing else', async () => {
+    const { ipcRenderer } = await import('electron')
     expect(typeof exposed['copyNodePath']).toBe('function')
     expect(exposed['writeClipboardText']).toBeUndefined()
+    await (exposed['copyText'] as unknown as (...args: unknown[]) => Promise<unknown>)('a,b\r\n')
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('clipboard:copy-text', 'a,b\r\n')
+  })
+
+  it('the side-view calls send only ids and the Mode', async () => {
+    const { ipcRenderer } = await import('electron')
+    const call = (name: string, ...args: unknown[]) =>
+      (exposed[name] as unknown as (...a: unknown[]) => Promise<unknown>)(...args)
+    await call('getTopFiles', 'scan-1', 'd1', 'allocated')
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('side:top-files', 'scan-1', 'd1', 'allocated')
+    await call('getTypeBreakdown', 'scan-1', 'd1')
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('side:types', 'scan-1', 'd1')
+    await call('getAgeBreakdown', 'scan-1', 'f2')
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('side:age', 'scan-1', 'f2')
   })
 
   it('getIcons and getTypeIcons send only ids and type keys', async () => {

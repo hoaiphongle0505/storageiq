@@ -186,3 +186,69 @@ export function modeSortKey(mode: SizeMode): SortKey {
 export function folderIndexOf(id: NodeId): number | null {
   return id.startsWith('d') || id.startsWith('g') ? Number(id.slice(1)) : null
 }
+
+/** Most rows the Top files view lists. */
+export const TOP_FILES_LIMIT = 1000
+/** Most extensions the Types view lists before it sums the rest into "Other extensions". */
+export const TYPE_ROWS_LIMIT = 500
+
+/** One row of the Top files view. */
+export interface TopFileRow {
+  /** `f<n>`: works with `icons:for-nodes` and `shell:context-menu`. */
+  id: NodeId
+  name: string
+  /** Path of the folder that holds the file. */
+  folder: string
+  /** Logical size in bytes. */
+  size: number
+  /** Size rounded up to whole clusters. */
+  allocated: number
+  /** Modification time in ms since the epoch, to the second (0 when unknown). */
+  modifiedMs: number
+}
+
+/** `extension`: files with that extension; `none`: files without one; `other`: the rest. */
+export type TypeRowKind = 'extension' | 'none' | 'other'
+
+/** One row of the Types view: the files of one extension below a folder. */
+export interface TypeRow {
+  kind: TypeRowKind
+  /** Lower case, no dot; `''` for `none` and `other`. */
+  ext: string
+  /** The file type colour; `null` for the "Other extensions" row. */
+  category: FileCategory | null
+  size: number
+  allocated: number
+  files: number
+}
+
+export type AgeBucketId =
+  | 'last-30-days'
+  | 'months-1-3'
+  | 'months-3-6'
+  | 'months-6-12'
+  | 'years-1-2'
+  | 'years-2-5'
+  | 'over-5-years'
+  | 'unknown'
+
+/** The age buckets in display order; the scanner always returns one row per entry. */
+export const AGE_BUCKETS: ReadonlyArray<{ id: AgeBucketId; label: string }> = [
+  { id: 'last-30-days', label: 'Last 30 days' },
+  { id: 'months-1-3', label: '1–3 months' },
+  { id: 'months-3-6', label: '3–6 months' },
+  { id: 'months-6-12', label: '6–12 months' },
+  { id: 'years-1-2', label: '1–2 years' },
+  { id: 'years-2-5', label: '2–5 years' },
+  { id: 'over-5-years', label: 'Over 5 years' },
+  { id: 'unknown', label: 'Unknown date' },
+]
+
+/** One row of the Age view: the files of one modification-age bucket below a folder. */
+export interface AgeRow {
+  id: AgeBucketId
+  label: string
+  size: number
+  allocated: number
+  files: number
+}

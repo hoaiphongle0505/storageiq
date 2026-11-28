@@ -158,6 +158,33 @@ describe('<Ribbon />', () => {
     expect(workspace.getState().treemapVisible).toBe(false)
   })
 
+  it('the View tab has a Pane group with one toggle per bottom-pane view', async () => {
+    const user = userEvent.setup()
+    const { workspace } = renderRibbon()
+    await user.click(screen.getByRole('tab', { name: 'View' }))
+    const group = within(toolbar()).getByRole('group', { name: 'Pane' })
+    const buttons = within(group).getAllByRole('button')
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      'Treemap',
+      'Top files',
+      'Types',
+      'Age',
+    ])
+    expect(buttons.map((button) => button.getAttribute('aria-pressed'))).toEqual([
+      'true',
+      'false',
+      'false',
+      'false',
+    ])
+    await user.click(command('Types'))
+    expect(workspace.getState()).toMatchObject({ paneTab: 'types', treemapVisible: true })
+    expect(command('Types')).toHaveAttribute('aria-pressed', 'true')
+    expect(command('Treemap')).toHaveAttribute('aria-pressed', 'false')
+    await user.click(command('Types'))
+    expect(workspace.getState().treemapVisible).toBe(false)
+    expect(command('Types')).toHaveAttribute('aria-pressed', 'false')
+  })
+
   it('the Options tab shows the Application group', async () => {
     const user = userEvent.setup()
     renderRibbon()

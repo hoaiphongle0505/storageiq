@@ -14,7 +14,13 @@ import { E_FAIL, isShellPathGone } from '../shell-menu/shell-menu-error'
 import { ShellBusyError } from '../shell-menu/shell-worker-pool'
 import type { ItemWatcher } from './item-watcher'
 import { mapLimit } from './map-limit'
-import { contextMenuArgs, deleteArgs, scanNodeArgs, scanNodesArgs } from './parse-args'
+import {
+  contextMenuArgs,
+  copyTextArgs,
+  deleteArgs,
+  scanNodeArgs,
+  scanNodesArgs,
+} from './parse-args'
 import type { IpcHandlerMap } from './register'
 import {
   folderIdOf,
@@ -32,6 +38,7 @@ export type ShellHandlers = Pick<
   | 'shell:delete'
   | 'folder:create'
   | 'clipboard:copy-path'
+  | 'clipboard:copy-text'
 >
 
 /** For verbs that leave the item in place: the folder is rescanned once more after this delay. */
@@ -584,6 +591,15 @@ export function createShellHandlers(deps: ShellHandlerDeps): ShellHandlers {
         const items = await resolveNodes(scanId, nodeIds)
         if (items.length === 0) throw new Error(NOT_IN_SCAN_MESSAGE)
         deps.writeClipboard([...new Set(items.map((item) => item.path))].join('\r\n'))
+      },
+    },
+
+    // The text is the renderer's own (a CSV it built from a scanner list), so unlike
+    // `clipboard:copy-path` there is no node to resolve; the length limit is in `copyTextArgs`.
+    'clipboard:copy-text': {
+      parseArgs: copyTextArgs,
+      handle: (_event, text) => {
+        deps.writeClipboard(text)
       },
     },
   }

@@ -16,7 +16,13 @@ const isDriveName = (name: string): boolean => /^[A-Za-z]:\\?$/.test(name)
  * decoration: the row's accessible name is its file name. "[N files]" rows only ever show the
  * placeholder.
  */
-export function FileIcon({ row, root }: { row: TreeRow; root: boolean }) {
+export function FileIcon({
+  row,
+  root,
+}: {
+  row: Pick<TreeRow, 'id' | 'kind' | 'name'>
+  root: boolean
+}) {
   const cache = useIconCache()
   const image = useRowIcon(row.kind === 'files' ? '' : row.id)
   const className = 'size-4 shrink-0 text-ink-muted'

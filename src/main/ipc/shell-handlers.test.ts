@@ -581,6 +581,26 @@ describe('clipboard:copy-path', () => {
   })
 })
 
+describe('clipboard:copy-text', () => {
+  it('writes exactly the text it was given', async () => {
+    const { handlers, deps } = setup()
+    await handlers['clipboard:copy-text'].handle(event, 'Name,Size\r\n"a, b",1\r\n')
+    expect(deps.writeClipboard).toHaveBeenCalledWith('Name,Size\r\n"a, b",1\r\n')
+  })
+
+  it('refuses anything but one string of 1 to 4 MiB', () => {
+    const { handlers } = setup()
+    expect(() => handlers['clipboard:copy-text'].parseArgs([])).toThrow(InvalidIpcArgumentsError)
+    expect(() => handlers['clipboard:copy-text'].parseArgs([''])).toThrow(InvalidIpcArgumentsError)
+    expect(() => handlers['clipboard:copy-text'].parseArgs([{ text: 'x' }])).toThrow(
+      InvalidIpcArgumentsError,
+    )
+    expect(() =>
+      handlers['clipboard:copy-text'].parseArgs(['x'.repeat(4 * 1024 * 1024 + 1)]),
+    ).toThrow(InvalidIpcArgumentsError)
+  })
+})
+
 describe('menu refresh of the scan root', () => {
   it('announces the new scan with scan:restarted before its progress', async () => {
     const fake = fakeTreeService()

@@ -40,16 +40,16 @@ Bytes per **file extension** under the folder.
 
 Bytes per modification-age bucket under the folder. The buckets are measured from the moment of the query:
 
-| Bucket        | Rule                         |
-| ------------- | ---------------------------- |
-| Last 30 days  | age < 30 d                   |
-| 1–3 months    | 30 d ≤ age < 91 d            |
-| 3–6 months    | 91 d ≤ age < 182 d           |
-| 6–12 months   | 182 d ≤ age < 365 d          |
-| 1–2 years     | 365 d ≤ age < 730 d          |
-| 2–5 years     | 730 d ≤ age < 1826 d         |
-| Over 5 years  | age ≥ 1826 d                 |
-| Unknown date  | modified = 0, or > now + 1 d |
+| Bucket       | Rule                         |
+| ------------ | ---------------------------- |
+| Last 30 days | age < 30 d                   |
+| 1–3 months   | 30 d ≤ age < 91 d            |
+| 3–6 months   | 91 d ≤ age < 182 d           |
+| 6–12 months  | 182 d ≤ age < 365 d          |
+| 1–2 years    | 365 d ≤ age < 730 d          |
+| 2–5 years    | 730 d ≤ age < 1826 d         |
+| Over 5 years | age ≥ 1826 d                 |
+| Unknown date | modified = 0, or > now + 1 d |
 
 - **Columns:** Age, Size, Allocated, Files, % of folder (bar).
 - All 8 buckets are always listed, in this order, including empty ones.

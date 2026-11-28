@@ -42,6 +42,17 @@ function swatchStyle(item: LegendItem): { background: string } {
   return { background: 'var(--treemap-folder)' }
 }
 
+/** The colour chip of one file type, as in the legend (the Types view uses it too). */
+export function CategorySwatch({ category }: { category: FileCategory }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={SWATCH}
+      style={{ background: `var(--treemap-${category})` }}
+    />
+  )
+}
+
 /** One row under the treemap that names the colours: file types with their shares. */
 export function TreemapLegend({ layout }: { layout: TreemapLayout | null }) {
   const items = layout === null ? [] : legendItems(layout)
