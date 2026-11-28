@@ -1,4 +1,9 @@
-import type { TypeRow } from '@shared/tree-types'
+import {
+  type CategoryShare,
+  FILE_CATEGORIES,
+  type FileCategory,
+  type TypeRow,
+} from '@shared/tree-types'
 
 export {
   NO_EXTENSION_LABEL,
@@ -33,4 +38,32 @@ export function typeIconKeys(rows: ReadonlyArray<Pick<TypeRow, 'kind' | 'ext'>>)
 /** The sum of the `size` of every row (the "% of folder" bars are shares of it). */
 export function totalSize(rows: ReadonlyArray<{ size: number }>): number {
   return rows.reduce((sum, row) => sum + row.size, 0)
+}
+
+/**
+ * The Types rows summed per file type (the treemap's categories), biggest first, without empty
+ * ones. The "Other extensions" row has no category of its own (the scanner folds the rest of the
+ * extensions into it), so it counts as "Other".
+ */
+export function categoryTotals(rows: readonly TypeRow[]): CategoryShare[] {
+  const bytes = new Map<FileCategory, number>()
+  for (const row of rows) {
+    const category = row.category ?? 'other'
+    bytes.set(category, (bytes.get(category) ?? 0) + row.size)
+  }
+  return FILE_CATEGORIES.filter((category) => (bytes.get(category) ?? 0) > 0)
+    .map((category) => ({ category, bytes: bytes.get(category) ?? 0 }))
+    .sort((a, b) => b.bytes - a.bytes)
+}
+
+/** A chart's accessible name: its three biggest entries and their shares, like `Video 41 %, …`. */
+export function chartSummary(entries: ReadonlyArray<{ label: string; value: number }>): string {
+  const total = entries.reduce((sum, entry) => sum + Math.max(0, entry.value), 0)
+  if (total === 0) return 'No data'
+  return entries
+    .filter((entry) => entry.value > 0)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 3)
+    .map((entry) => `${entry.label} ${Math.round((entry.value / total) * 100)} %`)
+    .join(', ')
 }
