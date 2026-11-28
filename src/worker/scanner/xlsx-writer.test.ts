@@ -33,6 +33,16 @@ describe('ZipWriter', () => {
     )
   })
 
+  it('reports the size limit, not an abort, when the producer is waiting on backpressure', async () => {
+    const zip = new ZipWriter(async () => undefined, 100_000)
+    const noise = randomBytes(1 << 19).toString('hex') // 1 MiB of text per push
+    await expect(
+      zip.addEntry('big.txt', async (push) => {
+        for (let i = 0; i < 8; i += 1) await push(noise)
+      }),
+    ).rejects.toThrow(ZIP_TOO_LARGE_MESSAGE)
+  })
+
   it('passes on an error from the writer', async () => {
     const zip = new ZipWriter(() => {
       throw new Error('disk full')

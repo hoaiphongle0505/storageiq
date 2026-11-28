@@ -252,12 +252,17 @@ export function createScannerHost(deps: ScannerHostDeps): ScannerHost {
     return nodeDetails(tree, treeSorter, `d${folder}`, 'size', 'desc')
   }
 
-  const answer = async (query: ScannerQuery): Promise<unknown> => {
-    if (query.kind === 'refresh') {
-      const next = refreshes.then(() => refresh(query.scanId, query.nodeId))
-      refreshes = next.catch(() => undefined)
-      return next
-    }
+  // Refreshes and exports share one queue, so an export never streams a folder a refresh rewrites.
+  const answer = (query: ScannerQuery): Promise<unknown> => {
+    if (query.kind !== 'refresh' && query.kind !== 'export') return answerNow(query)
+    const next = refreshes.then(() =>
+      query.kind === 'refresh' ? refresh(query.scanId, query.nodeId) : answerNow(query),
+    )
+    refreshes = next.catch(() => undefined)
+    return next
+  }
+
+  const answerNow = async (query: ScannerQuery): Promise<unknown> => {
     if (store === null || sorter === null || sideViews === null || storeScanId !== query.scanId) {
       return query.kind === 'expand'
         ? []

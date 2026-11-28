@@ -369,6 +369,45 @@ describe('createScannerHost', () => {
     }
   })
 
+  it('queues a refresh behind a running export, so the file is never streamed mid-change', async () => {
+    const children = tree()
+    const t = setup({}, children)
+    t.host.handle({ type: 'start', scanId: 's1', root: ROOT, volume: VOLUME })
+    await t.host.idle()
+    const page = (await t.query({
+      kind: 'children',
+      scanId: 's1',
+      nodeId: 'd0',
+      sortKey: 'name',
+      sortDir: 'asc',
+      offset: 0,
+      limit: 10,
+    })) as { rows: Array<{ id: string; name: string }> }
+    const photosId = page.rows.find((row) => row.name === 'Photos')?.id ?? ''
+    const photos = children['Photos']
+    if (photos?.type !== 'dir') throw new Error('fixture')
+    delete photos.children['b.jpg']
+
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'storageiq-host-export-'))
+    try {
+      const filePath = path.join(dir, 'out.csv')
+      const exported = t.query({
+        kind: 'export',
+        scanId: 's1',
+        nodeId: 'd0',
+        format: 'csv',
+        filePath,
+      })
+      const refreshed = t.query({ kind: 'refresh', scanId: 's1', nodeId: photosId })
+      expect(await exported).toEqual({ rows: 6, truncated: false })
+      expect(readFileSync(filePath, 'utf8')).toContain('b.jpg')
+      await refreshed
+      expect(await t.query({ kind: 'totals', scanId: 's1' })).toMatchObject({ files: 3 })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('answers queries for another scan id with nothing', async () => {
     const t = setup()
     t.host.handle({ type: 'start', scanId: 's1', root: ROOT, volume: VOLUME })

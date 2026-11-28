@@ -74,7 +74,11 @@ export class ZipWriter {
         await this.raw(chunk)
       }
     })()
-    drained.catch(() => undefined) // reported below; avoids an unhandled rejection meanwhile
+    // Kept so a sink failure is reported instead of the abort it causes in a producer on drain.
+    let drainError: unknown = null
+    drained.catch((error: unknown) => {
+      drainError = error
+    })
     try {
       await fill(async (text) => {
         const bytes = Buffer.from(text, 'utf8')
@@ -87,7 +91,7 @@ export class ZipWriter {
       await drained
     } catch (error) {
       deflate.destroy()
-      throw error
+      throw drainError ?? error
     }
     const descriptor = Buffer.alloc(16)
     descriptor.writeUInt32LE(0x08074b50, 0)
